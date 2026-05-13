@@ -48,35 +48,45 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
   }
 
   Future<void> _connectToServer() async {
+    debugPrint('[Connect] Loading saved pairing...');
     final pairing = await SessionService().getSavedPairing();
     if (!mounted) return;
 
     if (pairing == null) {
+      debugPrint('[Connect] No pairing found → redirecting to /scan');
       context.go('/scan');
       return;
     }
 
+    debugPrint('[Connect] Pairing loaded: ${pairing.host}:${pairing.port}');
     final socketService = ref.read(socketServiceProvider);
 
     // Listen to socket state changes.
     _socketSub = socketService.stateStream.listen((state) {
       if (!mounted) return;
+      debugPrint('[Connect] Socket state changed: $state');
       if (state == SocketState.connected) {
+        debugPrint('[Connect] ✓ Connected → advancing stages then → /auth');
         // Advance to stage 2 then navigate to /auth.
         setState(() => _stage = 1);
         _stageTimer = Timer(const Duration(milliseconds: 700), () {
           if (!mounted) return;
           setState(() => _stage = 2);
           _stageTimer = Timer(const Duration(milliseconds: 500), () {
-            if (mounted) context.go('/auth');
+            if (mounted) {
+              debugPrint('[Connect] Navigating to /auth');
+              context.go('/auth');
+            }
           });
         });
       } else if (state == SocketState.disconnected && _stage > 0) {
+        debugPrint('[Connect] ✗ Connection lost during handshake');
         setState(() => _errorMsg = 'Connection lost — retrying…');
       }
     });
 
     // Start connection.
+    debugPrint('[Connect] Starting socket connection...');
     socketService.connect(pairing.host, pairing.port, pairing.token);
 
     // Advance stage 0 after a short delay for visual feedback.

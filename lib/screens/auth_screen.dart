@@ -55,6 +55,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     HapticFeedback.mediumImpact();
 
     final pin = _pin.join();
+    debugPrint('[Auth] Submitting PIN (${'*' * pin.length})...');
     final socketService = ref.read(socketServiceProvider);
     final syncService = ref.read(syncServiceProvider);
 
@@ -62,6 +63,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       pin,
       onVerified: (response) {
         if (!mounted) return;
+        debugPrint('[Auth] ✓ PIN verified — applying initial sync');
         // Apply initial sync data from the verify response.
         final syncData = response['sync'] as Map<String, dynamic>? ?? response;
         syncService.applyInitialSync(ref, syncData);
@@ -72,12 +74,17 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         final opData = response['operator'];
         if (opData is Map) {
           final om = Map<String, dynamic>.from(opData);
+          final opName = om['name']?.toString() ?? 'Operator';
+          final opRole = om['role']?.toString() ?? 'Waiter';
+          debugPrint('[Auth] Operator: $opName ($opRole)');
           ref.read(operatorProvider.notifier).state = Operator(
-            name: om['name']?.toString() ?? 'Operator',
-            role: om['role']?.toString() ?? 'Waiter',
+            name: opName,
+            role: opRole,
             shift: om['shift']?.toString() ?? 'Day',
             username: om['id']?.toString() ?? om['username']?.toString() ?? '',
           );
+        } else {
+          debugPrint('[Auth] ⚠ No operator data in response');
         }
 
         ref.read(connectionProvider.notifier).state = ConnectionStatus(
@@ -85,10 +92,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
         );
         ref.read(isAuthenticatedProvider.notifier).state = true;
+        debugPrint('[Auth] → Navigating to /tables');
         context.go('/tables');
       },
       onRejected: (error) {
         if (!mounted) return;
+        debugPrint('[Auth] ✗ PIN rejected: $error');
         setState(() {
           _submitting = false;
           _error = error;

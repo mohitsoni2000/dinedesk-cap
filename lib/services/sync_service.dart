@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../models/feature_flags.dart';
 import 'socket_service.dart';
+
+const _tag = '[Sync]';
 
 class SyncService {
   final SocketService _socket;
@@ -14,6 +17,7 @@ class SyncService {
   // ─── Listener registration ───────────────────────────────────────────────
 
   void registerListeners(WidgetRef ref) {
+    debugPrint('$_tag Registering real-time listeners');
     // Listen to socket reconnection and update connectionProvider
     _stateSubscription = _socket.stateStream.listen((state) {
       if (state == SocketState.connected || state == SocketState.verified) {
@@ -153,6 +157,9 @@ class SyncService {
   // ─── Initial sync population ─────────────────────────────────────────────
 
   void applyInitialSync(WidgetRef ref, Map<String, dynamic> data) {
+    debugPrint('$_tag ── Applying initial sync ──');
+    debugPrint('$_tag   Keys received: ${data.keys.toList()}');
+
     // Restaurant info
     final restaurant = data['restaurant_info'] ?? data['restaurant'];
     if (restaurant is Map) {
@@ -165,12 +172,16 @@ class SyncService {
       );
     }
 
+    debugPrint('$_tag   Restaurant: ${restaurant is Map ? restaurant['name'] ?? restaurant['restaurant_name'] : 'not provided'}');
+
     // Feature flags
     final flags = data['feature_flags'] ?? data['flags'];
     if (flags is Map) {
       ref.read(flagsProvider.notifier).state =
           FeatureFlags.fromMap(Map<String, dynamic>.from(flags));
     }
+
+    debugPrint('$_tag   Flags: ${flags is Map ? 'loaded' : 'not provided'}');
 
     // Tables
     final currentOperatorId = ref.read(operatorProvider)?.username;
@@ -184,6 +195,8 @@ class SyncService {
       ref.read(tablesProvider.notifier).state = tables;
     }
 
+    debugPrint('$_tag   Tables: ${tablesList is List ? '${tablesList.length} loaded' : 'not provided'}');
+
     // Menu
     final menuData = data['menu'];
     if (menuData is Map) {
@@ -191,6 +204,8 @@ class SyncService {
       ref.read(menuProvider.notifier).state = _parseMenuItems(menuMap);
       ref.read(rawMenuDataProvider.notifier).state = menuMap;
     }
+
+    debugPrint('$_tag   Menu items: ${menuData is Map ? ref.read(menuProvider).length.toString() : 'not provided'}');
 
     // Active orders
     final ordersList = data['active_orders'] ?? data['orders'];
@@ -205,6 +220,8 @@ class SyncService {
       ref.read(historyProvider.notifier).state =
           orders.map(_parseHistoryOrder).toList();
     }
+
+    debugPrint('$_tag   Active orders: ${ordersList is List ? '${ordersList.length} loaded' : 'not provided'}');
 
     // Discounts
     final discountsRaw = data['discounts'] as List<dynamic>? ?? [];
@@ -226,6 +243,10 @@ class SyncService {
           .toList();
       ref.read(activeOperatorsProvider.notifier).state = operators;
     }
+
+    debugPrint('$_tag   Discounts: ${discountsRaw.length} loaded');
+    debugPrint('$_tag   Active operators: ${operatorsList is List ? '${operatorsList.length}' : '0'}');
+    debugPrint('$_tag ── Initial sync complete ──');
 
     // Mark connected
     final restaurantName = (restaurant is Map)

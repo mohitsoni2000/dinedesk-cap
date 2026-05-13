@@ -394,7 +394,7 @@ final rawMenuDataProvider = StateProvider<Map<String, dynamic>>((_) => {});
 final activeOrdersProvider = StateProvider<List<Map<String, dynamic>>>((_) => []);
 final socketServiceProvider = Provider<SocketService>((_) => SocketService());
 final syncServiceProvider = Provider<SyncService>(
-  (ref) => SyncService(ref.read(socketServiceProvider)),
+  (ref) => SyncService(ref.read(socketServiceProvider), ref),
 );
 
 // ─────────────── Auth ───────────────

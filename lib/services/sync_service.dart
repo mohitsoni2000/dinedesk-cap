@@ -10,14 +10,16 @@ const _tag = '[Sync]';
 
 class SyncService {
   final SocketService _socket;
+  final Ref _ref;  // Provider-scoped ref — never disposes
   StreamSubscription<SocketState>? _stateSubscription;
-  Map<String, String> _floorMap = {};  // floor_id → floor_name lookup
+  Map<String, String> _floorMap = {};
 
-  SyncService(this._socket);
+  SyncService(this._socket, this._ref);
 
   // ─── Listener registration ───────────────────────────────────────────────
 
-  void registerListeners(WidgetRef ref) {
+  void registerListeners() {
+    final ref = _ref;
     debugPrint('$_tag Registering real-time listeners');
     // Listen to socket reconnection and update connectionProvider
     _stateSubscription = _socket.stateStream.listen((state) {
@@ -161,7 +163,7 @@ class SyncService {
         for (final o in ref.read(activeOrdersProvider))
           if (o['id']?.toString() == orderId) map else o,
       ];
-      _updateTablesFromBroadcast(ref, d);
+      _updateTablesFromBroadcast(d);
     });
 
     _socket.on('bill:generated', (data) {
@@ -186,7 +188,7 @@ class SyncService {
             .where((o) => o['id']?.toString() != orderId)
             .toList();
       }
-      _updateTablesFromBroadcast(ref, d);
+      _updateTablesFromBroadcast(d);
     });
 
     _socket.on('discount:applied', (data) {
@@ -234,7 +236,8 @@ class SyncService {
 
   // ─── Initial sync population ─────────────────────────────────────────────
 
-  void applyInitialSync(WidgetRef ref, Map<String, dynamic> data) {
+  void applyInitialSync(Map<String, dynamic> data) {
+    final ref = _ref;
     debugPrint('$_tag ── Applying initial sync ──');
     debugPrint('$_tag   Keys received: ${data.keys.toList()}');
 
@@ -367,7 +370,8 @@ class SyncService {
   // ─── Unregister all listeners ─────────────────────────────────────────────
 
   /// Helper: update tablesProvider from broadcast data that includes a `tables` key.
-  void _updateTablesFromBroadcast(WidgetRef ref, Map<String, dynamic> d) {
+  void _updateTablesFromBroadcast(Map<String, dynamic> d) {
+    final ref = _ref;
     final tablesData = d['tables'];
     if (tablesData is List) {
       final currentOperatorId = ref.read(operatorProvider)?.username;

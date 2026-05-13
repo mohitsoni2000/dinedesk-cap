@@ -73,6 +73,13 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
     final allSections = menu.map((m) => m.section).toSet().toList();
 
+    // Resolve display name from serverId.
+    final tables = ref.watch(tablesProvider);
+    final tableDisplay = tables
+        .where((t) => t.serverId == widget.tableId)
+        .map((t) => t.id)
+        .firstOrNull ?? widget.tableId;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -91,7 +98,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
           child: Column(
             children: [
               LiquidAppBar(
-                title: 'Table ${widget.tableId}',
+                title: 'Table $tableDisplay',
                 leading: IconButton(
                   icon: const Icon(Icons.arrow_back),
                   onPressed: () async {

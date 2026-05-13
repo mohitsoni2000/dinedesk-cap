@@ -2,8 +2,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/providers.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_glass_surface.dart';
@@ -12,18 +14,19 @@ import '../widgets/numeric_keyboard.dart';
 
 enum _Step { current, fresh, confirm }
 
-class ChangePinScreen extends StatefulWidget {
+class ChangePinScreen extends ConsumerStatefulWidget {
   const ChangePinScreen({super.key});
   @override
-  State<ChangePinScreen> createState() => _ChangePinScreenState();
+  ConsumerState<ChangePinScreen> createState() => _ChangePinScreenState();
 }
 
-class _ChangePinScreenState extends State<ChangePinScreen> {
+class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
   _Step _step = _Step.current;
   String _input = '';
   String _newPin = '';
   String? _error;
   bool _done = false;  // prevents double-advance into success modal
+  bool _verifying = false;
 
   String get _heading => switch (_step) {
     _Step.current => 'Enter current PIN',
@@ -32,37 +35,58 @@ class _ChangePinScreenState extends State<ChangePinScreen> {
   };
 
   void _advance() {
-    if (_done) return;
+    if (_done || _verifying) return;
     if (_input.length < 4) {
       setState(() => _error = 'PIN must be 4–6 digits');
       return;
     }
     HapticFeedback.mediumImpact();
-    setState(() {
-      _error = null;
-      switch (_step) {
-        case _Step.current:
-          // TODO: verify current PIN against server before advancing.
-          _step = _Step.fresh;
-          _input = '';
-          break;
-        case _Step.fresh:
+    switch (_step) {
+      case _Step.current:
+        final socketService = ref.read(socketServiceProvider);
+        setState(() => _verifying = true);
+        socketService.emit('operator:verify', {'pin': _input}, onAck: (response) {
+          if (!mounted) return;
+          if (response['kind'] == 'success') {
+            setState(() {
+              _step = _Step.fresh;
+              _input = '';
+              _verifying = false;
+            });
+          } else {
+            setState(() {
+              _error = 'Incorrect PIN';
+              _input = '';
+              _verifying = false;
+            });
+          }
+        });
+        break;
+      case _Step.fresh:
+        setState(() {
           _newPin = _input;
           _input = '';
           _step = _Step.confirm;
-          break;
-        case _Step.confirm:
-          if (_input != _newPin) {
+          _error = null;
+        });
+        break;
+      case _Step.confirm:
+        if (_input != _newPin) {
+          setState(() {
             _input = '';
             _error = 'PINs don\'t match — try again';
             _step = _Step.fresh;
-          } else {
+          });
+        } else {
+          setState(() {
             _done = true;
-            HapticFeedback.heavyImpact();
-            _showSuccessAndExit();
-          }
-      }
-    });
+            _error = null;
+          });
+          HapticFeedback.heavyImpact();
+          _showSuccessAndExit();
+        }
+        break;
+    }
   }
 
   void _showSuccessAndExit() {
@@ -144,7 +168,13 @@ class _ChangePinScreenState extends State<ChangePinScreen> {
                         );
                       }),
                     ),
-                    if (_error != null) ...[
+                    if (_verifying) ...[
+                      const SizedBox(height: 12),
+                      const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ] else if (_error != null) ...[
                       const SizedBox(height: 12),
                       Text(_error!,
                         style: AppTypography.caption.copyWith(color: AppColors.danger)),
@@ -156,6 +186,7 @@ class _ChangePinScreenState extends State<ChangePinScreen> {
             NumericKeyboard(
               value: _input,
               onChanged: (v) {
+                if (_verifying) return;
                 if (v.length > 6) return;
                 setState(() { _input = v; _error = null; });
                 if (v.length == 6) _advance();

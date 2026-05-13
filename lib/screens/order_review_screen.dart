@@ -13,8 +13,10 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
+import '../widgets/customer_sheet.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_mesh_background.dart';
 import '../widgets/order_submitting_overlay.dart';
@@ -28,6 +30,7 @@ class OrderReviewScreen extends ConsumerStatefulWidget {
 
 class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   final TextEditingController _notes = TextEditingController();
+  Map<String, dynamic>? _customer;
 
   @override
   void initState() {
@@ -67,6 +70,10 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   };
 
   Future<void> _submit() async {
+    // PIN guard — verify operator before sending KOT.
+    final pinOk = await requirePinIfNeeded(context, ref, 'kot');
+    if (!pinOk || !mounted) return;
+
     HapticFeedback.heavyImpact();
     ref.read(orderNotesProvider.notifier).state = _notes.text;
 
@@ -81,13 +88,10 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final socketService = ref.read(socketServiceProvider);
     final items = cart.map((l) => {
       'item_id': l.item.id,
-      'name': l.item.name,
-      'qty': l.qty,
-      'price': l.item.price,
-      'mods': l.mods,
-      'mods_extra': l.modsExtra,
-      'note': l.itemNote,
-      'kitchen_section': l.item.kitchenSection,
+      'quantity': l.qty,
+      'selected_options': l.mods.isNotEmpty ? l.mods.join(', ') : '',
+      'options_price': l.modsExtra,
+      'notes': l.itemNote,
     }).toList();
 
     socketService.emit('order:create', {
@@ -95,9 +99,19 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       'items': items,
       'notes': notes,
       'covers': guests,
+      if (_customer != null && _customer!['id'] != null)
+        'customer_id': _customer!['id'],
     }, onAck: (response) {
       if (!mounted) return;
-      final kotId = response['kot_id']?.toString() ?? generateKotId();
+      if (response['kind'] == 'error') {
+        if (!completer.isCompleted) completer.complete(false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(response['message']?.toString() ?? 'Order failed')),
+        );
+        return;
+      }
+      final order = response['order'] as Map<String, dynamic>?;
+      final kotId = order?['kot_number']?.toString() ?? order?['order_number']?.toString() ?? generateKotId();
       ref.read(lastKotIdProvider.notifier).state = kotId;
       if (!completer.isCompleted) completer.complete(true);
     });
@@ -134,6 +148,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       byKitchen.putIfAbsent(l.item.kitchenSection, () => []).add(l);
     }
     final guests = ref.watch(orderCustomerCountProvider);
+    final flags = ref.watch(flagsProvider);
 
     return LiquidMeshBackground(
       child: Scaffold(
@@ -197,6 +212,68 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                           ],
                         ),
                       ),
+                      if (flags.customers) ...[
+                        const SizedBox(height: 12),
+
+                        // Customer attach row.
+                        AppCard(
+                          onTap: () async {
+                            final result = await CustomerSheet.show(context);
+                            if (result != null && mounted) {
+                              setState(() => _customer = result);
+                            }
+                          },
+                          child: Row(
+                            children: [
+                              Icon(
+                                _customer != null
+                                    ? Icons.person
+                                    : Icons.person_add_outlined,
+                                color: _customer != null
+                                    ? AppColors.terra600
+                                    : AppColors.ink70,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _customer != null
+                                    ? Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _customer!['name']?.toString() ??
+                                                'Customer',
+                                            style: AppTypography.bodyMd.copyWith(
+                                                fontWeight: FontWeight.w600),
+                                          ),
+                                          if (_customer!['phone'] != null &&
+                                              _customer!['phone']
+                                                  .toString()
+                                                  .isNotEmpty)
+                                            Text(
+                                              _customer!['phone'].toString(),
+                                              style: AppTypography.caption,
+                                            ),
+                                        ],
+                                      )
+                                    : const Text('Add Customer',
+                                        style: AppTypography.bodyMd),
+                              ),
+                              if (_customer != null)
+                                GestureDetector(
+                                  onTap: () =>
+                                      setState(() => _customer = null),
+                                  child: const Icon(Icons.close,
+                                      color: AppColors.ink50, size: 18),
+                                )
+                              else
+                                const Icon(Icons.chevron_right,
+                                    color: AppColors.ink30, size: 20),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
 
                       // Cart lines.

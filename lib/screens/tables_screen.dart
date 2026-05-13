@@ -257,7 +257,7 @@ class _OnlineStrip extends StatelessWidget {
                     ),
                     child: Center(
                       child: Text(
-                        operators[i].name[0],
+                        operators[i].name.isNotEmpty ? operators[i].name[0] : '?',
                         style: AppTypography.caption.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,

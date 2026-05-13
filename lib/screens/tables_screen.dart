@@ -421,16 +421,21 @@ class _TableCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text(
-                    table.id,
-                    style: AppTypography.displayMd.copyWith(fontSize: 24),
+                  Expanded(
+                    child: Text(
+                      table.id,
+                      style: AppTypography.displayMd.copyWith(fontSize: 24),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 4),
                   Text('${table.seats} seats', style: AppTypography.caption),
                 ],
               ),
               const Spacer(),
-              Text(_stateLabel(), style: AppTypography.micro),
+              Text(_stateLabel(), style: AppTypography.micro,
+                maxLines: 1, overflow: TextOverflow.ellipsis),
               if (table.coverCount != null) ...[
                 const SizedBox(height: 2),
                 Text('${table.coverCount} guests',

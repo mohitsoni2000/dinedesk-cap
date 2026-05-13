@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../models/feature_flags.dart';
@@ -5,15 +7,33 @@ import 'socket_service.dart';
 
 class SyncService {
   final SocketService _socket;
+  StreamSubscription<SocketState>? _stateSubscription;
 
   SyncService(this._socket);
 
   // ─── Listener registration ───────────────────────────────────────────────
 
   void registerListeners(WidgetRef ref) {
+    // Listen to socket reconnection and update connectionProvider
+    _stateSubscription = _socket.stateStream.listen((state) {
+      if (state == SocketState.connected || state == SocketState.verified) {
+        final restaurant = ref.read(restaurantProvider);
+        ref.read(connectionProvider.notifier).state = ConnectionStatus(
+          online: true,
+          label: 'Connected · ${restaurant?.name ?? 'Restaurant'}',
+        );
+      } else if (state == SocketState.disconnected) {
+        ref.read(connectionProvider.notifier).state = const ConnectionStatus(
+          online: false,
+          label: 'Reconnecting...',
+        );
+      }
+    });
+
     _socket.on('table:updated', (data) {
       final map = Map<String, dynamic>.from(data as Map);
-      final updated = _parseTable(map);
+      final currentOperatorId = ref.read(operatorProvider)?.username;
+      final updated = _parseTable(map, currentOperatorId);
       if (updated == null) return;
       final tables = [...ref.read(tablesProvider)];
       final idx = tables.indexWhere((t) => t.id == updated.id);
@@ -29,6 +49,22 @@ class SyncService {
       final map = Map<String, dynamic>.from(data as Map);
       final orders = [...ref.read(activeOrdersProvider), map];
       ref.read(activeOrdersProvider.notifier).state = orders;
+
+      // Also add to history
+      final historyOrder = HistoryOrder(
+        id: map['kot_number'] as String? ?? map['order_number'] as String? ?? map['id'] as String? ?? '',
+        tableId: map['table_id'] as String? ?? '',
+        time: _formatTime(map['created_at'] as String?),
+        itemCount: (map['item_count'] as int?) ?? 0,
+        total: (map['total'] as num?)?.toDouble() ?? 0,
+        status: _parseOrderStatus(map['status'] as String?),
+        lines: const [],
+        notes: map['notes'] as String?,
+      );
+      ref.read(historyProvider.notifier).state = [
+        historyOrder,
+        ...ref.read(historyProvider),
+      ];
     });
 
     _socket.on('order:updated', (data) {
@@ -65,8 +101,10 @@ class SyncService {
     });
 
     _socket.on('force:disconnect', (_) {
+      ref.read(isAuthenticatedProvider.notifier).state = false;
       ref.read(connectionProvider.notifier).state =
-          const ConnectionStatus(online: false, label: 'Disconnected by server');
+          const ConnectionStatus(online: false, label: 'Disconnected by admin');
+      _socket.disconnect();
     });
   }
 
@@ -93,11 +131,12 @@ class SyncService {
     }
 
     // Tables
+    final currentOperatorId = ref.read(operatorProvider)?.username;
     final tablesList = data['tables'];
     if (tablesList is List) {
       final tables = tablesList
           .whereType<Map>()
-          .map((m) => _parseTable(Map<String, dynamic>.from(m)))
+          .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId))
           .whereType<RestaurantTable>()
           .toList();
       ref.read(tablesProvider.notifier).state = tables;
@@ -119,6 +158,21 @@ class SyncService {
           .map((m) => Map<String, dynamic>.from(m))
           .toList();
       ref.read(activeOrdersProvider.notifier).state = orders;
+
+      // Populate history from active orders
+      final historyOrders = orders.map((o) {
+        return HistoryOrder(
+          id: o['kot_number'] as String? ?? o['order_number'] as String? ?? o['id'] as String? ?? '',
+          tableId: o['table_id'] as String? ?? '',
+          time: _formatTime(o['created_at'] as String?),
+          itemCount: (o['item_count'] as int?) ?? 0,
+          total: (o['total'] as num?)?.toDouble() ?? 0,
+          status: _parseOrderStatus(o['status'] as String?),
+          lines: const [],
+          notes: o['notes'] as String?,
+        );
+      }).toList();
+      ref.read(historyProvider.notifier).state = historyOrders;
     }
 
     // Active operators
@@ -148,6 +202,8 @@ class SyncService {
   // ─── Unregister all listeners ─────────────────────────────────────────────
 
   void unregisterListeners() {
+    _stateSubscription?.cancel();
+    _stateSubscription = null;
     _socket.off('table:updated');
     _socket.off('order:created');
     _socket.off('order:updated');
@@ -159,7 +215,7 @@ class SyncService {
 
   // ─── Parsers ──────────────────────────────────────────────────────────────
 
-  RestaurantTable? _parseTable(Map<String, dynamic> m) {
+  RestaurantTable? _parseTable(Map<String, dynamic> m, String? currentOperatorId) {
     final id = m['id']?.toString() ?? m['table_id']?.toString();
     if (id == null) return null;
 
@@ -167,7 +223,8 @@ class SyncService {
     final floor = m['floor']?.toString().toUpperCase() ?? 'GROUND';
 
     final stateRaw = m['state']?.toString() ?? m['status']?.toString() ?? 'free';
-    final tableState = _parseTableState(stateRaw);
+    final createdBy = m['created_by']?.toString() ?? m['operator_id']?.toString();
+    final tableState = _parseTableState(stateRaw, createdBy, currentOperatorId);
 
     return RestaurantTable(
       id: id,
@@ -181,22 +238,46 @@ class SyncService {
     );
   }
 
-  TableState _parseTableState(String raw) {
+  TableState _parseTableState(String raw, String? createdBy, String? currentOperatorId) {
     switch (raw.toLowerCase()) {
       case 'mine':
         return TableState.mine;
       case 'other':
         return TableState.other;
       case 'dirty':
+      case 'cleaning':
         return TableState.dirty;
       case 'reserved':
         return TableState.reserved;
       case 'occupied':
-        // If served by the current operator, mark as 'mine'; otherwise 'other'.
-        // Without operator context here, default to 'other'.
+        // Check if this table's active order belongs to the current operator
+        if (createdBy != null && currentOperatorId != null && createdBy == currentOperatorId) {
+          return TableState.mine;
+        }
         return TableState.other;
       default:
         return TableState.free;
+    }
+  }
+
+  String _formatTime(String? isoDate) {
+    if (isoDate == null) return '';
+    try {
+      final dt = DateTime.parse(isoDate);
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  OrderStatus _parseOrderStatus(String? status) {
+    switch (status) {
+      case 'cancelled':
+        return OrderStatus.cancelled;
+      case 'modified':
+        return OrderStatus.modified;
+      default:
+        return OrderStatus.sent;
     }
   }
 

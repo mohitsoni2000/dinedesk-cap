@@ -30,11 +30,6 @@ class SocketService {
     _socket!.onConnect((_) => _setState(SocketState.connected));
     _socket!.onDisconnect((_) => _setState(SocketState.disconnected));
     _socket!.onConnectError((err) => _setState(SocketState.disconnected));
-    _socket!.on('force:disconnect', (data) {
-      _setState(SocketState.disconnected);
-      disconnect();
-    });
-
     _socket!.connect();
   }
 

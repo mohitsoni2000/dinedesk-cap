@@ -16,7 +16,7 @@ class TablesScreen extends ConsumerStatefulWidget {
 }
 
 class _TablesScreenState extends ConsumerState<TablesScreen> {
-  String _floor = 'GROUND';
+  String? _floor;  // null = auto-select first floor
   String _query = '';
   bool _searchOpen = false;
 
@@ -69,18 +69,19 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
     final restaurantName = restaurant?.name ?? 'Restaurant';
     final activeOps = ref.watch(activeOperatorsProvider);
 
-    // Derive floors from actual table data; fall back to 'GROUND' before data loads.
+    // Derive floors from actual table data.
     final allFloors = tables.map((t) => t.floor).toSet().toList();
-    final floors = allFloors.isNotEmpty ? allFloors : ['GROUND'];
-    // If the current floor is no longer in the list, snap to the first available.
-    if (!floors.contains(_floor)) {
+    final floors = allFloors.isNotEmpty ? allFloors : ['Ground'];
+    final activeFloor = _floor ?? floors.first;
+    // If the current floor is no longer in the list, snap to the first.
+    if (!floors.contains(activeFloor) && floors.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() => _floor = floors.first);
       });
     }
 
     final filtered = tables.where((t) {
-      if (t.floor != _floor) return false;
+      if (t.floor != activeFloor) return false;
       if (_query.isEmpty) return true;
       return t.id.toLowerCase().contains(_query.toLowerCase()) ||
           (t.waiterName?.toLowerCase().contains(_query.toLowerCase()) ?? false);
@@ -173,7 +174,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _FloorTabs(
-              value: _floor,
+              value: activeFloor,
               floors: floors,
               onChange: (v) => setState(() => _floor = v),
             ),

@@ -11,6 +11,7 @@ const _tag = '[Sync]';
 class SyncService {
   final SocketService _socket;
   StreamSubscription<SocketState>? _stateSubscription;
+  Map<String, String> _floorMap = {};  // floor_id → floor_name lookup
 
   SyncService(this._socket);
 
@@ -37,7 +38,7 @@ class SyncService {
     _socket.on('table:updated', (data) {
       final map = Map<String, dynamic>.from(data as Map);
       final currentOperatorId = ref.read(operatorProvider)?.username;
-      final updated = _parseTable(map, currentOperatorId);
+      final updated = _parseTable(map, currentOperatorId, _floorMap);
       if (updated == null) return;
       final tables = [...ref.read(tablesProvider)];
       final idx = tables.indexWhere((t) => t.id == updated.id);
@@ -68,7 +69,7 @@ class SyncService {
         final currentOperatorId = ref.read(operatorProvider)?.username;
         final tables = tablesData
             .whereType<Map>()
-            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId))
+            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId, _floorMap))
             .whereType<RestaurantTable>()
             .toList();
         ref.read(tablesProvider.notifier).state = tables;
@@ -101,7 +102,7 @@ class SyncService {
         final currentOperatorId = ref.read(operatorProvider)?.username;
         final tables = tablesData
             .whereType<Map>()
-            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId))
+            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId, _floorMap))
             .whereType<RestaurantTable>()
             .toList();
         ref.read(tablesProvider.notifier).state = tables;
@@ -127,7 +128,7 @@ class SyncService {
         final currentOperatorId = ref.read(operatorProvider)?.username;
         final tables = tablesData
             .whereType<Map>()
-            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId))
+            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId, _floorMap))
             .whereType<RestaurantTable>()
             .toList();
         ref.read(tablesProvider.notifier).state = tables;
@@ -183,16 +184,46 @@ class SyncService {
 
     debugPrint('$_tag   Flags: ${flags is Map ? 'loaded' : 'not provided'}');
 
+    // Floors — build a lookup map so tables can resolve floor_id → floor name.
+    final floorsList = data['floors'];
+    final floorMap = <String, String>{};
+    if (floorsList is List) {
+      for (final f in floorsList) {
+        if (f is Map) {
+          final fid = f['id']?.toString();
+          final fname = f['name']?.toString();
+          if (fid != null && fname != null) floorMap[fid] = fname;
+        }
+      }
+    }
+    _floorMap = floorMap;
+    debugPrint('$_tag   Floors: ${floorMap.length} → ${floorMap.values.toList()}');
+
     // Tables
     final currentOperatorId = ref.read(operatorProvider)?.username;
     final tablesList = data['tables'];
     if (tablesList is List) {
+      // Log first table's raw keys for debugging.
+      if (tablesList.isNotEmpty && tablesList.first is Map) {
+        final sample = Map<String, dynamic>.from(tablesList.first as Map);
+        debugPrint('$_tag   Table[0] raw keys: ${sample.keys.toList()}');
+        debugPrint('$_tag   Table[0] name=${sample['name']}, id=${sample['id']}, '
+            'floor_id=${sample['floor_id']}, capacity=${sample['capacity']}, '
+            'status=${sample['status']}');
+      }
+
       final tables = tablesList
           .whereType<Map>()
-          .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId))
+          .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId, floorMap))
           .whereType<RestaurantTable>()
           .toList();
       ref.read(tablesProvider.notifier).state = tables;
+
+      // Log parsed result.
+      for (final t in tables.take(3)) {
+        debugPrint('$_tag   Parsed → id=${t.id}, floor=${t.floor}, '
+            'seats=${t.seats}, state=${t.state}');
+      }
     }
 
     debugPrint('$_tag   Tables: ${tablesList is List ? '${tablesList.length} loaded' : 'not provided'}');
@@ -289,18 +320,24 @@ class SyncService {
     );
   }
 
-  RestaurantTable? _parseTable(Map<String, dynamic> m, String? currentOperatorId) {
-    final id = m['id']?.toString() ?? m['table_id']?.toString();
+  RestaurantTable? _parseTable(
+    Map<String, dynamic> m,
+    String? currentOperatorId, [
+    Map<String, String> floorMap = const {},
+  ]) {
+    final id = m['name']?.toString() ?? m['id']?.toString() ?? m['table_id']?.toString();
     if (id == null) return null;
 
-    final seats = int.tryParse('${m['seats'] ?? m['capacity'] ?? 4}') ?? 4;
-    final floor = m['floor_name']?.toString().toUpperCase() ??
-        m['floor']?.toString().toUpperCase() ?? 'GROUND';
+    final seats = int.tryParse('${m['capacity'] ?? m['seats'] ?? 4}') ?? 4;
+
+    // Resolve floor: floor_name (direct) > floor_id lookup > floor > fallback.
+    final floorId = m['floor_id']?.toString();
+    final floor = m['floor_name']?.toString() ??
+        (floorId != null ? floorMap[floorId] : null) ??
+        m['floor']?.toString() ??
+        'Ground';
 
     final stateRaw = m['status']?.toString() ?? m['state']?.toString() ?? 'free';
-    // "Mine" detection: `created_by` may be on the table (from a join) or
-    // on the active order. Check both sources — the server sometimes includes
-    // it directly on the table broadcast for convenience.
     final createdBy = m['created_by']?.toString() ??
         m['operator_id']?.toString() ??
         m['active_order_created_by']?.toString();
@@ -313,8 +350,10 @@ class SyncService {
       state: tableState,
       waiterName: m['waiter_name']?.toString() ?? m['operator_name']?.toString(),
       coverCount: int.tryParse('${m['cover_count'] ?? m['covers'] ?? ''}'),
-      bill: double.tryParse('${m['bill'] ?? m['total'] ?? ''}'),
-      note: m['note']?.toString() ?? m['reservation_note']?.toString(),
+      bill: double.tryParse('${m['bill'] ?? m['order_total'] ?? m['total'] ?? ''}'),
+      note: m['note']?.toString() ??
+          m['reservation_customer']?.toString() ??
+          m['reservation_note']?.toString(),
     );
   }
 

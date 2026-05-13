@@ -60,7 +60,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     final menu = ref.watch(menuProvider);
     final cart = ref.watch(cartProvider);
     final cartTotal = cart.fold(0.0, (s, l) => s + l.lineTotal);
-    final guests = ref.watch(orderCustomerCountProvider);
 
     final sections = <String, List<MenuItem>>{};
     for (final m in menu) {
@@ -126,20 +125,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: const BoxDecoration(
-                      color: AppColors.ink05,
-                      borderRadius: BorderRadius.all(AppRadii.xs),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.people_outline, size: 14, color: AppColors.ink70),
-                      const SizedBox(width: 4),
-                      Text('$guests',
-                        style: AppTypography.caption.copyWith(fontWeight: FontWeight.w600)),
-                    ]),
-                  ),
-                  const SizedBox(width: 6),
                   IconButton(
                     icon: Icon(_searchOpen ? Icons.close : Icons.search,
                       color: AppColors.ink70),

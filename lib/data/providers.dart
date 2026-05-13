@@ -18,9 +18,10 @@ enum OrderStatus { sent, modified, cancelled }
 class RestaurantTable {
   static const _absent = Object();
 
-  final String id;        // e.g. "T-04"
-  final int seats;        // 2/4/6/8
-  final String floor;     // "GROUND", "FIRST", "GARDEN", "TAKEAWAY"
+  final String id;        // Display name — "T-04", "F1", etc.
+  final String serverId;  // Server UUID — used in all socket emits
+  final int seats;
+  final String floor;
   final TableState state;
   final String? waiterName;
   final int? coverCount;
@@ -28,6 +29,7 @@ class RestaurantTable {
   final String? note;
   const RestaurantTable({
     required this.id,
+    required this.serverId,
     required this.seats,
     required this.floor,
     required this.state,
@@ -37,9 +39,9 @@ class RestaurantTable {
     this.note,
   });
 
-  /// Sentinel-based [copyWith] — pass explicit `null` to clear nullable fields.
   RestaurantTable copyWith({
     String? id,
+    String? serverId,
     int? seats,
     String? floor,
     TableState? state,
@@ -50,6 +52,7 @@ class RestaurantTable {
   }) =>
       RestaurantTable(
         id: id ?? this.id,
+        serverId: serverId ?? this.serverId,
         seats: seats ?? this.seats,
         floor: floor ?? this.floor,
         state: state ?? this.state,
@@ -89,22 +92,22 @@ class Modifier {
   const Modifier({required this.id, this.groupId = '', required this.label, this.extraPrice = 0});
 }
 
-/// Structured option selection for the `order:create` payload.
+/// Structured option selection matching Desktop's `SelectedOptionPayload`.
 class SelectedOption {
-  final String optionGroupId;
-  final String optionId;
-  final String label;            // display label for UI
-  final double price;
+  final String groupName;        // option group display name
+  final String optionName;       // option display name
+  final double priceModifier;    // price delta (can be negative)
   const SelectedOption({
-    required this.optionGroupId,
-    required this.optionId,
-    required this.label,
-    this.price = 0,
+    required this.groupName,
+    required this.optionName,
+    this.priceModifier = 0,
   });
 
+  /// Serialize to match Desktop's `SelectedOptionPayload` exactly.
   Map<String, dynamic> toJson() => {
-    'option_group_id': optionGroupId,
-    'option_id': optionId,
+    'group_name': groupName,
+    'option_name': optionName,
+    'price_modifier': priceModifier,
   };
 }
 
@@ -277,9 +280,6 @@ final tablesProvider = StateProvider<List<RestaurantTable>>((_) => []);
 final menuProvider   = StateProvider<List<MenuItem>>((_) => []);
 
 final selectedTableIdProvider = StateProvider<String?>((_) => null);
-
-// Customer count entered when claiming a free table — feeds order builder header.
-final orderCustomerCountProvider = StateProvider<int>((_) => 2);
 
 // Order-level note typed in review screen.
 final orderNotesProvider = StateProvider<String>((_) => '');

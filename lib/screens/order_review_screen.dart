@@ -79,25 +79,24 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
     final cart = ref.read(cartProvider);
     final notes = _notes.text;
-    final guests = ref.read(orderCustomerCountProvider);
 
-    // Prepare the completer that the server ack will resolve.
     final completer = Completer<bool>();
-
-    // Emit order:create via socket BEFORE showing the overlay.
     final socketService = ref.read(socketServiceProvider);
-    final items = cart.map((l) => {
+
+    // Build items payload with proper SelectedOptionPayload structure.
+    final items = cart.map((l) => <String, dynamic>{
       'item_id': l.item.id,
       'quantity': l.qty,
-      'selected_options': l.selectedOptions,
+      'selected_options': l.selectedOptions.map((o) => o.toJson()).toList(),
       'notes': l.itemNote,
     }).toList();
 
-    socketService.emit('order:create', {
-      'table_id': widget.tableId,
+    String? createdOrderId;
+
+    socketService.emit('order:create', <String, dynamic>{
+      'table_id': widget.tableId,  // This is now the server UUID
       'items': items,
       'notes': notes,
-      'covers': guests,
       'order_type': 'dine_in',
       if (_customer != null && _customer!['id'] != null)
         'customer_id': _customer!['id'],
@@ -111,21 +110,28 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         return;
       }
       final order = response['order'] as Map<String, dynamic>?;
-      final kotId = order?['kot_number']?.toString() ?? order?['order_number']?.toString() ?? generateKotId();
+      createdOrderId = order?['id']?.toString();
+      final kotId = order?['kot_number']?.toString() ??
+          order?['order_number']?.toString() ?? generateKotId();
       ref.read(lastKotIdProvider.notifier).state = kotId;
+
+      // C3 fix: emit kot:send immediately after order:create succeeds.
+      if (createdOrderId != null) {
+        socketService.emit('kot:send', <String, dynamic>{
+          'order_id': createdOrderId!,
+        });
+      }
+
       if (!completer.isCompleted) completer.complete(true);
     });
 
-    // Show overlay — it stays on screen until the completer resolves (or 15s timeout).
     final ok = await OrderSubmittingOverlay.show(context, completer: completer);
     if (!mounted) return;
 
     if (ok) {
       _submitted = true;
-      // Clear cart and navigate — table/bill updates come via socket broadcast.
       ref.read(cartProvider.notifier).clear();
       ref.read(orderNotesProvider.notifier).state = '';
-      ref.read(orderCustomerCountProvider.notifier).state = 2; // H4 reset
       context.go('/order/${widget.tableId}/success');
     } else {
       // Timeout or error — show feedback so operator can retry.
@@ -147,8 +153,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     for (final l in cart) {
       byKitchen.putIfAbsent(l.item.kitchenSection, () => []).add(l);
     }
-    final guests = ref.watch(orderCustomerCountProvider);
     final flags = ref.watch(flagsProvider);
+
+    // Resolve display name for the table from the tables provider.
+    final tables = ref.watch(tablesProvider);
+    final tableDisplay = tables
+        .where((t) => t.serverId == widget.tableId)
+        .map((t) => t.id)
+        .firstOrNull ?? widget.tableId;
 
     return LiquidMeshBackground(
       child: Scaffold(
@@ -157,7 +169,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         child: Column(
           children: [
             LiquidAppBar(
-              title: 'Review · ${widget.tableId}',
+              title: 'Review · $tableDisplay',
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => context.pop()),
@@ -183,35 +195,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                       AppSpacing.lg, AppSpacing.lg, AppSpacing.lg,
                       AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom),
                     children: [
-                      // Customer count + table info row.
-                      AppCard(
-                        child: Row(
-                          children: [
-                            const Icon(Icons.people_outline,
-                              color: AppColors.ink70, size: 20),
-                            const SizedBox(width: 10),
-                            const Text('Guests', style: AppTypography.bodyMd),
-                            const Spacer(),
-                            _StepBtn(icon: Icons.remove, onTap: () {
-                              if (guests > 1) {
-                                ref.read(orderCustomerCountProvider.notifier).state = guests - 1;
-                              }
-                            }),
-                            const SizedBox(width: 12),
-                            SizedBox(width: 24, child: Center(
-                              child: Text('$guests',
-                                style: AppTypography.title.copyWith(
-                                  fontWeight: FontWeight.w700)),
-                            )),
-                            const SizedBox(width: 12),
-                            _StepBtn(icon: Icons.add, onTap: () {
-                              if (guests < 20) {
-                                ref.read(orderCustomerCountProvider.notifier).state = guests + 1;
-                              }
-                            }),
-                          ],
-                        ),
-                      ),
+                      // Guest count removed — managed on Desktop side.
                       if (flags.customers) ...[
                         const SizedBox(height: 12),
 
@@ -481,25 +465,6 @@ class _Step extends StatelessWidget {
           child: Icon(icon, size: 14, color: AppColors.ink),
         ),
       ),
-    ),
-  );
-}
-
-class _StepBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _StepBtn({required this.icon, required this.onTap});
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: () { HapticFeedback.selectionClick(); onTap(); },
-    child: Container(
-      width: 32, height: 32,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.ink10),
-      ),
-      child: Icon(icon, size: 16, color: AppColors.ink),
     ),
   );
 }

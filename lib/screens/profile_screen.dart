@@ -178,7 +178,6 @@ class ProfileScreen extends ConsumerWidget {
                       SessionService().clearPairing();
                       ref.read(cartProvider.notifier).clear();
                       ref.read(orderNotesProvider.notifier).state = '';
-                      ref.read(orderCustomerCountProvider.notifier).state = 2;
                       ref.read(selectedTableIdProvider.notifier).state = null;
                       ref.read(isAuthenticatedProvider.notifier).state = false;
                       context.go('/scan');

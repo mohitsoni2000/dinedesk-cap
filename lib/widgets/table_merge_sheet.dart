@@ -178,7 +178,8 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                         for (final t in list)
                           if (t.id == widget.origin.id)
                             RestaurantTable(
-                              id: t.id, seats: newSeats, floor: t.floor,
+                              id: t.id, serverId: t.serverId,
+                              seats: newSeats, floor: t.floor,
                               state: TableState.mine,
                               waiterName: t.waiterName, coverCount: t.coverCount,
                               bill: t.bill, note: 'Merged with ${_picked.join(", ")}',

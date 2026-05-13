@@ -27,20 +27,17 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
       if (!mounted || count == null) return;
       ref.read(cartProvider.notifier).clear();
       ref.read(orderNotesProvider.notifier).state = '';
-      ref.read(orderCustomerCountProvider.notifier).state = count;
-      ref.read(selectedTableIdProvider.notifier).state = t.id;
-      // Table state will be updated via socket broadcast from Desktop.
-      if (mounted) context.push('/order/${t.id}');
+      ref.read(selectedTableIdProvider.notifier).state = t.serverId;
+      if (mounted) context.push('/order/${t.serverId}');
     } else if (t.state == TableState.mine) {
       // Clear stale cart if switching to a different table (C1 fix).
       final prevTable = ref.read(selectedTableIdProvider);
-      if (prevTable != null && prevTable != t.id) {
+      if (prevTable != null && prevTable != t.serverId) {
         ref.read(cartProvider.notifier).clear();
         ref.read(orderNotesProvider.notifier).state = '';
       }
-      ref.read(orderCustomerCountProvider.notifier).state = t.coverCount ?? 2;
-      ref.read(selectedTableIdProvider.notifier).state = t.id;
-      context.push('/order/${t.id}');
+      ref.read(selectedTableIdProvider.notifier).state = t.serverId;
+      context.push('/order/${t.serverId}');
     } else if (t.state == TableState.other) {
       ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(SnackBar(
         backgroundColor: AppColors.ink,

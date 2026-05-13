@@ -41,7 +41,7 @@ class SyncService {
       final updated = _parseTable(map, currentOperatorId, _floorMap);
       if (updated == null) return;
       final tables = [...ref.read(tablesProvider)];
-      final idx = tables.indexWhere((t) => t.id == updated.id);
+      final idx = tables.indexWhere((t) => t.serverId == updated.serverId);
       if (idx >= 0) {
         tables[idx] = updated;
       } else {
@@ -135,9 +135,12 @@ class SyncService {
       }
     });
 
+    // I3 fix: unwrap nested flags key.
     _socket.on('flags:updated', (data) {
-      final map = Map<String, dynamic>.from(data as Map);
-      ref.read(flagsProvider.notifier).state = FeatureFlags.fromMap(map);
+      final envelope = Map<String, dynamic>.from(data as Map);
+      final flagsMap = envelope['flags'] as Map? ?? envelope;
+      ref.read(flagsProvider.notifier).state =
+          FeatureFlags.fromMap(Map<String, dynamic>.from(flagsMap));
     });
 
     _socket.on('menu:updated', (data) {
@@ -147,7 +150,81 @@ class SyncService {
       ref.read(rawMenuDataProvider.notifier).state = map;
     });
 
+    // I1 fix: missing broadcast listeners.
+    _socket.on('kot:sent', (data) {
+      final d = Map<String, dynamic>.from(data as Map);
+      final orderData = d['order'] as Map? ?? d;
+      final map = Map<String, dynamic>.from(orderData);
+      final orderId = map['id']?.toString();
+      if (orderId == null) return;
+      ref.read(activeOrdersProvider.notifier).state = [
+        for (final o in ref.read(activeOrdersProvider))
+          if (o['id']?.toString() == orderId) map else o,
+      ];
+      _updateTablesFromBroadcast(ref, d);
+    });
+
+    _socket.on('bill:generated', (data) {
+      final d = Map<String, dynamic>.from(data as Map);
+      final orderData = d['order'] as Map? ?? d;
+      final map = Map<String, dynamic>.from(orderData);
+      final orderId = map['id']?.toString();
+      if (orderId == null) return;
+      ref.read(activeOrdersProvider.notifier).state = [
+        for (final o in ref.read(activeOrdersProvider))
+          if (o['id']?.toString() == orderId) map else o,
+      ];
+    });
+
+    _socket.on('bill:paid', (data) {
+      final d = Map<String, dynamic>.from(data as Map);
+      final orderData = d['order'] as Map?;
+      final orderId = orderData?['id']?.toString();
+      if (orderId != null) {
+        ref.read(activeOrdersProvider.notifier).state = ref
+            .read(activeOrdersProvider)
+            .where((o) => o['id']?.toString() != orderId)
+            .toList();
+      }
+      _updateTablesFromBroadcast(ref, d);
+    });
+
+    _socket.on('discount:applied', (data) {
+      final d = Map<String, dynamic>.from(data as Map);
+      final orderData = d['order'] as Map? ?? d;
+      final map = Map<String, dynamic>.from(orderData);
+      final orderId = map['id']?.toString();
+      if (orderId == null) return;
+      ref.read(activeOrdersProvider.notifier).state = [
+        for (final o in ref.read(activeOrdersProvider))
+          if (o['id']?.toString() == orderId) map else o,
+      ];
+    });
+
+    // I2 fix: operator presence.
+    _socket.on('operator:online', (data) {
+      final d = Map<String, dynamic>.from(data as Map);
+      final name = d['operatorName']?.toString() ?? '';
+      final role = d['role']?.toString() ?? '';
+      if (name.isEmpty) return;
+      final current = ref.read(activeOperatorsProvider);
+      if (current.any((o) => o.name == name)) return;
+      ref.read(activeOperatorsProvider.notifier).state = [
+        ...current,
+        ActiveOperator(name: name, role: role),
+      ];
+    });
+
+    _socket.on('operator:offline', (data) {
+      final d = Map<String, dynamic>.from(data as Map);
+      final name = d['operatorName']?.toString() ?? '';
+      ref.read(activeOperatorsProvider.notifier).state =
+          ref.read(activeOperatorsProvider).where((o) => o.name != name).toList();
+    });
+
+    // I5 fix: clean up listeners before disconnecting.
     _socket.on('force:disconnect', (_) {
+      unregisterListeners();
       ref.read(isAuthenticatedProvider.notifier).state = false;
       ref.read(connectionProvider.notifier).state =
           const ConnectionStatus(online: false, label: 'Disconnected by admin');
@@ -221,8 +298,8 @@ class SyncService {
 
       // Log parsed result.
       for (final t in tables.take(3)) {
-        debugPrint('$_tag   Parsed → id=${t.id}, floor=${t.floor}, '
-            'seats=${t.seats}, state=${t.state}');
+        debugPrint('$_tag   Parsed → name=${t.id}, serverId=${t.serverId}, '
+            'floor=${t.floor}, seats=${t.seats}, state=${t.state}');
       }
     }
 
@@ -289,16 +366,31 @@ class SyncService {
 
   // ─── Unregister all listeners ─────────────────────────────────────────────
 
+  /// Helper: update tablesProvider from broadcast data that includes a `tables` key.
+  void _updateTablesFromBroadcast(WidgetRef ref, Map<String, dynamic> d) {
+    final tablesData = d['tables'];
+    if (tablesData is List) {
+      final currentOperatorId = ref.read(operatorProvider)?.username;
+      final tables = tablesData
+          .whereType<Map>()
+          .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId, _floorMap))
+          .whereType<RestaurantTable>()
+          .toList();
+      ref.read(tablesProvider.notifier).state = tables;
+    }
+  }
+
   void unregisterListeners() {
     _stateSubscription?.cancel();
     _stateSubscription = null;
-    _socket.off('table:updated');
-    _socket.off('order:created');
-    _socket.off('order:updated');
-    _socket.off('order:cancelled');
-    _socket.off('flags:updated');
-    _socket.off('menu:updated');
-    _socket.off('force:disconnect');
+    for (final event in [
+      'table:updated', 'order:created', 'order:updated', 'order:cancelled',
+      'kot:sent', 'bill:generated', 'bill:paid', 'discount:applied',
+      'flags:updated', 'menu:updated', 'force:disconnect',
+      'operator:online', 'operator:offline',
+    ]) {
+      _socket.off(event);
+    }
   }
 
   // ─── Parsers ──────────────────────────────────────────────────────────────
@@ -325,8 +417,9 @@ class SyncService {
     String? currentOperatorId, [
     Map<String, String> floorMap = const {},
   ]) {
-    final id = m['name']?.toString() ?? m['id']?.toString() ?? m['table_id']?.toString();
-    if (id == null) return null;
+    final serverUuid = m['id']?.toString() ?? m['table_id']?.toString();
+    final displayName = m['name']?.toString() ?? serverUuid;
+    if (serverUuid == null) return null;
 
     final seats = int.tryParse('${m['capacity'] ?? m['seats'] ?? 4}') ?? 4;
 
@@ -344,7 +437,8 @@ class SyncService {
     final tableState = _parseTableState(stateRaw, createdBy, currentOperatorId);
 
     return RestaurantTable(
-      id: id,
+      id: displayName!,
+      serverId: serverUuid,
       seats: seats,
       floor: floor,
       state: tableState,

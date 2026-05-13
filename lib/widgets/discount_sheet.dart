@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
+import '../utils/socket_helpers.dart';
 import 'liquid_glass_surface.dart';
 import 'liquid_chrome.dart';
 
@@ -70,14 +71,19 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
   bool get _canApply {
     if (_submitting) return false;
     if (_showCustom) {
-      return _customValue != null && _customValue! > 0;
+      final v = _customValue;
+      if (v == null || v <= 0) return false;
+      if (_customType == _DiscountType.percent && v > 100) return false;
+      if (_customType == _DiscountType.flat && v > widget.orderTotal) return false;
+      return true;
     }
     return _selectedPresetId != null;
   }
 
   Future<void> _apply() async {
     if (!_canApply) return;
-    setState(() => _submitting = true);
+    _submitting = true;
+    setState(() {});
     HapticFeedback.heavyImpact();
 
     final socketService = ref.read(socketServiceProvider);
@@ -87,7 +93,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       payload = {
         'order_id': widget.orderId,
         'custom': {
-          'type': _customType == _DiscountType.percent ? 'percent' : 'flat',
+          'type': _customType == _DiscountType.percent ? 'percentage' : 'flat',
           'value': _customValue,
           if (_labelController.text.trim().isNotEmpty)
             'label': _labelController.text.trim(),
@@ -102,14 +108,14 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
 
     socketService.emit('discount:apply', payload, onAck: (response) {
       if (!mounted) return;
-      if (response['error'] != null) {
+      if (response['kind'] == 'error') {
         setState(() => _submitting = false);
         ScaffoldMessenger.of(context)
           ..clearSnackBars()
           ..showSnackBar(SnackBar(
             backgroundColor: AppColors.danger,
             content: Text(
-              response['error'].toString(),
+              response['message']?.toString() ?? 'Discount failed',
               style: AppTypography.bodyMd.copyWith(color: Colors.white),
             ),
           ));
@@ -119,16 +125,19 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
     });
 
     // Timeout fallback
-    Future.delayed(const Duration(seconds: 10), () {
-      if (mounted && _submitting) {
+    scheduleSocketTimeout(
+      duration: const Duration(seconds: 10),
+      isMounted: () => mounted,
+      isStillWaiting: () => _submitting,
+      onTimeout: () {
         setState(() => _submitting = false);
         ScaffoldMessenger.of(context)
           ..clearSnackBars()
           ..showSnackBar(const SnackBar(
             content: Text('Discount request timed out — please retry'),
           ));
-      }
-    });
+      },
+    );
   }
 
   @override
@@ -144,6 +153,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
     final hasPresets = presets.isNotEmpty;
 
     return DraggableScrollableSheet(
+      expand: false,
       initialChildSize: 0.55,
       minChildSize: 0.35,
       maxChildSize: 0.88,

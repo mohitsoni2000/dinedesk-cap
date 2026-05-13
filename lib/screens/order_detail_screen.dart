@@ -17,6 +17,7 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
+import '../utils/socket_helpers.dart';
 import '../widgets/app_card.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_mesh_background.dart';
@@ -111,32 +112,48 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     socketService.emit('order:cancel', {
       'order_id': order.id,
       'reason': 'Cancelled by waiter',
+    }, onAck: (response) {
+      if (!mounted) return;
+      if (response['kind'] == 'error') {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(
+            backgroundColor: AppColors.danger,
+            content: Text(
+              response['message']?.toString() ?? 'Cancel failed',
+              style: AppTypography.bodyMd.copyWith(color: Colors.white),
+            ),
+          ));
+        return;
+      }
+      // Only update local state on success.
+      final list = ref.read(historyProvider);
+      ref.read(historyProvider.notifier).state = [
+        for (final o in list)
+          if (o.id == order.id)
+            HistoryOrder(
+              id: o.id, tableId: o.tableId, time: o.time,
+              itemCount: o.itemCount, total: o.total,
+              status: OrderStatus.cancelled,
+              lines: o.lines, notes: o.notes,
+            )
+          else o,
+      ];
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: AppColors.danger,
+          content: Text('Order ${order.id} cancelled',
+            style: AppTypography.bodyMd.copyWith(color: Colors.white)),
+        ));
+        context.pop();
+      }
     });
-
-    final list = ref.read(historyProvider);
-    ref.read(historyProvider.notifier).state = [
-      for (final o in list)
-        if (o.id == order.id)
-          HistoryOrder(
-            id: o.id, tableId: o.tableId, time: o.time,
-            itemCount: o.itemCount, total: o.total,
-            status: OrderStatus.cancelled,
-            lines: o.lines, notes: o.notes,
-          )
-        else o,
-    ];
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: AppColors.danger,
-        content: Text('Order ${order.id} cancelled',
-          style: AppTypography.bodyMd.copyWith(color: Colors.white)),
-      ));
-    }
   }
 
   Future<void> _generateBill(HistoryOrder order) async {
     if (_generatingBill) return;
-    setState(() => _generatingBill = true);
+    _generatingBill = true;
+    setState(() {});
     HapticFeedback.heavyImpact();
 
     final socketService = ref.read(socketServiceProvider);
@@ -144,14 +161,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       'order_id': order.id,
     }, onAck: (response) {
       if (!mounted) return;
-      if (response['error'] != null) {
+      if (response['kind'] == 'error') {
         setState(() => _generatingBill = false);
         ScaffoldMessenger.of(context)
           ..clearSnackBars()
           ..showSnackBar(SnackBar(
             backgroundColor: AppColors.danger,
             content: Text(
-              response['error'].toString(),
+              response['message']?.toString() ?? 'Bill generation failed',
               style: AppTypography.bodyMd.copyWith(color: Colors.white),
             ),
           ));
@@ -188,16 +205,19 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     });
 
     // Timeout fallback
-    Future.delayed(const Duration(seconds: 10), () {
-      if (mounted && _generatingBill) {
+    scheduleSocketTimeout(
+      duration: const Duration(seconds: 10),
+      isMounted: () => mounted,
+      isStillWaiting: () => _generatingBill,
+      onTimeout: () {
         setState(() => _generatingBill = false);
         ScaffoldMessenger.of(context)
           ..clearSnackBars()
           ..showSnackBar(const SnackBar(
             content: Text('Bill generation timed out — please retry'),
           ));
-      }
-    });
+      },
+    );
   }
 
   Future<void> _openPayment() async {

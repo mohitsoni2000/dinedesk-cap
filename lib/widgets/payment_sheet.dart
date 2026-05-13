@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
+import '../utils/socket_helpers.dart';
 import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
 
@@ -49,7 +50,7 @@ class _PaymentEntry {
   );
 
   Map<String, dynamic> toMap() => {
-    'mode': mode.name,
+    'payment_mode': mode.name,
     'amount': amount,
     if (reference != null && reference!.isNotEmpty) 'reference': reference,
   };
@@ -112,7 +113,8 @@ class _PaymentSheetState extends ConsumerState<_PaymentSheet> {
 
   Future<void> _pay() async {
     if (_submitting) return;
-    setState(() => _submitting = true);
+    _submitting = true;
+    setState(() {});
     HapticFeedback.heavyImpact();
 
     final flags = ref.read(flagsProvider);
@@ -140,14 +142,14 @@ class _PaymentSheetState extends ConsumerState<_PaymentSheet> {
       'payments': payments,
     }, onAck: (response) {
       if (!mounted) return;
-      if (response['error'] != null) {
+      if (response['kind'] == 'error') {
         setState(() => _submitting = false);
         ScaffoldMessenger.of(context)
           ..clearSnackBars()
           ..showSnackBar(SnackBar(
             backgroundColor: AppColors.danger,
             content: Text(
-              response['error'].toString(),
+              response['message']?.toString() ?? 'Payment failed',
               style: AppTypography.bodyMd.copyWith(color: Colors.white),
             ),
           ));
@@ -157,16 +159,19 @@ class _PaymentSheetState extends ConsumerState<_PaymentSheet> {
     });
 
     // Timeout fallback
-    Future.delayed(const Duration(seconds: 10), () {
-      if (mounted && _submitting) {
+    scheduleSocketTimeout(
+      duration: const Duration(seconds: 10),
+      isMounted: () => mounted,
+      isStillWaiting: () => _submitting,
+      onTimeout: () {
         setState(() => _submitting = false);
         ScaffoldMessenger.of(context)
           ..clearSnackBars()
           ..showSnackBar(const SnackBar(
             content: Text('Payment timed out — please retry'),
           ));
-      }
-    });
+      },
+    );
   }
 
   void _addSplit() {
@@ -220,6 +225,7 @@ class _PaymentSheetState extends ConsumerState<_PaymentSheet> {
     }
 
     return DraggableScrollableSheet(
+      expand: false,
       initialChildSize: 0.65,
       minChildSize: 0.4,
       maxChildSize: 0.92,

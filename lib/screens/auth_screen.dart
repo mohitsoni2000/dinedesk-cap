@@ -15,6 +15,7 @@ import '../theme/tokens.dart';
 import '../widgets/liquid_glass_surface.dart';
 import '../widgets/liquid_mesh_background.dart';
 import '../widgets/help_sheet.dart';
+import '../widgets/pin_pad.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
@@ -40,12 +41,18 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     if (_submitting) return;
     setState(() {
       _error = null;
-      if (key == 'del') {
-        if (_pin.isNotEmpty) _pin.removeLast();
-      } else if (_pin.length < 6) {
+      if (_pin.length < 6) {
         _pin.add(key);
         // Don't auto-submit — let user type 4–6 digits and use Submit key.
       }
+    });
+  }
+
+  void _delete() {
+    if (_submitting) return;
+    setState(() {
+      _error = null;
+      if (_pin.isNotEmpty) _pin.removeLast();
     });
   }
 
@@ -66,7 +73,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       onVerified: (response) {
         if (!mounted) return;
         // Apply initial sync data from the verify response.
-        syncService.applyInitialSync(ref, response);
+        final syncData = response['sync'] as Map<String, dynamic>? ?? response;
+        syncService.applyInitialSync(ref, syncData);
         syncService.registerListeners(ref);
 
         // Set operator info if provided.
@@ -250,9 +258,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     ],
 
                     const Spacer(),
-                    _Pad(
-                      onPress: _press,
+                    PinPad(
+                      onKeyPress: _press,
                       onSubmit: _maybeSubmit,
+                      onDelete: _delete,
                     ),
                     const SizedBox(height: 14),
 
@@ -291,62 +300,3 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 }
 
-class _Pad extends StatelessWidget {
-  final void Function(String) onPress;
-  final VoidCallback? onSubmit;
-  const _Pad({required this.onPress, this.onSubmit});
-
-  static const _keys = [
-    ['1', '2', '3'],
-    ['4', '5', '6'],
-    ['7', '8', '9'],
-    ['submit', '0', 'del'],
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (final row in _keys)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
-              children: [
-                for (final k in row) Expanded(child: _key(k)),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _key(String k) {
-    if (k == 'submit') {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        child: LiquidGlassSurface(
-          borderRadius: const BorderRadius.all(AppRadii.md),
-          variant: LiquidGlassVariant.terra,
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          onTap: onSubmit,
-          child: const Center(
-            child: Icon(Icons.arrow_forward_rounded, color: AppColors.terra600),
-          ),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: LiquidGlassSurface(
-        borderRadius: const BorderRadius.all(AppRadii.md),
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        onTap: () => onPress(k),
-        child: Center(
-          child: k == 'del'
-              ? const Icon(Icons.backspace_outlined, color: AppColors.ink)
-              : Text(k, style: AppTypography.headline),
-        ),
-      ),
-    );
-  }
-}

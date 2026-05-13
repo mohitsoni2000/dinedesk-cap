@@ -51,18 +51,8 @@ class SyncService {
       ref.read(activeOrdersProvider.notifier).state = orders;
 
       // Also add to history
-      final historyOrder = HistoryOrder(
-        id: map['kot_number'] as String? ?? map['order_number'] as String? ?? map['id'] as String? ?? '',
-        tableId: map['table_id'] as String? ?? '',
-        time: _formatTime(map['created_at'] as String?),
-        itemCount: (map['item_count'] as int?) ?? 0,
-        total: (map['total'] as num?)?.toDouble() ?? 0,
-        status: _parseOrderStatus(map['status'] as String?),
-        lines: const [],
-        notes: map['notes'] as String?,
-      );
       ref.read(historyProvider.notifier).state = [
-        historyOrder,
+        _parseHistoryOrder(map),
         ...ref.read(historyProvider),
       ];
 
@@ -120,7 +110,7 @@ class SyncService {
 
   void applyInitialSync(WidgetRef ref, Map<String, dynamic> data) {
     // Restaurant info
-    final restaurant = data['restaurant'];
+    final restaurant = data['restaurant_info'] ?? data['restaurant'];
     if (restaurant is Map) {
       final r = Map<String, dynamic>.from(restaurant);
       ref.read(restaurantProvider.notifier).state = RestaurantInfo(
@@ -132,7 +122,7 @@ class SyncService {
     }
 
     // Feature flags
-    final flags = data['flags'];
+    final flags = data['feature_flags'] ?? data['flags'];
     if (flags is Map) {
       ref.read(flagsProvider.notifier).state =
           FeatureFlags.fromMap(Map<String, dynamic>.from(flags));
@@ -159,7 +149,7 @@ class SyncService {
     }
 
     // Active orders
-    final ordersList = data['orders'];
+    final ordersList = data['active_orders'] ?? data['orders'];
     if (ordersList is List) {
       final orders = ordersList
           .whereType<Map>()
@@ -168,19 +158,8 @@ class SyncService {
       ref.read(activeOrdersProvider.notifier).state = orders;
 
       // Populate history from active orders
-      final historyOrders = orders.map((o) {
-        return HistoryOrder(
-          id: o['kot_number'] as String? ?? o['order_number'] as String? ?? o['id'] as String? ?? '',
-          tableId: o['table_id'] as String? ?? '',
-          time: _formatTime(o['created_at'] as String?),
-          itemCount: (o['item_count'] as int?) ?? 0,
-          total: (o['total'] as num?)?.toDouble() ?? 0,
-          status: _parseOrderStatus(o['status'] as String?),
-          lines: const [],
-          notes: o['notes'] as String?,
-        );
-      }).toList();
-      ref.read(historyProvider.notifier).state = historyOrders;
+      ref.read(historyProvider.notifier).state =
+          orders.map(_parseHistoryOrder).toList();
     }
 
     // Discounts
@@ -227,6 +206,21 @@ class SyncService {
   }
 
   // ─── Parsers ──────────────────────────────────────────────────────────────
+
+  /// Builds a [HistoryOrder] from a raw order map (used in both the
+  /// `order:created` socket listener and `applyInitialSync`).
+  HistoryOrder _parseHistoryOrder(Map<String, dynamic> o) {
+    return HistoryOrder(
+      id: o['kot_number'] as String? ?? o['order_number'] as String? ?? o['id'] as String? ?? '',
+      tableId: o['table_id'] as String? ?? '',
+      time: _formatTime(o['created_at'] as String?),
+      itemCount: (o['item_count'] as int?) ?? 0,
+      total: (o['total'] as num?)?.toDouble() ?? 0,
+      status: _parseOrderStatus(o['status'] as String?),
+      lines: const [],
+      notes: o['notes'] as String?,
+    );
+  }
 
   RestaurantTable? _parseTable(Map<String, dynamic> m, String? currentOperatorId) {
     final id = m['id']?.toString() ?? m['table_id']?.toString();

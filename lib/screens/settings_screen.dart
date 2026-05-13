@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -71,63 +72,66 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // Demo helpers — for testing the connection states.
-                  Text('DEMO',
-                      style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
-                  const SizedBox(height: 8),
-                  AppCard(
-                    padding: EdgeInsets.zero,
-                    child: Column(children: [
-                      SwitchListTile(
-                        value: !conn.online,
-                        activeThumbColor: AppColors.terra500,
-                        title: const Text('Simulate offline',
-                            style: AppTypography.bodyMd),
-                        subtitle: Text(
-                          conn.online
-                              ? 'Tap to drop the WS connection'
-                              : 'Banner countdown active · 2:00 → /disconnected',
-                          style: AppTypography.caption,
+                  if (kDebugMode) ...[
+                    // Debug helpers — for testing connection states during development.
+                    Text('DEBUG',
+                        style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
+                    const SizedBox(height: 8),
+                    AppCard(
+                      padding: EdgeInsets.zero,
+                      child: Column(children: [
+                        SwitchListTile(
+                          value: !conn.online,
+                          activeThumbColor: AppColors.terra500,
+                          title: const Text('Simulate offline',
+                              style: AppTypography.bodyMd),
+                          subtitle: Text(
+                            conn.online
+                                ? 'Tap to drop the WS connection'
+                                : 'Banner countdown active · 2:00 → /disconnected',
+                            style: AppTypography.caption,
+                          ),
+                          onChanged: (v) {
+                            final restaurant = ref.read(restaurantProvider);
+                            ref.read(connectionProvider.notifier).state = v
+                                ? const ConnectionStatus(
+                                    online: false,
+                                    label: 'Last sync 12s ago',
+                                    secondsRemaining: 120)
+                                : ConnectionStatus(
+                                    online: true,
+                                    label: 'Connected · ${restaurant?.name ?? 'Restaurant'}');
+                          },
                         ),
-                        onChanged: (v) {
-                          ref.read(connectionProvider.notifier).state = v
-                              ? const ConnectionStatus(
-                                  online: false,
-                                  label: 'Last sync 12s ago',
-                                  secondsRemaining: 120)
-                              : const ConnectionStatus(
-                                  online: true,
-                                  label: 'Connected · Spice Garden');
-                        },
-                      ),
-                      const Divider(height: 1, color: AppColors.ink10),
-                      ListTile(
-                        leading: const Icon(Icons.wifi_off_rounded,
-                            color: AppColors.warn),
-                        title: Text('Disconnected screen',
-                            style: AppTypography.bodyMd
-                                .copyWith(color: AppColors.warn)),
-                        subtitle: const Text('Preview the timeout state',
-                            style: AppTypography.caption),
-                        trailing: const Icon(Icons.chevron_right,
-                            color: AppColors.ink30),
-                        onTap: () => context.push('/disconnected'),
-                      ),
-                      const Divider(height: 1, color: AppColors.ink10),
-                      ListTile(
-                        leading: const Icon(Icons.power_off_rounded,
-                            color: AppColors.danger),
-                        title: Text('Force-disconnect screen',
-                            style: AppTypography.bodyMd
-                                .copyWith(color: AppColors.danger)),
-                        subtitle: const Text('Preview the kicked-device blocker',
-                            style: AppTypography.caption),
-                        trailing: const Icon(Icons.chevron_right,
-                            color: AppColors.ink30),
-                        onTap: () => context.push('/force-disconnected'),
-                      ),
-                    ]),
-                  ),
+                        const Divider(height: 1, color: AppColors.ink10),
+                        ListTile(
+                          leading: const Icon(Icons.wifi_off_rounded,
+                              color: AppColors.warn),
+                          title: Text('Disconnected screen',
+                              style: AppTypography.bodyMd
+                                  .copyWith(color: AppColors.warn)),
+                          subtitle: const Text('Preview the timeout state',
+                              style: AppTypography.caption),
+                          trailing: const Icon(Icons.chevron_right,
+                              color: AppColors.ink30),
+                          onTap: () => context.push('/disconnected'),
+                        ),
+                        const Divider(height: 1, color: AppColors.ink10),
+                        ListTile(
+                          leading: const Icon(Icons.power_off_rounded,
+                              color: AppColors.danger),
+                          title: Text('Force-disconnect screen',
+                              style: AppTypography.bodyMd
+                                  .copyWith(color: AppColors.danger)),
+                          subtitle: const Text('Preview the kicked-device blocker',
+                              style: AppTypography.caption),
+                          trailing: const Icon(Icons.chevron_right,
+                              color: AppColors.ink30),
+                          onTap: () => context.push('/force-disconnected'),
+                        ),
+                      ]),
+                    ),
+                  ],
                 ],
               ),
             ),

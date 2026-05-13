@@ -2,7 +2,7 @@
 //
 // The restaurant name + admin device are shown so the operator can confirm
 // they paired with the right machine. Login mode (mobile vs desktop) is
-// enforced server-side; here we mock-accept any 4-digit PIN.
+// enforced server-side; PIN is verified via socket event.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

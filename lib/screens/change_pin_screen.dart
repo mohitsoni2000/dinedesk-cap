@@ -42,7 +42,7 @@ class _ChangePinScreenState extends State<ChangePinScreen> {
       _error = null;
       switch (_step) {
         case _Step.current:
-          // demo: any 4-digit PIN passes.
+          // TODO: verify current PIN against server before advancing.
           _step = _Step.fresh;
           _input = '';
           break;

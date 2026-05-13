@@ -20,8 +20,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   String _query = '';
   bool _searchOpen = false;
 
-  static const _floors = ['GROUND', 'FIRST', 'GARDEN', 'TAKEAWAY'];
-
   void _onTableTap(RestaurantTable t) async {
     if (t.state == TableState.free) {
       // Free table → ask customer count, then open builder.
@@ -70,6 +68,16 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
     final restaurant = ref.watch(restaurantProvider);
     final restaurantName = restaurant?.name ?? 'Restaurant';
     final activeOps = ref.watch(activeOperatorsProvider);
+
+    // Derive floors from actual table data; fall back to 'GROUND' before data loads.
+    final allFloors = tables.map((t) => t.floor).toSet().toList();
+    final floors = allFloors.isNotEmpty ? allFloors : ['GROUND'];
+    // If the current floor is no longer in the list, snap to the first available.
+    if (!floors.contains(_floor)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _floor = floors.first);
+      });
+    }
 
     final filtered = tables.where((t) {
       if (t.floor != _floor) return false;
@@ -166,7 +174,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _FloorTabs(
               value: _floor,
-              floors: _floors,
+              floors: floors,
               onChange: (v) => setState(() => _floor = v),
             ),
           ),

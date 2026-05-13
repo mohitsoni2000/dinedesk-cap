@@ -88,7 +88,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
     });
   }
 
-  // Demo bypass — tap top-right to simulate a successful scan even without a real QR.
+  // Debug bypass — tap top-right corner to simulate a successful scan without a real QR.
   void _demoScan() {
     if (_processing) return;
     setState(() {
@@ -97,7 +97,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
     });
     HapticFeedback.mediumImpact();
 
-    // Save test pairing info for demo mode.
+    // Save test pairing info for local development.
     SessionService().savePairing(
       const PairingInfo(host: 'localhost', port: 3111, token: 'demo-token'),
     ).then((_) {
@@ -162,7 +162,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
             ),
           ),
 
-          // Top chrome — title, torch, demo bypass.
+          // Top chrome — title, torch, debug bypass (kDebugMode only).
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),

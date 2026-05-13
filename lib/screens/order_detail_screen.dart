@@ -2,8 +2,8 @@
 //
 // Reached from /history/:orderId. Operator can:
 //   • Reprint KOT  (re-emits the print event to the admin desktop)
-//   • Cancel order (only allowed for orders < 5 minutes old; here always shown
-//                    for demo, but disabled for already-cancelled orders)
+//   • Cancel order (only allowed for orders < 5 minutes old;
+//                    disabled for already-cancelled orders)
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

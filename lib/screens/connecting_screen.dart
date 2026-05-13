@@ -2,7 +2,7 @@
 //
 // Cycles through stages: finding restaurant → verifying device → almost there.
 // On completion advances to /auth for username + PIN. The actual handshake
-// (mDNS resolve + WS open + JWT pair) is mocked here for UI demo.
+// (Socket.IO connect + JWT pair) is driven by SocketService.
 
 import 'dart:async';
 

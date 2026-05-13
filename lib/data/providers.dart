@@ -370,7 +370,7 @@ final isAuthenticatedProvider = StateProvider<bool>((_) => false);
 
 // ─────────────── KOT numbering ───────────────
 
-int _kotCounter = 4127; // continues after fixture history
+int _kotCounter = 0;
 String generateKotId() => 'K-${++_kotCounter}';
 
 final lastKotIdProvider = StateProvider<String>((_) => '');

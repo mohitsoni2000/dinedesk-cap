@@ -50,14 +50,14 @@ class _HelpSheet extends StatelessWidget {
                 controller: scroll,
                 padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.lg, vertical: 8),
-                children: [
-                  const Text('Help', style: AppTypography.displayMd),
-                  const SizedBox(height: 4),
-                  const Text('Pair, sign in, and troubleshoot',
+                children: const [
+                  Text('Help', style: AppTypography.displayMd),
+                  SizedBox(height: 4),
+                  Text('Pair, sign in, and troubleshoot',
                     style: AppTypography.caption),
-                  const SizedBox(height: 24),
+                  SizedBox(height: 24),
 
-                  const _Section(
+                  _Section(
                     title: 'How to pair this device',
                     children: [
                       _Step(num: 1, label:
@@ -70,9 +70,9 @@ class _HelpSheet extends StatelessWidget {
                         'Enter your username and PIN — given to you by your manager.'),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
 
-                  const _Section(
+                  _Section(
                     title: 'QR not working?',
                     children: [
                       _Tip(label:
@@ -85,9 +85,9 @@ class _HelpSheet extends StatelessWidget {
                         'If you still can\'t connect, ensure both devices are on the same WiFi.'),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
 
-                  const _Section(
+                  _Section(
                     title: 'Forgot your PIN?',
                     children: [
                       _Tip(label:
@@ -96,21 +96,14 @@ class _HelpSheet extends StatelessWidget {
                         'You\'ll be prompted to set a new PIN on the next sign-in.'),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: 24),
 
-                  Text('CONTACT SUPPORT',
-                    style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
-                  const SizedBox(height: 8),
-                  const _ContactRow(
-                    icon: Icons.phone_outlined,
-                    label: '+91 98100 00000',
+                  SizedBox(height: 8),
+                  _ContactRow(
+                    icon: Icons.admin_panel_settings_outlined,
+                    label: 'Contact your restaurant admin for support.',
                   ),
-                  const SizedBox(height: 8),
-                  const _ContactRow(
-                    icon: Icons.mail_outline,
-                    label: 'support@restroapp.in',
-                  ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: 24),
                 ],
               ),
             ),

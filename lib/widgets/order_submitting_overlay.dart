@@ -1,15 +1,32 @@
 // Order Submitting Overlay — shown during the in-flight order.create round trip.
 //
-// Mocks 1.6s of "Sending to kitchen..." then resolves; in production this
-// listens for order.confirmed / order.rejected from the WS connection.
+// The caller provides a [Completer<bool>] which is resolved when the server
+// acknowledges (true) or rejects (false) the order. A safety timeout of 15s
+// prevents the overlay from staying on-screen indefinitely.
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
 import 'liquid_glass_surface.dart';
 
 class OrderSubmittingOverlay {
-  static Future<bool> show(BuildContext context) async {
-    return await showGeneralDialog<bool>(
+  /// Shows the overlay and returns when the [completer] resolves or the safety
+  /// timeout (15 s) fires. Returns `true` on success, `false` on error/timeout.
+  static Future<bool> show(
+    BuildContext context, {
+    required Completer<bool> completer,
+  }) async {
+    // Capture navigator before any async gap to satisfy use_build_context_synchronously.
+    final nav = Navigator.of(context, rootNavigator: true);
+
+    // Safety timeout — auto-dismiss after 15 s so the UI never locks up.
+    final timer = Timer(const Duration(seconds: 15), () {
+      if (!completer.isCompleted) completer.complete(false);
+    });
+
+    // Wait for the external signal in parallel with showing the dialog.
+    final dialogFuture = showGeneralDialog<bool>(
       context: context,
       barrierDismissible: false,
       barrierColor: Colors.black.withValues(alpha: 0.45),
@@ -17,7 +34,15 @@ class OrderSubmittingOverlay {
       pageBuilder: (_, __, ___) => const _Overlay(),
       transitionBuilder: (_, anim, __, child) =>
           FadeTransition(opacity: anim, child: child),
-    ) ?? false;
+    );
+
+    // When the completer resolves, pop the dialog.
+    completer.future.then((ok) {
+      timer.cancel();
+      if (nav.canPop()) nav.pop(ok);
+    });
+
+    return await dialogFuture ?? false;
   }
 }
 
@@ -33,16 +58,6 @@ class _OverlayState extends State<_Overlay>
     vsync: this,
     duration: const Duration(seconds: 1),
   )..repeat();
-
-  @override
-  void initState() {
-    super.initState();
-    Future.delayed(const Duration(milliseconds: 1600), () {
-      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
-        Navigator.of(context).pop(true);
-      }
-    });
-  }
 
   @override
   void dispose() { _spin.dispose(); super.dispose(); }
@@ -75,7 +90,7 @@ class _OverlayState extends State<_Overlay>
               ),
             ),
             const SizedBox(height: 20),
-            const Text('Sending to kitchen…', style: AppTypography.title),
+            const Text('Sending to kitchen\u2026', style: AppTypography.title),
             const SizedBox(height: 6),
             const Text('Printing KOTs',
               style: AppTypography.caption),

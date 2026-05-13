@@ -339,7 +339,7 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
 
 final operatorProvider = StateProvider<Operator?>((_) => null);
 
-final operatorStatsProvider = Provider<OperatorStats>(
+final operatorStatsProvider = StateProvider<OperatorStats>(
   (_) => const OperatorStats(ordersToday: 0, tablesServed: 0, itemsSold: 0),
 );
 

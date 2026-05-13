@@ -39,18 +39,16 @@ class OrderDetailScreen extends ConsumerWidget {
     _           => Icons.restaurant_menu,
   };
 
-  void _reprintKot(BuildContext context) {
+  void _reprintKot(BuildContext context, WidgetRef ref) {
     HapticFeedback.mediumImpact();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      backgroundColor: AppColors.ink,
-      content: Row(children: [
-        const Icon(Icons.print_outlined, color: Colors.white, size: 18),
-        const SizedBox(width: 10),
-        Text('Reprint queued · admin desktop',
-          style: AppTypography.bodyMd.copyWith(color: Colors.white)),
-      ]),
-      duration: const Duration(seconds: 2),
-    ));
+    final socketService = ref.read(socketServiceProvider);
+    socketService.emit('print:kot', {'order_id': orderId});
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(const SnackBar(
+        content: Text('Reprint queued · admin desktop'),
+        duration: Duration(seconds: 2),
+      ));
   }
 
   Future<void> _confirmCancel(
@@ -79,6 +77,14 @@ class OrderDetailScreen extends ConsumerWidget {
     if (ok != true) return;
 
     HapticFeedback.heavyImpact();
+
+    // Emit cancel to server so the kitchen is notified.
+    final socketService = ref.read(socketServiceProvider);
+    socketService.emit('order:cancel', {
+      'order_id': order.id,
+      'reason': 'Cancelled by waiter',
+    });
+
     final list = ref.read(historyProvider);
     ref.read(historyProvider.notifier).state = [
       for (final o in list)
@@ -309,7 +315,7 @@ class OrderDetailScreen extends ConsumerWidget {
                     child: LiquidSecondaryButton(
                       label: 'Reprint KOT',
                       leadingIcon: Icons.print_outlined,
-                      onPressed: isCancelled ? null : () => _reprintKot(context),
+                      onPressed: isCancelled ? null : () => _reprintKot(context, ref),
                     ),
                   ),
                   const SizedBox(width: 8),

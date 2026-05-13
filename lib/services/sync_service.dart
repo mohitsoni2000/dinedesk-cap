@@ -65,6 +65,14 @@ class SyncService {
         historyOrder,
         ...ref.read(historyProvider),
       ];
+
+      // Update operator stats on new order.
+      final stats = ref.read(operatorStatsProvider);
+      ref.read(operatorStatsProvider.notifier).state = OperatorStats(
+        ordersToday: stats.ordersToday + 1,
+        tablesServed: stats.tablesServed,
+        itemsSold: stats.itemsSold + ((map['item_count'] as int?) ?? 0),
+      );
     });
 
     _socket.on('order:updated', (data) {

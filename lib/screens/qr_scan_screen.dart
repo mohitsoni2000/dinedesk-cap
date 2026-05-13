@@ -4,6 +4,7 @@
 // successful scan we navigate to /connecting which simulates the WS handshake
 // and then continues to /auth for username + PIN.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -188,8 +189,10 @@ class _QrScanScreenState extends State<QrScanScreen> {
                       setState(() => _torchOn = !_torchOn);
                     },
                   ),
-                  const SizedBox(width: 8),
-                  _GlassIcon(icon: Icons.touch_app_outlined, onTap: _demoScan),
+                  if (kDebugMode) ...[
+                    const SizedBox(width: 8),
+                    _GlassIcon(icon: Icons.touch_app_outlined, onTap: _demoScan),
+                  ],
                 ],
               ),
             ),

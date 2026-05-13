@@ -4,6 +4,8 @@
 // distribution. Adds order-level notes + editable customer count. The "Pay"
 // button has been removed — billing happens on the admin desktop only.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -72,40 +74,54 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final notes = _notes.text;
     final guests = ref.read(orderCustomerCountProvider);
 
-    final ok = await OrderSubmittingOverlay.show(context);
+    // Prepare the completer that the server ack will resolve.
+    final completer = Completer<bool>();
+
+    // Emit order:create via socket BEFORE showing the overlay.
+    final socketService = ref.read(socketServiceProvider);
+    final items = cart.map((l) => {
+      'item_id': l.item.id,
+      'name': l.item.name,
+      'qty': l.qty,
+      'price': l.item.price,
+      'mods': l.mods,
+      'mods_extra': l.modsExtra,
+      'note': l.itemNote,
+      'kitchen_section': l.item.kitchenSection,
+    }).toList();
+
+    socketService.emit('order:create', {
+      'table_id': widget.tableId,
+      'items': items,
+      'notes': notes,
+      'covers': guests,
+    }, onAck: (response) {
+      if (!mounted) return;
+      final kotId = response['kot_id']?.toString() ?? generateKotId();
+      ref.read(lastKotIdProvider.notifier).state = kotId;
+      if (!completer.isCompleted) completer.complete(true);
+    });
+
+    // Show overlay — it stays on screen until the completer resolves (or 15s timeout).
+    final ok = await OrderSubmittingOverlay.show(context, completer: completer);
     if (!mounted) return;
+
     if (ok) {
       _submitted = true;
-
-      // Emit order:create via socket.
-      final socketService = ref.read(socketServiceProvider);
-      final items = cart.map((l) => {
-        'item_id': l.item.id,
-        'name': l.item.name,
-        'qty': l.qty,
-        'price': l.item.price,
-        'mods': l.mods,
-        'mods_extra': l.modsExtra,
-        'note': l.itemNote,
-        'kitchen_section': l.item.kitchenSection,
-      }).toList();
-
-      socketService.emit('order:create', {
-        'table_id': widget.tableId,
-        'items': items,
-        'notes': notes,
-        'covers': guests,
-      }, onAck: (response) {
-        if (!mounted) return;
-        final kotId = response['kot_id']?.toString() ?? generateKotId();
-        ref.read(lastKotIdProvider.notifier).state = kotId;
-      });
-
-      // Optimistically clear cart and navigate — table/bill updates come via socket broadcast.
+      // Clear cart and navigate — table/bill updates come via socket broadcast.
       ref.read(cartProvider.notifier).clear();
       ref.read(orderNotesProvider.notifier).state = '';
       ref.read(orderCustomerCountProvider.notifier).state = 2; // H4 reset
       context.go('/order/${widget.tableId}/success');
+    } else {
+      // Timeout or error — show feedback so operator can retry.
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(const SnackBar(
+            content: Text('Order could not be confirmed — please retry'),
+          ));
+      }
     }
   }
 

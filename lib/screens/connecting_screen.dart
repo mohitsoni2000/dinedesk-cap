@@ -11,6 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
+import '../services/session_service.dart';
+import '../services/socket_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_glass_surface.dart';
@@ -31,6 +33,8 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
   ];
   int _stage = 0;
   Timer? _stageTimer;
+  StreamSubscription<SocketState>? _socketSub;
+  String? _errorMsg;
 
   late final AnimationController _spin = AnimationController(
     vsync: this,
@@ -40,19 +44,45 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
   @override
   void initState() {
     super.initState();
-    _tick();
+    _connectToServer();
   }
 
-  void _tick() {
-    _stageTimer = Timer(const Duration(milliseconds: 900), () {
+  Future<void> _connectToServer() async {
+    final pairing = await SessionService().getSavedPairing();
+    if (!mounted) return;
+
+    if (pairing == null) {
+      context.go('/scan');
+      return;
+    }
+
+    final socketService = ref.read(socketServiceProvider);
+
+    // Listen to socket state changes.
+    _socketSub = socketService.stateStream.listen((state) {
       if (!mounted) return;
-      if (_stage < _stages.length - 1) {
-        setState(() => _stage++);
-        _tick();
-      } else {
+      if (state == SocketState.connected) {
+        // Advance to stage 2 then navigate to /auth.
+        setState(() => _stage = 1);
         _stageTimer = Timer(const Duration(milliseconds: 700), () {
-          if (mounted) context.go('/auth');
+          if (!mounted) return;
+          setState(() => _stage = 2);
+          _stageTimer = Timer(const Duration(milliseconds: 500), () {
+            if (mounted) context.go('/auth');
+          });
         });
+      } else if (state == SocketState.disconnected && _stage > 0) {
+        setState(() => _errorMsg = 'Connection lost — retrying…');
+      }
+    });
+
+    // Start connection.
+    socketService.connect(pairing.host, pairing.port, pairing.token);
+
+    // Advance stage 0 after a short delay for visual feedback.
+    _stageTimer = Timer(const Duration(milliseconds: 600), () {
+      if (mounted && _stage == 0) {
+        // Stage 0 is already visible; socket state listener handles the rest.
       }
     });
   }
@@ -60,6 +90,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
   @override
   void dispose() {
     _stageTimer?.cancel();
+    _socketSub?.cancel();
     _spin.dispose();
     super.dispose();
   }
@@ -67,6 +98,8 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
   @override
   Widget build(BuildContext context) {
     final restaurant = ref.watch(restaurantProvider);
+    final name = restaurant?.name ?? 'Restaurant';
+    final deviceLabel = restaurant?.adminDeviceLabel ?? 'Admin Desktop';
 
     return LiquidMeshBackground(
       child: Scaffold(
@@ -110,14 +143,20 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                     const SizedBox(height: 24),
                     const Text('Connecting to', style: AppTypography.caption),
                     const SizedBox(height: 4),
-                    Text(restaurant.name,
+                    Text(name,
                       style: AppTypography.displayMd, textAlign: TextAlign.center,
                       maxLines: 2, overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 4),
-                    Text(restaurant.adminDeviceLabel,
+                    Text(deviceLabel,
                       style: AppTypography.caption,
                       textAlign: TextAlign.center,
                       maxLines: 1, overflow: TextOverflow.ellipsis),
+                    if (_errorMsg != null) ...[
+                      const SizedBox(height: 8),
+                      Text(_errorMsg!,
+                        style: AppTypography.caption.copyWith(color: AppColors.warn),
+                        textAlign: TextAlign.center),
+                    ],
                     const SizedBox(height: 20),
 
                     // Stage list with animated checkmarks.

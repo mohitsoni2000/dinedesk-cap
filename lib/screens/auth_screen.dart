@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
+import '../services/session_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_glass_surface.dart';
 import '../widgets/liquid_mesh_background.dart';
@@ -49,23 +50,53 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   void _maybeSubmit() {
-    final username = _username.text.trim();
-    if (username.isEmpty) {
-      setState(() => _error = 'Enter your username first');
-      _usernameFocus.requestFocus();
-      return;
-    }
     if (_pin.length < 4) return;
-    setState(() => _submitting = true);
-    HapticFeedback.mediumImpact();
-    // Mock success after a small delay so the dots filled state is visible.
-    Future.delayed(const Duration(milliseconds: 240), () {
-      if (!mounted) return;
-      ref.read(isAuthenticatedProvider.notifier).state = true;
-      context.go('/tables');
-    }).catchError((_) {
-      if (mounted) setState(() => _submitting = false);
+    setState(() {
+      _submitting = true;
+      _error = null;
     });
+    HapticFeedback.mediumImpact();
+
+    final pin = _pin.join();
+    final socketService = ref.read(socketServiceProvider);
+    final syncService = ref.read(syncServiceProvider);
+
+    socketService.verifyPin(
+      pin,
+      onVerified: (response) {
+        if (!mounted) return;
+        // Apply initial sync data from the verify response.
+        syncService.applyInitialSync(ref, response);
+        syncService.registerListeners(ref);
+
+        // Set operator info if provided.
+        final opData = response['operator'];
+        if (opData is Map) {
+          final om = Map<String, dynamic>.from(opData);
+          ref.read(operatorProvider.notifier).state = Operator(
+            name: om['name']?.toString() ?? _username.text.trim(),
+            role: om['role']?.toString() ?? 'Waiter',
+            shift: om['shift']?.toString() ?? 'Day',
+            username: om['username']?.toString() ?? _username.text.trim(),
+          );
+        }
+
+        ref.read(connectionProvider.notifier).state = ConnectionStatus(
+          online: true,
+          label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
+        );
+        ref.read(isAuthenticatedProvider.notifier).state = true;
+        context.go('/tables');
+      },
+      onRejected: (error) {
+        if (!mounted) return;
+        setState(() {
+          _submitting = false;
+          _error = error;
+          _pin.clear();
+        });
+      },
+    );
   }
 
   void _cancelPairing() {
@@ -84,6 +115,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
+              SessionService().clearPairing();
+              ref.read(socketServiceProvider).disconnect();
               context.go('/scan');
             },
             child: const Text('Cancel pairing',
@@ -97,6 +130,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     final restaurant = ref.watch(restaurantProvider);
+    final restaurantName = restaurant?.name ?? 'Restaurant';
+    final deviceLabel = restaurant?.adminDeviceLabel ?? 'Admin Desktop';
 
     return LiquidMeshBackground(
       child: Scaffold(
@@ -132,11 +167,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Paired · ${restaurant.name}',
+                                Text('Paired · $restaurantName',
                                     style: AppTypography.bodyMd
                                         .copyWith(fontWeight: FontWeight.w600),
                                     maxLines: 1, overflow: TextOverflow.ellipsis),
-                                Text(restaurant.adminDeviceLabel,
+                                Text(deviceLabel,
                                     style: AppTypography.caption,
                                     maxLines: 1, overflow: TextOverflow.ellipsis),
                               ],

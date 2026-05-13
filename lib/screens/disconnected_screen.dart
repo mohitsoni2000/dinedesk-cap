@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
+import '../services/session_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_glass_surface.dart';
@@ -82,6 +83,7 @@ class DisconnectedScreen extends StatelessWidget {
                       leadingIcon: Icons.qr_code_scanner,
                       onPressed: () {
                         HapticFeedback.mediumImpact();
+                        SessionService().clearPairing();
                         context.go('/scan');
                       },
                     ),

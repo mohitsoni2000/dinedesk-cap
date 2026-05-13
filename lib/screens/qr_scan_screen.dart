@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../services/session_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_glass_surface.dart';
 import '../widgets/liquid_mesh_background.dart';
@@ -49,12 +50,31 @@ class _QrScanScreenState extends State<QrScanScreen> {
       return;
     }
 
+    // Parse host, port, token from QR URI.
+    final uri = Uri.parse(raw);
+    final host = uri.queryParameters['host'];
+    final portStr = uri.queryParameters['port'];
+    final token = uri.queryParameters['token'];
+
+    if (host == null || portStr == null || token == null) {
+      _showError(_ScanError.invalid);
+      return;
+    }
+
+    final port = int.tryParse(portStr);
+    if (port == null) {
+      _showError(_ScanError.invalid);
+      return;
+    }
+
     setState(() {
       _processing = true;
       _error = null;
     });
     HapticFeedback.mediumImpact();
-    Future.delayed(const Duration(milliseconds: 300), () {
+
+    // Save pairing info then navigate.
+    SessionService().savePairing(PairingInfo(host: host, port: port, token: token)).then((_) {
       if (!mounted) return;
       context.go('/connecting');
     });
@@ -75,7 +95,11 @@ class _QrScanScreenState extends State<QrScanScreen> {
       _error = null;
     });
     HapticFeedback.mediumImpact();
-    Future.delayed(const Duration(milliseconds: 300), () {
+
+    // Save test pairing info for demo mode.
+    SessionService().savePairing(
+      const PairingInfo(host: 'localhost', port: 3111, token: 'demo-token'),
+    ).then((_) {
       if (!mounted) return;
       context.go('/connecting');
     });

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../services/session_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_mesh_background.dart';
 
@@ -19,10 +20,17 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
-    // Goes to QR pairing first; on a real build a stored session token
-    // would skip /scan and jump straight to /auth or /tables.
-    Future.delayed(const Duration(milliseconds: 1800),
-        () { if (mounted) context.go('/scan'); });
+    // Check for stored pairing — skip QR scan if a previous session exists.
+    Future.delayed(const Duration(milliseconds: 1800), () async {
+      if (!mounted) return;
+      final pairing = await SessionService().getSavedPairing();
+      if (!mounted) return;
+      if (pairing != null) {
+        context.go('/connecting'); // Skip QR scan, try reconnect.
+      } else {
+        context.go('/scan');
+      }
+    });
   }
 
   @override

@@ -31,15 +31,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
       ref.read(orderNotesProvider.notifier).state = '';
       ref.read(orderCustomerCountProvider.notifier).state = count;
       ref.read(selectedTableIdProvider.notifier).state = t.id;
-      // Mark table as mine in mock state.
-      final list = ref.read(tablesProvider);
-      ref.read(tablesProvider.notifier).state = [
-        for (final x in list)
-          x.id == t.id
-              ? x.copyWith(
-                  state: TableState.mine, waiterName: 'You', coverCount: count)
-              : x,
-      ];
+      // Table state will be updated via socket broadcast from Desktop.
       if (mounted) context.push('/order/${t.id}');
     } else if (t.state == TableState.mine) {
       // Clear stale cart if switching to a different table (C1 fix).
@@ -74,7 +66,9 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
     final tables = ref.watch(tablesProvider);
     final conn = ref.watch(connectionProvider);
     final op = ref.watch(operatorProvider);
+    final opName = op?.name ?? 'there';
     final restaurant = ref.watch(restaurantProvider);
+    final restaurantName = restaurant?.name ?? 'Restaurant';
     final activeOps = ref.watch(activeOperatorsProvider);
 
     final filtered = tables.where((t) {
@@ -100,9 +94,9 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                     children: [
                       const Text('Tables', style: AppTypography.displayMd),
                       Row(children: [
-                        Text('Hi, ${op.name.split(' ').first} · ',
+                        Text('Hi, ${opName.split(' ').first} · ',
                             style: AppTypography.caption),
-                        Text(restaurant.name,
+                        Text(restaurantName,
                             style: AppTypography.caption
                                 .copyWith(fontWeight: FontWeight.w600)),
                       ]),

@@ -14,6 +14,7 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final conn = ref.watch(connectionProvider);
     final restaurant = ref.watch(restaurantProvider);
+    final restaurantName = restaurant?.name ?? 'Restaurant';
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -60,7 +61,7 @@ class SettingsScreen extends ConsumerWidget {
                             color: AppColors.ink70),
                         title: const Text('About RestroApp',
                             style: AppTypography.bodyMd),
-                        subtitle: Text('v1.0.0 · ${restaurant.name}',
+                        subtitle: Text('v1.0.0 · $restaurantName',
                             style: AppTypography.caption),
                         trailing: const Icon(Icons.chevron_right,
                             color: AppColors.ink30),

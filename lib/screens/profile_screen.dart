@@ -13,8 +13,16 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final op = ref.watch(operatorProvider);
+    final opName = op?.name ?? '';
+    final opUsername = op?.username ?? '';
+    final opRole = op?.role ?? '';
+    final opShift = op?.shift ?? '';
     final stats = ref.watch(operatorStatsProvider);
     final restaurant = ref.watch(restaurantProvider);
+    final restaurantName = restaurant?.name ?? 'Restaurant';
+    final restaurantAddress = restaurant?.address ?? '';
+    final restaurantDevice = restaurant?.adminDeviceLabel ?? '';
+    final restaurantIp = restaurant?.adminIp ?? '';
     final conn = ref.watch(connectionProvider);
 
     return Scaffold(
@@ -40,7 +48,7 @@ class ProfileScreen extends ConsumerWidget {
                             shape: BoxShape.circle,
                           ),
                           child: Center(
-                            child: Text(op.name.isNotEmpty ? op.name[0].toUpperCase() : '?',
+                            child: Text(opName.isNotEmpty ? opName[0].toUpperCase() : '?',
                               style: AppTypography.headline.copyWith(color: Colors.white)),
                           ),
                         ),
@@ -49,12 +57,12 @@ class ProfileScreen extends ConsumerWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(op.name, style: AppTypography.title),
+                              Text(opName, style: AppTypography.title),
                               const SizedBox(height: 2),
-                              Text('@${op.username} · ${op.role}',
+                              Text('@$opUsername · $opRole',
                                 style: AppTypography.caption),
                               const SizedBox(height: 4),
-                              Text(op.shift,
+                              Text(opShift,
                                 style: AppTypography.caption.copyWith(
                                   color: AppColors.terra600,
                                   fontWeight: FontWeight.w600)),
@@ -112,25 +120,25 @@ class ProfileScreen extends ConsumerWidget {
                             ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(restaurant.name, style: AppTypography.title,
+                              child: Text(restaurantName, style: AppTypography.title,
                                 maxLines: 1, overflow: TextOverflow.ellipsis),
                             ),
                           ],
                         ),
                         const SizedBox(height: 6),
-                        Text(restaurant.address, style: AppTypography.caption),
+                        Text(restaurantAddress, style: AppTypography.caption),
                         const SizedBox(height: 10),
                         const Divider(height: 1, color: AppColors.ink10),
                         const SizedBox(height: 10),
                         _InfoRow(
                           icon: Icons.computer,
                           label: 'Admin device',
-                          value: restaurant.adminDeviceLabel),
+                          value: restaurantDevice),
                         const SizedBox(height: 6),
                         _InfoRow(
                           icon: Icons.wifi,
                           label: 'Network',
-                          value: '${restaurant.adminIp} · LAN'),
+                          value: '$restaurantIp · LAN'),
                       ],
                     ),
                   ),

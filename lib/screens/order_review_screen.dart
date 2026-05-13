@@ -68,25 +68,40 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     HapticFeedback.heavyImpact();
     ref.read(orderNotesProvider.notifier).state = _notes.text;
 
-    // Compute bill delta before clearing the cart.
-    final billDelta = ref.read(cartProvider.notifier).total;
-    final kotId = generateKotId();
+    final cart = ref.read(cartProvider);
+    final notes = _notes.text;
+    final guests = ref.read(orderCustomerCountProvider);
 
     final ok = await OrderSubmittingOverlay.show(context);
     if (!mounted) return;
     if (ok) {
       _submitted = true;
 
-      // Update table bill (H3 fix).
-      final tables = ref.read(tablesProvider);
-      ref.read(tablesProvider.notifier).state = [
-        for (final t in tables)
-          if (t.id == widget.tableId)
-            t.copyWith(bill: (t.bill ?? 0) + billDelta)
-          else t,
-      ];
+      // Emit order:create via socket.
+      final socketService = ref.read(socketServiceProvider);
+      final items = cart.map((l) => {
+        'item_id': l.item.id,
+        'name': l.item.name,
+        'qty': l.qty,
+        'price': l.item.price,
+        'mods': l.mods,
+        'mods_extra': l.modsExtra,
+        'note': l.itemNote,
+        'kitchen_section': l.item.kitchenSection,
+      }).toList();
 
-      ref.read(lastKotIdProvider.notifier).state = kotId;
+      socketService.emit('order:create', {
+        'table_id': widget.tableId,
+        'items': items,
+        'notes': notes,
+        'covers': guests,
+      }, onAck: (response) {
+        if (!mounted) return;
+        final kotId = response['kot_id']?.toString() ?? generateKotId();
+        ref.read(lastKotIdProvider.notifier).state = kotId;
+      });
+
+      // Optimistically clear cart and navigate — table/bill updates come via socket broadcast.
       ref.read(cartProvider.notifier).clear();
       ref.read(orderNotesProvider.notifier).state = '';
       ref.read(orderCustomerCountProvider.notifier).state = 2; // H4 reset

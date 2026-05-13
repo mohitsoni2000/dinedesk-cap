@@ -68,7 +68,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   void _reprintKot(BuildContext context) {
     HapticFeedback.mediumImpact();
     final socketService = ref.read(socketServiceProvider);
-    socketService.emit('print:kot', {'order_id': orderId});
+    // Use the server UUID from the order, not the display KOT number.
+    final order = ref.read(historyProvider).where((o) => o.id == orderId).firstOrNull;
+    socketService.emit('print:kot', {'order_id': order?.orderId ?? orderId});
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(const SnackBar(
@@ -110,7 +112,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     // Emit cancel to server so the kitchen is notified.
     final socketService = ref.read(socketServiceProvider);
     socketService.emit('order:cancel', {
-      'order_id': order.id,
+      'order_id': order.orderId,
       'reason': 'Cancelled by waiter',
     }, onAck: (response) {
       if (!mounted) return;
@@ -132,8 +134,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         for (final o in list)
           if (o.id == order.id)
             HistoryOrder(
-              id: o.id, tableId: o.tableId, time: o.time,
-              itemCount: o.itemCount, total: o.total,
+              id: o.id, orderId: o.orderId, tableId: o.tableId,
+              time: o.time, itemCount: o.itemCount, total: o.total,
               status: OrderStatus.cancelled,
               lines: o.lines, notes: o.notes,
             )
@@ -158,7 +160,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
     final socketService = ref.read(socketServiceProvider);
     socketService.emit('bill:generate', {
-      'order_id': order.id,
+      'order_id': order.orderId,
     }, onAck: (response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
@@ -252,7 +254,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   Future<void> _openDiscount(HistoryOrder order) async {
     final result = await DiscountSheet.show(
       context,
-      orderId: order.id,
+      orderId: order.orderId,
       orderTotal: order.total,
     );
     if (result != null && mounted) {

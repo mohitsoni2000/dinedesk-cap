@@ -99,7 +99,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
 
     // Save test pairing info for local development.
     SessionService().savePairing(
-      const PairingInfo(host: 'localhost', port: 3111, token: 'demo-token'),
+      const PairingInfo(host: 'localhost', port: 8080, token: 'demo-token'),
     ).then((_) {
       if (!mounted) return;
       context.go('/connecting');

@@ -254,8 +254,10 @@ class SyncService {
   /// Builds a [HistoryOrder] from a raw order map (used in both the
   /// `order:created` socket listener and `applyInitialSync`).
   HistoryOrder _parseHistoryOrder(Map<String, dynamic> o) {
+    final serverUuid = o['id']?.toString() ?? '';
     return HistoryOrder(
-      id: o['kot_number'] as String? ?? o['order_number'] as String? ?? o['id'] as String? ?? '',
+      id: o['kot_number'] as String? ?? o['order_number'] as String? ?? serverUuid,
+      orderId: serverUuid,
       tableId: o['table_id'] as String? ?? '',
       time: _formatTime(o['created_at'] as String?),
       itemCount: (o['item_count'] as int?) ?? 0,
@@ -271,10 +273,16 @@ class SyncService {
     if (id == null) return null;
 
     final seats = int.tryParse('${m['seats'] ?? m['capacity'] ?? 4}') ?? 4;
-    final floor = m['floor']?.toString().toUpperCase() ?? 'GROUND';
+    final floor = m['floor_name']?.toString().toUpperCase() ??
+        m['floor']?.toString().toUpperCase() ?? 'GROUND';
 
-    final stateRaw = m['state']?.toString() ?? m['status']?.toString() ?? 'free';
-    final createdBy = m['created_by']?.toString() ?? m['operator_id']?.toString();
+    final stateRaw = m['status']?.toString() ?? m['state']?.toString() ?? 'free';
+    // "Mine" detection: `created_by` may be on the table (from a join) or
+    // on the active order. Check both sources — the server sometimes includes
+    // it directly on the table broadcast for convenience.
+    final createdBy = m['created_by']?.toString() ??
+        m['operator_id']?.toString() ??
+        m['active_order_created_by']?.toString();
     final tableState = _parseTableState(stateRaw, createdBy, currentOperatorId);
 
     return RestaurantTable(
@@ -289,19 +297,17 @@ class SyncService {
     );
   }
 
+  /// Maps server status string to client [TableState].
+  /// Server sends: 'free', 'occupied', 'reserved', 'cleaning'.
+  /// 'mine' vs 'other' is derived from the active order's `created_by`.
   TableState _parseTableState(String raw, String? createdBy, String? currentOperatorId) {
     switch (raw.toLowerCase()) {
-      case 'mine':
-        return TableState.mine;
-      case 'other':
-        return TableState.other;
       case 'dirty':
       case 'cleaning':
         return TableState.dirty;
       case 'reserved':
         return TableState.reserved;
       case 'occupied':
-        // Check if this table's active order belongs to the current operator
         if (createdBy != null && currentOperatorId != null && createdBy == currentOperatorId) {
           return TableState.mine;
         }

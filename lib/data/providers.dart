@@ -82,10 +82,30 @@ class MenuItem {
 }
 
 class Modifier {
-  final String id;
+  final String id;               // option_id from server
+  final String groupId;          // option_group_id from server
   final String label;
   final double extraPrice;       // in ₹, can be 0
-  const Modifier({required this.id, required this.label, this.extraPrice = 0});
+  const Modifier({required this.id, this.groupId = '', required this.label, this.extraPrice = 0});
+}
+
+/// Structured option selection for the `order:create` payload.
+class SelectedOption {
+  final String optionGroupId;
+  final String optionId;
+  final String label;            // display label for UI
+  final double price;
+  const SelectedOption({
+    required this.optionGroupId,
+    required this.optionId,
+    required this.label,
+    this.price = 0,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'option_group_id': optionGroupId,
+    'option_id': optionId,
+  };
 }
 
 class CartLine {
@@ -94,7 +114,8 @@ class CartLine {
   final int uid;                 // stable identity for Dismissible keys
   final MenuItem item;
   final int qty;
-  final List<String> mods;
+  final List<String> mods;               // display labels for UI
+  final List<SelectedOption> selectedOptions;  // structured for server payload
   final double modsExtra;        // total extra cost from selected mods
   final String itemNote;
 
@@ -102,6 +123,7 @@ class CartLine {
     required this.item,
     required this.qty,
     this.mods = const [],
+    this.selectedOptions = const [],
     this.modsExtra = 0,
     this.itemNote = '',
   }) : uid = _nextUid++;
@@ -111,6 +133,7 @@ class CartLine {
     required this.item,
     required this.qty,
     required this.mods,
+    required this.selectedOptions,
     required this.modsExtra,
     required this.itemNote,
   });
@@ -120,6 +143,7 @@ class CartLine {
   CartLine copyWith({
     int? qty,
     List<String>? mods,
+    List<SelectedOption>? selectedOptions,
     double? modsExtra,
     String? itemNote,
   }) =>
@@ -128,6 +152,7 @@ class CartLine {
         item: item,
         qty: qty ?? this.qty,
         mods: mods ?? this.mods,
+        selectedOptions: selectedOptions ?? this.selectedOptions,
         modsExtra: modsExtra ?? this.modsExtra,
         itemNote: itemNote ?? this.itemNote,
       );
@@ -182,7 +207,8 @@ class OperatorStats {
 }
 
 class HistoryOrder {
-  final String id;             // KOT number, e.g. "K-4127"
+  final String id;             // Display ID — KOT number e.g. "K-4127"
+  final String orderId;        // Server UUID — used in all socket emits
   final String tableId;
   final String time;           // HH:MM
   final int itemCount;
@@ -192,6 +218,7 @@ class HistoryOrder {
   final String? notes;
   const HistoryOrder({
     required this.id,
+    required this.orderId,
     required this.tableId,
     required this.time,
     required this.itemCount,
@@ -223,9 +250,11 @@ class ActiveOperator {
   const ActiveOperator({required this.name, required this.role});
 }
 
-// ─────────────── Modifier constants (used by item_detail_sheet) ───────────────
+// ─────────────── Modifier defaults ───────────────
+// These are fallback defaults used when the server menu sync hasn't provided
+// option groups yet. In production, modifiers come from the server's
+// `item_option_groups` / `item_options` per menu item.
 
-// Spice level — single-select
 const spiceLevels = <Modifier>[
   Modifier(id: 'sp_mild',   label: 'Mild'),
   Modifier(id: 'sp_med',    label: 'Medium'),
@@ -233,7 +262,6 @@ const spiceLevels = <Modifier>[
   Modifier(id: 'sp_extra',  label: 'Extra Spicy'),
 ];
 
-// Add-ons — multi-select with optional price impact
 const addOns = <Modifier>[
   Modifier(id: 'ad_cheese',  label: 'Extra Cheese',          extraPrice: 60),
   Modifier(id: 'ad_butter',  label: 'Extra Butter',          extraPrice: 30),
@@ -279,6 +307,7 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
     required MenuItem item,
     required int qty,
     required List<String> mods,
+    List<SelectedOption> selectedOptions = const [],
     required double modsExtra,
     required String itemNote,
   }) {
@@ -288,6 +317,7 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
         item: item,
         qty: qty,
         mods: mods,
+        selectedOptions: selectedOptions,
         modsExtra: modsExtra,
         itemNote: itemNote,
       ),

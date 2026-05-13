@@ -37,7 +37,7 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
   void _advance() {
     if (_done || _verifying) return;
     if (_input.length < 4) {
-      setState(() => _error = 'PIN must be 4–6 digits');
+      setState(() => _error = 'PIN must be 4 digits');
       return;
     }
     HapticFeedback.mediumImpact();
@@ -45,7 +45,7 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
       case _Step.current:
         final socketService = ref.read(socketServiceProvider);
         setState(() => _verifying = true);
-        socketService.emit('operator:verify', {'pin': _input}, onAck: (response) {
+        socketService.emit('operator:verify_pin', {'pin': _input}, onAck: (response) {
           if (!mounted) return;
           if (response['kind'] == 'success') {
             setState(() {
@@ -78,12 +78,31 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
             _step = _Step.fresh;
           });
         } else {
-          setState(() {
-            _done = true;
-            _error = null;
+          // Persist the new PIN on the server.
+          setState(() => _verifying = true);
+          final socketService = ref.read(socketServiceProvider);
+          socketService.emit('operator:change_pin', {
+            'current_pin': _input, // re-confirm current was already verified in step 1
+            'new_pin': _newPin,
+          }, onAck: (response) {
+            if (!mounted) return;
+            if (response['kind'] == 'error') {
+              setState(() {
+                _verifying = false;
+                _error = response['message']?.toString() ?? 'Failed to update PIN';
+                _step = _Step.fresh;
+                _input = '';
+              });
+            } else {
+              setState(() {
+                _done = true;
+                _verifying = false;
+                _error = null;
+              });
+              HapticFeedback.heavyImpact();
+              _showSuccessAndExit();
+            }
           });
-          HapticFeedback.heavyImpact();
-          _showSuccessAndExit();
         }
         break;
     }
@@ -155,7 +174,7 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(6, (i) {
+                      children: List.generate(4, (i) {
                         final filled = i < _input.length;
                         return Container(
                           margin: const EdgeInsets.symmetric(horizontal: 6),
@@ -187,9 +206,9 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
               value: _input,
               onChanged: (v) {
                 if (_verifying) return;
-                if (v.length > 6) return;
+                if (v.length > 4) return;
                 setState(() { _input = v; _error = null; });
-                if (v.length == 6) _advance();
+                if (v.length == 4) _advance();
               },
               onSubmit: _advance,
               submitLabel: 'Continue',

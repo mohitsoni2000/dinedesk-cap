@@ -1,7 +1,7 @@
 // Connecting Screen — shown after QR scan during the pairing handshake.
 //
 // Cycles through stages: finding restaurant → verifying device → almost there.
-// On completion advances to /auth for username + PIN. The actual handshake
+// On completion advances to /auth for PIN verification. The actual handshake
 // (Socket.IO connect + JWT pair) is driven by SocketService.
 
 import 'dart:async';

@@ -56,7 +56,7 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
     if (_submitting) return;
     setState(() {
       _error = null;
-      if (_pin.length < 6) {
+      if (_pin.length < 4) {
         _pin.add(key);
       }
     });
@@ -143,7 +143,7 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
           // PIN dots.
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(6, (i) {
+            children: List.generate(4, (i) {
               final filled = i < _pin.length;
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
@@ -162,7 +162,7 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
             }),
           ),
           const SizedBox(height: 6),
-          Text('4\u20136 digit PIN',
+          Text('4-digit PIN',
               style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
 
           if (_error != null) ...[

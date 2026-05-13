@@ -89,8 +89,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final items = cart.map((l) => {
       'item_id': l.item.id,
       'quantity': l.qty,
-      'selected_options': l.mods.isNotEmpty ? l.mods.join(', ') : '',
-      'options_price': l.modsExtra,
+      'selected_options': l.selectedOptions,
       'notes': l.itemNote,
     }).toList();
 
@@ -99,6 +98,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       'items': items,
       'notes': notes,
       'covers': guests,
+      'order_type': 'dine_in',
       if (_customer != null && _customer!['id'] != null)
         'customer_id': _customer!['id'],
     }, onAck: (response) {

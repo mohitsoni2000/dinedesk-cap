@@ -46,7 +46,9 @@ class SyncService {
     });
 
     _socket.on('order:created', (data) {
-      final map = Map<String, dynamic>.from(data as Map);
+      final d = Map<String, dynamic>.from(data as Map);
+      final orderData = d['order'] as Map? ?? d;  // unwrap if nested
+      final map = Map<String, dynamic>.from(orderData);
       final orders = [...ref.read(activeOrdersProvider), map];
       ref.read(activeOrdersProvider.notifier).state = orders;
 
@@ -55,6 +57,18 @@ class SyncService {
         _parseHistoryOrder(map),
         ...ref.read(historyProvider),
       ];
+
+      // Update table state if tables data is included in the broadcast.
+      final tablesData = d['tables'];
+      if (tablesData is List) {
+        final currentOperatorId = ref.read(operatorProvider)?.username;
+        final tables = tablesData
+            .whereType<Map>()
+            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId))
+            .whereType<RestaurantTable>()
+            .toList();
+        ref.read(tablesProvider.notifier).state = tables;
+      }
 
       // Update operator stats on new order.
       final stats = ref.read(operatorStatsProvider);
@@ -66,7 +80,9 @@ class SyncService {
     });
 
     _socket.on('order:updated', (data) {
-      final map = Map<String, dynamic>.from(data as Map);
+      final d = Map<String, dynamic>.from(data as Map);
+      final orderData = d['order'] as Map? ?? d;  // unwrap if nested
+      final map = Map<String, dynamic>.from(orderData);
       final orderId = map['id']?.toString();
       if (orderId == null) return;
       final orders = [
@@ -74,16 +90,44 @@ class SyncService {
           if (o['id']?.toString() == orderId) map else o,
       ];
       ref.read(activeOrdersProvider.notifier).state = orders;
+
+      // Update table state if tables data is included in the broadcast.
+      final tablesData = d['tables'];
+      if (tablesData is List) {
+        final currentOperatorId = ref.read(operatorProvider)?.username;
+        final tables = tablesData
+            .whereType<Map>()
+            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId))
+            .whereType<RestaurantTable>()
+            .toList();
+        ref.read(tablesProvider.notifier).state = tables;
+      }
     });
 
     _socket.on('order:cancelled', (data) {
-      final map = Map<String, dynamic>.from(data as Map);
-      final orderId = map['id']?.toString();
+      final d = Map<String, dynamic>.from(data as Map);
+      // Unwrap: check d['order_id'] first, then d['order']?['id'], then d['id']
+      final orderData = d['order'] as Map?;
+      final orderId = d['order_id']?.toString() ??
+          (orderData != null ? orderData['id']?.toString() : null) ??
+          d['id']?.toString();
       if (orderId == null) return;
       final orders = ref.read(activeOrdersProvider)
           .where((o) => o['id']?.toString() != orderId)
           .toList();
       ref.read(activeOrdersProvider.notifier).state = orders;
+
+      // Update table state if tables data is included in the broadcast.
+      final tablesData = d['tables'];
+      if (tablesData is List) {
+        final currentOperatorId = ref.read(operatorProvider)?.username;
+        final tables = tablesData
+            .whereType<Map>()
+            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId))
+            .whereType<RestaurantTable>()
+            .toList();
+        ref.read(tablesProvider.notifier).state = tables;
+      }
     });
 
     _socket.on('flags:updated', (data) {
@@ -114,7 +158,7 @@ class SyncService {
     if (restaurant is Map) {
       final r = Map<String, dynamic>.from(restaurant);
       ref.read(restaurantProvider.notifier).state = RestaurantInfo(
-        name: r['name']?.toString() ?? '',
+        name: r['restaurant_name']?.toString() ?? r['name']?.toString() ?? 'Restaurant',
         address: r['address']?.toString() ?? '',
         adminDeviceLabel: r['device_label']?.toString() ?? '',
         adminIp: r['ip']?.toString() ?? '',
@@ -185,7 +229,7 @@ class SyncService {
 
     // Mark connected
     final restaurantName = (restaurant is Map)
-        ? restaurant['name']?.toString() ?? 'POS'
+        ? restaurant['restaurant_name']?.toString() ?? restaurant['name']?.toString() ?? 'POS'
         : 'POS';
     ref.read(connectionProvider.notifier).state =
         ConnectionStatus(online: true, label: 'Connected · $restaurantName');

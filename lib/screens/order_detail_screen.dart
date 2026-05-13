@@ -173,21 +173,31 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             ),
           ));
       } else {
+        final bills = response['bills'] as List<dynamic>?;
+        final bill = (bills != null && bills.isNotEmpty)
+            ? Map<String, dynamic>.from(bills[0] as Map)
+            : null;
         setState(() {
           _generatingBill = false;
           _billGenerated = true;
-          _billId = response['bill_id']?.toString() ??
+          _billId = bill?['id']?.toString() ??
+              response['bill_id']?.toString() ??
               response['id']?.toString();
-          _billNumber = response['bill_number']?.toString() ??
+          _billNumber = bill?['bill_number']?.toString() ??
+              response['bill_number']?.toString() ??
               response['number']?.toString();
-          _billTotal = (response['total'] as num?)?.toDouble() ??
+          _billTotal = (bill?['total_amount'] as num?)?.toDouble() ??
+              (response['total'] as num?)?.toDouble() ??
               (response['grand_total'] as num?)?.toDouble() ??
               order.total;
-          _billGst = (response['gst'] as num?)?.toDouble() ??
+          _billGst = (bill?['total_gst'] as num?)?.toDouble() ??
+              (response['gst'] as num?)?.toDouble() ??
               (response['tax'] as num?)?.toDouble();
           _billServiceCharge =
+              (bill?['service_charge'] as num?)?.toDouble() ??
               (response['service_charge'] as num?)?.toDouble();
           _discountAmount =
+              (bill?['discount_amount'] as num?)?.toDouble() ??
               (response['discount'] as num?)?.toDouble() ??
               (response['discount_amount'] as num?)?.toDouble();
           _discountLabel = response['discount_label']?.toString();

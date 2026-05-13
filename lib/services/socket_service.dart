@@ -39,11 +39,11 @@ class SocketService {
   }) {
     _socket?.emitWithAckAsync('operator:verify', {'pin': pin}).then((res) {
       final response = Map<String, dynamic>.from(res as Map);
-      if (response['kind'] == 'verified') {
+      if (response['kind'] == 'success') {
         _setState(SocketState.verified);
         onVerified(response);
       } else {
-        onRejected(response['error']?.toString() ?? 'Invalid PIN');
+        onRejected(response['message']?.toString() ?? 'Invalid PIN');
       }
     }).catchError((err) {
       onRejected('Connection error');
@@ -54,6 +54,8 @@ class SocketService {
     if (onAck != null) {
       _socket?.emitWithAckAsync(event, data).then((res) {
         onAck(Map<String, dynamic>.from(res as Map));
+      }).catchError((err) {
+        onAck({'kind': 'error', 'message': 'Connection lost'});
       });
     } else {
       _socket?.emit(event, data);

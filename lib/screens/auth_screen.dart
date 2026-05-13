@@ -75,6 +75,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         // Apply initial sync data from the verify response.
         final syncData = response['sync'] as Map<String, dynamic>? ?? response;
         syncService.applyInitialSync(ref, syncData);
+        syncService.unregisterListeners();
         syncService.registerListeners(ref);
 
         // Set operator info if provided.
@@ -85,7 +86,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             name: om['name']?.toString() ?? _username.text.trim(),
             role: om['role']?.toString() ?? 'Waiter',
             shift: om['shift']?.toString() ?? 'Day',
-            username: om['username']?.toString() ?? _username.text.trim(),
+            username: om['id']?.toString() ?? om['username']?.toString() ?? _username.text.trim(),
           );
         }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
+import '../services/session_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/liquid_chrome.dart';
@@ -172,12 +173,15 @@ class ProfileScreen extends ConsumerWidget {
                     leadingIcon: Icons.logout,
                     onPressed: () {
                       // Clear all session state before sign-out (C5 fix).
+                      ref.read(syncServiceProvider).unregisterListeners();
+                      ref.read(socketServiceProvider).disconnect();
+                      SessionService().clearPairing();
                       ref.read(cartProvider.notifier).clear();
                       ref.read(orderNotesProvider.notifier).state = '';
                       ref.read(orderCustomerCountProvider.notifier).state = 2;
                       ref.read(selectedTableIdProvider.notifier).state = null;
                       ref.read(isAuthenticatedProvider.notifier).state = false;
-                      context.go('/auth');
+                      context.go('/scan');
                     },
                   ),
                   const SizedBox(height: 16),

@@ -52,7 +52,7 @@ class _PaymentEntry {
   Map<String, dynamic> toMap() => {
     'payment_mode': mode.name,
     'amount': amount,
-    if (reference != null && reference!.isNotEmpty) 'reference': reference,
+    if (reference != null && reference!.isNotEmpty) 'reference_number': reference,
   };
 }
 

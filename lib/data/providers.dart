@@ -1,10 +1,13 @@
-// Mock data + Riverpod providers.
+// Riverpod providers for DineDesk Cap (waiter) app.
 //
 // Indian restaurant POS context — ₹ currency, Indian dishes, kitchen-section
-// based KOT routing, veg/non-veg flags. Replace fixtures with real WS-backed
-// repositories when wiring the live admin connection.
+// based KOT routing, veg/non-veg flags. Data is populated via Socket.IO sync
+// from the Desktop Electron POS (see sync_service.dart).
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/feature_flags.dart';
+import '../services/socket_service.dart';
+import '../services/sync_service.dart';
 
 // ─────────────── Models ───────────────
 
@@ -220,58 +223,9 @@ class ActiveOperator {
   const ActiveOperator({required this.name, required this.role});
 }
 
-// ─────────────── Mock fixtures ───────────────
+// ─────────────── Modifier constants (used by item_detail_sheet) ───────────────
 
-const _tablesFixture = <RestaurantTable>[
-  RestaurantTable(id: 'T-01', seats: 2, floor: 'GROUND',   state: TableState.mine,     waiterName: 'You',     coverCount: 2, bill: 480.00),
-  RestaurantTable(id: 'T-02', seats: 4, floor: 'GROUND',   state: TableState.mine,     waiterName: 'You',     coverCount: 4, bill: 1420.00),
-  RestaurantTable(id: 'T-03', seats: 4, floor: 'GROUND',   state: TableState.other,    waiterName: 'Priya'),
-  RestaurantTable(id: 'T-04', seats: 6, floor: 'GROUND',   state: TableState.dirty),
-  RestaurantTable(id: 'T-05', seats: 2, floor: 'FIRST',    state: TableState.free),
-  RestaurantTable(id: 'T-06', seats: 4, floor: 'FIRST',    state: TableState.reserved, note: '8:30 Sharma'),
-  RestaurantTable(id: 'T-07', seats: 8, floor: 'FIRST',    state: TableState.mine,     waiterName: 'You',     coverCount: 7, bill: 3180.00),
-  RestaurantTable(id: 'T-08', seats: 4, floor: 'GARDEN',   state: TableState.free),
-  RestaurantTable(id: 'T-09', seats: 2, floor: 'GARDEN',   state: TableState.other,    waiterName: 'Karan'),
-  RestaurantTable(id: 'T-10', seats: 4, floor: 'GARDEN',   state: TableState.dirty),
-  RestaurantTable(id: 'T-11', seats: 6, floor: 'TAKEAWAY', state: TableState.free),
-  RestaurantTable(id: 'T-12', seats: 4, floor: 'TAKEAWAY', state: TableState.reserved, note: '9:00 Khan'),
-];
-
-const _menuFixture = <MenuItem>[
-  // Tandoor
-  MenuItem(id: 'm01', name: 'Paneer Tikka',           section: 'Tandoor',   kitchenSection: 'tandoor',   price: 320, isVeg: true),
-  MenuItem(id: 'm02', name: 'Chicken Tikka',          section: 'Tandoor',   kitchenSection: 'tandoor',   price: 380, isVeg: false),
-  MenuItem(id: 'm03', name: 'Tandoori Chicken (H)',   section: 'Tandoor',   kitchenSection: 'tandoor',   price: 420, isVeg: false),
-  MenuItem(id: 'm04', name: 'Seekh Kebab',            section: 'Tandoor',   kitchenSection: 'tandoor',   price: 360, isVeg: false),
-  // Main course
-  MenuItem(id: 'm05', name: 'Butter Chicken',         section: 'Main',      kitchenSection: 'curry',     price: 440, isVeg: false),
-  MenuItem(id: 'm06', name: 'Paneer Butter Masala',   section: 'Main',      kitchenSection: 'curry',     price: 360, isVeg: true),
-  MenuItem(id: 'm07', name: 'Dal Makhani',            section: 'Main',      kitchenSection: 'curry',     price: 280, isVeg: true),
-  MenuItem(id: 'm08', name: 'Kadhai Paneer',          section: 'Main',      kitchenSection: 'curry',     price: 340, isVeg: true),
-  MenuItem(id: 'm09', name: 'Hyderabadi Biryani',     section: 'Biryani',   kitchenSection: 'curry',     price: 380, isVeg: false),
-  MenuItem(id: 'm10', name: 'Veg Biryani',            section: 'Biryani',   kitchenSection: 'curry',     price: 280, isVeg: true, available: false),
-  // Breads
-  MenuItem(id: 'm11', name: 'Garlic Naan',            section: 'Breads',    kitchenSection: 'tandoor',   price: 80,  isVeg: true),
-  MenuItem(id: 'm12', name: 'Butter Naan',            section: 'Breads',    kitchenSection: 'tandoor',   price: 70,  isVeg: true),
-  MenuItem(id: 'm13', name: 'Tandoori Roti',          section: 'Breads',    kitchenSection: 'tandoor',   price: 40,  isVeg: true),
-  // South
-  MenuItem(id: 'm14', name: 'Masala Dosa',            section: 'South',     kitchenSection: 'south',     price: 220, isVeg: true),
-  MenuItem(id: 'm15', name: 'Idli Sambar',            section: 'South',     kitchenSection: 'south',     price: 160, isVeg: true),
-  // Chinese
-  MenuItem(id: 'm16', name: 'Veg Hakka Noodles',      section: 'Chinese',   kitchenSection: 'chinese',   price: 240, isVeg: true),
-  MenuItem(id: 'm17', name: 'Chilli Chicken',         section: 'Chinese',   kitchenSection: 'chinese',   price: 320, isVeg: false),
-  MenuItem(id: 'm18', name: 'Schezwan Fried Rice',    section: 'Chinese',   kitchenSection: 'chinese',   price: 260, isVeg: true),
-  // Beverages
-  MenuItem(id: 'm19', name: 'Masala Chai',            section: 'Beverages', kitchenSection: 'beverages', price: 60,  isVeg: true),
-  MenuItem(id: 'm20', name: 'Sweet Lassi',            section: 'Beverages', kitchenSection: 'beverages', price: 120, isVeg: true),
-  MenuItem(id: 'm21', name: 'Fresh Lime Soda',        section: 'Beverages', kitchenSection: 'beverages', price: 90,  isVeg: true),
-  MenuItem(id: 'm22', name: 'Cold Coffee',            section: 'Beverages', kitchenSection: 'beverages', price: 140, isVeg: true),
-  // Desserts
-  MenuItem(id: 'm23', name: 'Gulab Jamun (2 pc)',     section: 'Desserts',  kitchenSection: 'beverages', price: 100, isVeg: true),
-  MenuItem(id: 'm24', name: 'Rasmalai',               section: 'Desserts',  kitchenSection: 'beverages', price: 130, isVeg: true),
-];
-
-// Modifiers — grouped: spice level (single-select) + add-ons (multi-select with prices)
+// Spice level — single-select
 const spiceLevels = <Modifier>[
   Modifier(id: 'sp_mild',   label: 'Mild'),
   Modifier(id: 'sp_med',    label: 'Medium'),
@@ -279,80 +233,20 @@ const spiceLevels = <Modifier>[
   Modifier(id: 'sp_extra',  label: 'Extra Spicy'),
 ];
 
+// Add-ons — multi-select with optional price impact
 const addOns = <Modifier>[
-  Modifier(id: 'ad_cheese',  label: 'Extra Cheese',     extraPrice: 60),
-  Modifier(id: 'ad_butter',  label: 'Extra Butter',     extraPrice: 30),
+  Modifier(id: 'ad_cheese',  label: 'Extra Cheese',          extraPrice: 60),
+  Modifier(id: 'ad_butter',  label: 'Extra Butter',          extraPrice: 30),
   Modifier(id: 'ad_onion',   label: 'No Onion'),
   Modifier(id: 'ad_garlic',  label: 'No Garlic'),
   Modifier(id: 'ad_jain',    label: 'Jain (no onion/garlic)'),
-  Modifier(id: 'ad_half',    label: 'Half Portion',     extraPrice: -50),
-];
-
-const _historyFixture = <HistoryOrder>[
-  HistoryOrder(
-    id: 'K-4127', tableId: 'T-02', time: '20:42', itemCount: 6, total: 1420.00,
-    status: OrderStatus.sent,
-    lines: [
-      HistoryOrderLine(name: 'Butter Chicken',       qty: 1, price: 440, kitchenSection: 'curry'),
-      HistoryOrderLine(name: 'Paneer Butter Masala', qty: 1, price: 360, kitchenSection: 'curry'),
-      HistoryOrderLine(name: 'Garlic Naan',          qty: 4, price: 80,  kitchenSection: 'tandoor'),
-      HistoryOrderLine(name: 'Sweet Lassi',          qty: 2, price: 120, kitchenSection: 'beverages'),
-    ],
-    notes: 'Less spicy please',
-  ),
-  HistoryOrder(
-    id: 'K-4126', tableId: 'T-07', time: '20:18', itemCount: 11, total: 3180.00,
-    status: OrderStatus.modified,
-    lines: [
-      HistoryOrderLine(name: 'Hyderabadi Biryani',   qty: 3, price: 380, kitchenSection: 'curry'),
-      HistoryOrderLine(name: 'Tandoori Chicken',     qty: 1, price: 420, kitchenSection: 'tandoor', mods: ['Extra Spicy']),
-      HistoryOrderLine(name: 'Butter Naan',          qty: 5, price: 70,  kitchenSection: 'tandoor'),
-      HistoryOrderLine(name: 'Masala Chai',          qty: 2, price: 60,  kitchenSection: 'beverages'),
-    ],
-  ),
-  HistoryOrder(
-    id: 'K-4125', tableId: 'T-01', time: '19:58', itemCount: 3, total: 480.00,
-    status: OrderStatus.sent,
-    lines: [
-      HistoryOrderLine(name: 'Masala Dosa',          qty: 2, price: 220, kitchenSection: 'south'),
-      HistoryOrderLine(name: 'Cold Coffee',          qty: 1, price: 140, kitchenSection: 'beverages'),
-    ],
-  ),
-  HistoryOrder(
-    id: 'K-4124', tableId: 'T-03', time: '19:32', itemCount: 4, total: 720.00,
-    status: OrderStatus.cancelled,
-    lines: [
-      HistoryOrderLine(name: 'Veg Hakka Noodles',    qty: 2, price: 240, kitchenSection: 'chinese'),
-      HistoryOrderLine(name: 'Fresh Lime Soda',      qty: 2, price: 90,  kitchenSection: 'beverages'),
-    ],
-    notes: 'Customer left before order arrived',
-  ),
-  HistoryOrder(
-    id: 'K-4123', tableId: 'T-09', time: '19:14', itemCount: 5, total: 980.00,
-    status: OrderStatus.sent,
-    lines: [
-      HistoryOrderLine(name: 'Chilli Chicken',       qty: 1, price: 320, kitchenSection: 'chinese'),
-      HistoryOrderLine(name: 'Schezwan Fried Rice',  qty: 2, price: 260, kitchenSection: 'chinese'),
-      HistoryOrderLine(name: 'Sweet Lassi',          qty: 2, price: 120, kitchenSection: 'beverages'),
-    ],
-  ),
-  HistoryOrder(
-    id: 'K-4122', tableId: 'T-04', time: '18:48', itemCount: 7, total: 1640.00,
-    status: OrderStatus.sent,
-    lines: [
-      HistoryOrderLine(name: 'Paneer Tikka',         qty: 1, price: 320, kitchenSection: 'tandoor'),
-      HistoryOrderLine(name: 'Dal Makhani',          qty: 1, price: 280, kitchenSection: 'curry'),
-      HistoryOrderLine(name: 'Kadhai Paneer',        qty: 1, price: 340, kitchenSection: 'curry'),
-      HistoryOrderLine(name: 'Garlic Naan',          qty: 4, price: 80,  kitchenSection: 'tandoor'),
-      HistoryOrderLine(name: 'Gulab Jamun (2 pc)',   qty: 2, price: 100, kitchenSection: 'beverages'),
-    ],
-  ),
+  Modifier(id: 'ad_half',    label: 'Half Portion',          extraPrice: -50),
 ];
 
 // ─────────────── Providers ───────────────
 
-final tablesProvider = StateProvider<List<RestaurantTable>>((_) => _tablesFixture);
-final menuProvider   = Provider<List<MenuItem>>((_) => _menuFixture);
+final tablesProvider = StateProvider<List<RestaurantTable>>((_) => []);
+final menuProvider   = StateProvider<List<MenuItem>>((_) => []);
 
 final selectedTableIdProvider = StateProvider<String?>((_) => null);
 
@@ -443,42 +337,32 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
   }
 }
 
-final operatorProvider = Provider<Operator>(
-  (_) => const Operator(
-    username: 'riya',
-    name: 'Riya Sharma',
-    role: 'Senior Waiter',
-    shift: '5:00 PM – 11:30 PM',
-  ),
-);
+final operatorProvider = StateProvider<Operator?>((_) => null);
 
 final operatorStatsProvider = Provider<OperatorStats>(
-  (_) => const OperatorStats(ordersToday: 47, tablesServed: 23, itemsSold: 156),
+  (_) => const OperatorStats(ordersToday: 0, tablesServed: 0, itemsSold: 0),
 );
 
-final restaurantProvider = Provider<RestaurantInfo>(
-  (_) => const RestaurantInfo(
-    name: 'Spice Garden',
-    address: 'Connaught Place, New Delhi',
-    adminDeviceLabel: 'Counter PC · Spice Garden',
-    adminIp: '192.168.1.5',
-  ),
-);
+final restaurantProvider = StateProvider<RestaurantInfo?>((_) => null);
 
 final connectionProvider = StateProvider<ConnectionStatus>(
-  (_) => const ConnectionStatus(online: true, label: 'Connected · Spice Garden'),
+  (_) => const ConnectionStatus(online: false, label: 'Not connected'),
 );
 
 // Active operators (besides "you") for presence indicators.
-final activeOperatorsProvider = Provider<List<ActiveOperator>>(
-  (_) => const [
-    ActiveOperator(name: 'Priya', role: 'Waiter'),
-    ActiveOperator(name: 'Karan', role: 'Waiter'),
-    ActiveOperator(name: 'Manoj', role: 'Captain'),
-  ],
-);
+final activeOperatorsProvider = StateProvider<List<ActiveOperator>>((_) => []);
 
-final historyProvider = StateProvider<List<HistoryOrder>>((_) => _historyFixture);
+final historyProvider = StateProvider<List<HistoryOrder>>((_) => []);
+
+// ─────────────── New real-time providers ───────────────
+
+final flagsProvider = StateProvider<FeatureFlags>((_) => const FeatureFlags());
+final rawMenuDataProvider = StateProvider<Map<String, dynamic>>((_) => {});
+final activeOrdersProvider = StateProvider<List<Map<String, dynamic>>>((_) => []);
+final socketServiceProvider = Provider<SocketService>((_) => SocketService());
+final syncServiceProvider = Provider<SyncService>(
+  (ref) => SyncService(ref.read(socketServiceProvider)),
+);
 
 // ─────────────── Auth ───────────────
 

@@ -4,6 +4,9 @@
 //   • Reprint KOT  (re-emits the print event to the admin desktop)
 //   • Cancel order (only allowed for orders < 5 minutes old;
 //                    disabled for already-cancelled orders)
+//   • Generate Bill (after KOT sent, not cancelled)
+//   • Apply Discount (before billing)
+//   • Collect Payment (after bill generated)
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,14 +15,36 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_mesh_background.dart';
+import '../widgets/payment_sheet.dart';
+import '../widgets/discount_sheet.dart';
 
-class OrderDetailScreen extends ConsumerWidget {
+class OrderDetailScreen extends ConsumerStatefulWidget {
   final String orderId;
   const OrderDetailScreen({super.key, required this.orderId});
+
+  @override
+  ConsumerState<OrderDetailScreen> createState() => _OrderDetailScreenState();
+}
+
+class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
+  String get orderId => widget.orderId;
+
+  // Bill state tracked locally in this screen instance.
+  String? _billId;
+  String? _billNumber;
+  double? _billTotal;
+  double? _billGst;
+  double? _billServiceCharge;
+  double? _discountAmount;
+  String? _discountLabel;
+  bool _billGenerated = false;
+  bool _paymentCollected = false;
+  bool _generatingBill = false;
 
   static String _kitchenLabel(String key) => switch (key) {
     'tandoor'   => 'Tandoor',
@@ -39,7 +64,7 @@ class OrderDetailScreen extends ConsumerWidget {
     _           => Icons.restaurant_menu,
   };
 
-  void _reprintKot(BuildContext context, WidgetRef ref) {
+  void _reprintKot(BuildContext context) {
     HapticFeedback.mediumImpact();
     final socketService = ref.read(socketServiceProvider);
     socketService.emit('print:kot', {'order_id': orderId});
@@ -51,8 +76,11 @@ class OrderDetailScreen extends ConsumerWidget {
       ));
   }
 
-  Future<void> _confirmCancel(
-      BuildContext context, WidgetRef ref, HistoryOrder order) async {
+  Future<void> _confirmCancel(BuildContext context, HistoryOrder order) async {
+    // PIN guard — verify operator before cancelling.
+    final pinOk = await requirePinIfNeeded(context, ref, 'cancel_order');
+    if (!pinOk || !context.mounted) return;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -106,9 +134,121 @@ class OrderDetailScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _generateBill(HistoryOrder order) async {
+    if (_generatingBill) return;
+    setState(() => _generatingBill = true);
+    HapticFeedback.heavyImpact();
+
+    final socketService = ref.read(socketServiceProvider);
+    socketService.emit('bill:generate', {
+      'order_id': order.id,
+    }, onAck: (response) {
+      if (!mounted) return;
+      if (response['error'] != null) {
+        setState(() => _generatingBill = false);
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(
+            backgroundColor: AppColors.danger,
+            content: Text(
+              response['error'].toString(),
+              style: AppTypography.bodyMd.copyWith(color: Colors.white),
+            ),
+          ));
+      } else {
+        setState(() {
+          _generatingBill = false;
+          _billGenerated = true;
+          _billId = response['bill_id']?.toString() ??
+              response['id']?.toString();
+          _billNumber = response['bill_number']?.toString() ??
+              response['number']?.toString();
+          _billTotal = (response['total'] as num?)?.toDouble() ??
+              (response['grand_total'] as num?)?.toDouble() ??
+              order.total;
+          _billGst = (response['gst'] as num?)?.toDouble() ??
+              (response['tax'] as num?)?.toDouble();
+          _billServiceCharge =
+              (response['service_charge'] as num?)?.toDouble();
+          _discountAmount =
+              (response['discount'] as num?)?.toDouble() ??
+              (response['discount_amount'] as num?)?.toDouble();
+          _discountLabel = response['discount_label']?.toString();
+        });
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(
+            backgroundColor: AppColors.success,
+            content: Text(
+              'Bill generated${_billNumber != null ? ' · $_billNumber' : ''}',
+              style: AppTypography.bodyMd.copyWith(color: Colors.white),
+            ),
+          ));
+      }
+    });
+
+    // Timeout fallback
+    Future.delayed(const Duration(seconds: 10), () {
+      if (mounted && _generatingBill) {
+        setState(() => _generatingBill = false);
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(const SnackBar(
+            content: Text('Bill generation timed out — please retry'),
+          ));
+      }
+    });
+  }
+
+  Future<void> _openPayment() async {
+    if (_billId == null) return;
+    final paid = await PaymentSheet.show(
+      context,
+      billId: _billId!,
+      totalAmount: _billTotal ?? 0,
+    );
+    if (paid == true && mounted) {
+      setState(() => _paymentCollected = true);
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(
+          backgroundColor: AppColors.success,
+          content: Text('Payment collected',
+            style: AppTypography.bodyMd.copyWith(color: Colors.white)),
+        ));
+    }
+  }
+
+  Future<void> _openDiscount(HistoryOrder order) async {
+    final result = await DiscountSheet.show(
+      context,
+      orderId: order.id,
+      orderTotal: order.total,
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _discountAmount =
+            (result['discount_amount'] as num?)?.toDouble() ??
+            (result['amount'] as num?)?.toDouble();
+        _discountLabel = result['discount_label']?.toString() ??
+            result['label']?.toString();
+      });
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(
+          backgroundColor: AppColors.success,
+          content: Text(
+            'Discount applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
+            style: AppTypography.bodyMd.copyWith(color: Colors.white),
+          ),
+        ));
+    }
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final orders = ref.watch(historyProvider);
+    final flags = ref.watch(flagsProvider);
     final order = orders.where((o) => o.id == orderId).firstOrNull;
 
     if (order == null) {
@@ -144,6 +284,8 @@ class OrderDetailScreen extends ConsumerWidget {
     }
 
     final isCancelled = order.status == OrderStatus.cancelled;
+    final isSent = order.status == OrderStatus.sent ||
+                   order.status == OrderStatus.modified;
 
     return LiquidMeshBackground(
       child: Scaffold(
@@ -192,11 +334,15 @@ class OrderDetailScreen extends ConsumerWidget {
                                 style: AppTypography.bodyMd),
                               const SizedBox(height: 2),
                               Text(
-                                order.status == OrderStatus.cancelled
-                                    ? 'Order cancelled'
-                                    : order.status == OrderStatus.modified
-                                        ? 'Modified after sending'
-                                        : 'Sent to kitchen',
+                                _paymentCollected
+                                    ? 'Payment collected'
+                                    : _billGenerated
+                                        ? 'Bill generated'
+                                        : order.status == OrderStatus.cancelled
+                                            ? 'Order cancelled'
+                                            : order.status == OrderStatus.modified
+                                                ? 'Modified after sending'
+                                                : 'Sent to kitchen',
                                 style: AppTypography.caption),
                             ],
                           ),
@@ -207,6 +353,128 @@ class OrderDetailScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
+
+                  // Bill details card (shown after bill is generated)
+                  if (_billGenerated) ...[
+                    AppCard(
+                      background: AppColors.success.withValues(alpha: 0.06),
+                      border: Border.all(
+                        color: AppColors.success.withValues(alpha: 0.3)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.receipt_long_outlined,
+                                color: AppColors.success, size: 18),
+                              const SizedBox(width: 8),
+                              Text('Bill Details',
+                                style: AppTypography.title.copyWith(
+                                  color: AppColors.success)),
+                              const Spacer(),
+                              if (_billNumber != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.success.withValues(
+                                      alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(_billNumber!,
+                                    style: AppTypography.micro.copyWith(
+                                      color: AppColors.success,
+                                      letterSpacing: 0.6)),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              const Text('Subtotal',
+                                style: AppTypography.bodyMd),
+                              const Spacer(),
+                              Text(formatRupeesCompact(order.total),
+                                style: AppTypography.bodyMd),
+                            ],
+                          ),
+                          if (_discountAmount != null &&
+                              _discountAmount! > 0) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Text(
+                                  'Discount${_discountLabel != null ? ' ($_discountLabel)' : ''}',
+                                  style: AppTypography.bodyMd.copyWith(
+                                    color: AppColors.success)),
+                                const Spacer(),
+                                Text(
+                                  '-${formatRupeesCompact(_discountAmount!)}',
+                                  style: AppTypography.bodyMd.copyWith(
+                                    color: AppColors.success)),
+                              ],
+                            ),
+                          ],
+                          if (_billGst != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Text('GST', style: AppTypography.bodyMd),
+                                const Spacer(),
+                                Text(formatRupeesCompact(_billGst!),
+                                  style: AppTypography.bodyMd),
+                              ],
+                            ),
+                          ],
+                          if (_billServiceCharge != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Text('Service Charge',
+                                  style: AppTypography.bodyMd),
+                                const Spacer(),
+                                Text(formatRupeesCompact(_billServiceCharge!),
+                                  style: AppTypography.bodyMd),
+                              ],
+                            ),
+                          ],
+                          const Divider(height: 16, color: AppColors.ink10),
+                          Row(
+                            children: [
+                              const Text('Total', style: AppTypography.title),
+                              const Spacer(),
+                              Text(formatRupeesCompact(_billTotal ?? order.total),
+                                style: AppTypography.headline),
+                            ],
+                          ),
+                          if (_paymentCollected) ...[
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppColors.success.withValues(alpha: 0.14),
+                                borderRadius: const BorderRadius.all(AppRadii.xs),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.check_circle,
+                                    color: AppColors.success, size: 16),
+                                  const SizedBox(width: 6),
+                                  Text('PAID',
+                                    style: AppTypography.micro.copyWith(
+                                      color: AppColors.success,
+                                      letterSpacing: 0.8)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   // Lines, grouped by kitchen.
                   for (final entry in byKitchen.entries) ...[
@@ -307,28 +575,84 @@ class OrderDetailScreen extends ConsumerWidget {
               ),
             ),
 
+            // Footer action buttons
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Row(
+              child: Column(
                 children: [
-                  Expanded(
-                    child: LiquidSecondaryButton(
-                      label: 'Reprint KOT',
-                      leadingIcon: Icons.print_outlined,
-                      onPressed: isCancelled ? null : () => _reprintKot(context, ref),
-                    ),
+                  // Row 1: Reprint KOT + Cancel Order (existing)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: LiquidSecondaryButton(
+                          label: 'Reprint KOT',
+                          leadingIcon: Icons.print_outlined,
+                          onPressed: isCancelled
+                              ? null
+                              : () => _reprintKot(context),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: LiquidSecondaryButton(
+                          label: isCancelled ? 'Cancelled' : 'Cancel Order',
+                          leadingIcon: isCancelled
+                              ? Icons.block
+                              : Icons.cancel_outlined,
+                          onPressed: isCancelled
+                              ? null
+                              : () => _confirmCancel(context, order),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: LiquidPrimaryButton(
-                      label: isCancelled ? 'Cancelled' : 'Cancel Order',
-                      fullWidth: true,
-                      leadingIcon: isCancelled ? Icons.block : Icons.cancel_outlined,
-                      onPressed: isCancelled
-                        ? null
-                        : () => _confirmCancel(context, ref, order),
+
+                  // Row 2: Discount + Generate Bill / Collect Payment
+                  if (isSent && !_paymentCollected) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        // Discount button (before bill is generated)
+                        if (!_billGenerated && flags.discounts)
+                          Expanded(
+                            child: LiquidSecondaryButton(
+                              label: _discountAmount != null
+                                  ? 'Discount Applied'
+                                  : 'Discount',
+                              leadingIcon: Icons.discount_outlined,
+                              onPressed: _discountAmount != null
+                                  ? null
+                                  : () => _openDiscount(order),
+                            ),
+                          ),
+                        if (!_billGenerated && flags.discounts)
+                          const SizedBox(width: 8),
+
+                        // Generate Bill or Collect Payment
+                        Expanded(
+                          child: _billGenerated
+                              ? LiquidPrimaryButton(
+                                  label: 'Collect Payment',
+                                  fullWidth: true,
+                                  leadingIcon: Icons.payment_outlined,
+                                  onPressed: _openPayment,
+                                )
+                              : LiquidPrimaryButton(
+                                  label: _generatingBill
+                                      ? 'Generating...'
+                                      : 'Generate Bill',
+                                  fullWidth: true,
+                                  leadingIcon: _generatingBill
+                                      ? Icons.hourglass_top
+                                      : Icons.receipt_long_outlined,
+                                  onPressed: _generatingBill
+                                      ? null
+                                      : () => _generateBill(order),
+                                ),
+                        ),
+                      ],
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

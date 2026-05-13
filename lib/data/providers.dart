@@ -354,6 +354,9 @@ final activeOperatorsProvider = StateProvider<List<ActiveOperator>>((_) => []);
 
 final historyProvider = StateProvider<List<HistoryOrder>>((_) => []);
 
+// Discount presets synced from admin server.
+final discountsProvider = StateProvider<List<Map<String, dynamic>>>((_) => []);
+
 // ─────────────── New real-time providers ───────────────
 
 final flagsProvider = StateProvider<FeatureFlags>((_) => const FeatureFlags());

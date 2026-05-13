@@ -183,6 +183,11 @@ class SyncService {
       ref.read(historyProvider.notifier).state = historyOrders;
     }
 
+    // Discounts
+    final discountsRaw = data['discounts'] as List<dynamic>? ?? [];
+    ref.read(discountsProvider.notifier).state =
+        discountsRaw.map((d) => Map<String, dynamic>.from(d as Map)).toList();
+
     // Active operators
     final operatorsList = data['active_operators'];
     if (operatorsList is List) {

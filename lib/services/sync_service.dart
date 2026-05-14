@@ -163,6 +163,11 @@ class SyncService {
       _ref.read(rawMenuDataProvider.notifier).state = map;
     });
 
+    _socket.on('fast-add:updated', (data) {
+      final map = _toMap(data);
+      _applyFastAddData(map);
+    });
+
     _socket.on('operator:online', (data) {
       final op = ServerOperatorPresence.fromMap(_toMap(data));
       if (op.operatorName.isEmpty) return;
@@ -264,6 +269,12 @@ class SyncService {
       _ref.read(menuProvider.notifier).state = _parseMenuItems(menuMap);
       _ref.read(rawMenuDataProvider.notifier).state = menuMap;
       debugPrint('$_tag   Menu items: ${_ref.read(menuProvider).length}');
+    }
+
+    // Fast-add items (pinned + auto trending).
+    final fastAddRaw = data['fast_add'];
+    if (fastAddRaw is Map) {
+      _applyFastAddData(Map<String, dynamic>.from(fastAddRaw));
     }
 
     // Active orders → also populate history.
@@ -486,6 +497,27 @@ class SyncService {
       available: si.isAvailable,
       note: si.note,
     );
+  }
+
+  // ─── Fast-add parsing ──────────────────────────────────────────────────────
+
+  void _applyFastAddData(Map<String, dynamic> data) {
+    final pinned = data['pinned'];
+    final auto = data['auto'];
+    if (pinned is List) {
+      _ref.read(fastAddPinnedProvider.notifier).state = pinned
+          .whereType<Map>()
+          .map((m) => _serverMenuItemToLocal(
+                ServerMenuItem.fromMap(Map<String, dynamic>.from(m))))
+          .toList();
+    }
+    if (auto is List) {
+      _ref.read(fastAddAutoProvider.notifier).state = auto
+          .whereType<Map>()
+          .map((m) => _serverMenuItemToLocal(
+                ServerMenuItem.fromMap(Map<String, dynamic>.from(m))))
+          .toList();
+    }
   }
 
   // ─── Utility ──────────────────────────────────────────────────────────────

@@ -279,10 +279,29 @@ const addOns = <Modifier>[
 final tablesProvider = StateProvider<List<RestaurantTable>>((_) => []);
 final menuProvider   = StateProvider<List<MenuItem>>((_) => []);
 
+// Fast-add items — pinned (admin-set) + auto (trending, server-computed).
+final fastAddPinnedProvider = StateProvider<List<MenuItem>>((_) => []);
+final fastAddAutoProvider   = StateProvider<List<MenuItem>>((_) => []);
+
 final selectedTableIdProvider = StateProvider<String?>((_) => null);
 
 // Order-level note typed in review screen.
 final orderNotesProvider = StateProvider<String>((_) => '');
+
+// Recent items — last 8 items added to any cart (for quick re-add).
+final recentItemsProvider = StateNotifierProvider<RecentItemsNotifier, List<MenuItem>>(
+  (_) => RecentItemsNotifier(),
+);
+
+class RecentItemsNotifier extends StateNotifier<List<MenuItem>> {
+  static const _maxRecent = 8;
+  RecentItemsNotifier() : super(const []);
+
+  void track(MenuItem item) {
+    final updated = [item, ...state.where((m) => m.id != item.id)];
+    state = updated.length > _maxRecent ? updated.sublist(0, _maxRecent) : updated;
+  }
+}
 
 final cartProvider = StateNotifierProvider<CartNotifier, List<CartLine>>(
   (_) => CartNotifier(),

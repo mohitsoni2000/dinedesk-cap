@@ -4,17 +4,19 @@
 // Save & exit keeps the cart in memory until the session ends.
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_mesh_background.dart';
 import '../widgets/app_card.dart';
 import '../widgets/item_detail_sheet.dart';
+import '../widgets/kot_history_sheet.dart';
+import '../widgets/package_sheet.dart';
 
 class OrderBuilderScreen extends ConsumerStatefulWidget {
   final String tableId;
@@ -37,7 +39,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
         backgroundColor: AppColors.paper,
         title: const Text('Discard draft?', style: AppTypography.title),
         content: Text(
-          '${cart.length} items will be removed. Use "Save & exit" to keep them for later.',
+          '${cart.length} unsent ${cart.length == 1 ? "item" : "items"} will be lost. '
+          'Send to kitchen first or tap "Save & exit" to keep the draft.',
           style: AppTypography.bodyMd),
         actions: [
           TextButton(
@@ -112,7 +115,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                 ),
                 actions: [
                   Hero(
-                    tag: 'table-${widget.tableId}',
+                    tag: HeroTags.tableCard(widget.tableId),
                     flightShuttleBuilder: (_, __, ___, ____, _____) =>
                         const SizedBox.shrink(),
                     child: Material(
@@ -140,6 +143,21 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       if (!_searchOpen) _query = '';
                     }),
                   ),
+                  IconButton(
+                    icon: const Icon(Icons.receipt_long, color: AppColors.ink70),
+                    tooltip: 'KOT History',
+                    onPressed: () => KotHistorySheet.show(context, widget.tableId),
+                  ),
+                  // Packages — feature-flagged.
+                  Builder(builder: (_) {
+                    final flags = ref.watch(flagsProvider);
+                    if (!flags.packages) return const SizedBox.shrink();
+                    return IconButton(
+                      icon: const Icon(Icons.inventory_2_outlined, color: AppColors.ink70),
+                      tooltip: 'Packages',
+                      onPressed: () => PackageSheet.show(context),
+                    );
+                  }),
                   IconButton(
                     icon: const Icon(Icons.bookmark_border, color: AppColors.ink70),
                     tooltip: 'Save & exit',
@@ -184,20 +202,169 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     _SectionChip(
                       label: 'All',
                       selected: _activeSection == null,
-                      onTap: () => setState(() => _activeSection = null),
+                      onTap: () {
+                        ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
+                        setState(() => _activeSection = null);
+                      },
                     ),
                     const SizedBox(width: 8),
                     for (final s in allSections) ...[
                       _SectionChip(
                         label: s,
                         selected: _activeSection == s,
-                        onTap: () => setState(() => _activeSection = s),
+                        onTap: () {
+                          ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
+                          setState(() => _activeSection = s);
+                        },
                       ),
                       const SizedBox(width: 8),
                     ],
                   ],
                 ),
               ),
+              // Fast-add bar — pinned + auto trending items from server.
+              Builder(builder: (context) {
+                final pinned = ref.watch(fastAddPinnedProvider);
+                final auto = ref.watch(fastAddAutoProvider);
+                // Merge: pinned first, then auto (exclude duplicates)
+                final pinnedIds = pinned.map((m) => m.id).toSet();
+                final merged = [
+                  ...pinned,
+                  ...auto.where((m) => !pinnedIds.contains(m.id)),
+                ];
+                if (merged.isEmpty) return const SizedBox.shrink();
+                return SizedBox(
+                  height: 44,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        alignment: Alignment.center,
+                        child: Text('⚡ FAST ADD',
+                          style: AppTypography.micro.copyWith(
+                            color: AppColors.ink50, letterSpacing: 1.0)),
+                      ),
+                      for (final item in merged)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: GestureDetector(
+                            onTap: () {
+                              ref.read(feedbackServiceProvider).fire(const FeedbackLight());
+                              ref.read(cartProvider.notifier).add(item);
+                              ref.read(recentItemsProvider.notifier).track(item);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: pinnedIds.contains(item.id)
+                                    ? AppColors.terra50
+                                    : Colors.white.withValues(alpha: 0.6),
+                                borderRadius: const BorderRadius.all(AppRadii.pill),
+                                border: Border.all(
+                                  color: pinnedIds.contains(item.id)
+                                      ? AppColors.terra200
+                                      : AppColors.ink10,
+                                  style: pinnedIds.contains(item.id)
+                                      ? BorderStyle.solid
+                                      : BorderStyle.none,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!pinnedIds.contains(item.id))
+                                    Container(
+                                      width: 6, height: 6,
+                                      margin: const EdgeInsets.only(right: 4),
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFFFF6B35),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  Container(
+                                    width: 8, height: 8,
+                                    decoration: BoxDecoration(
+                                      color: item.isVeg
+                                          ? AppColors.success
+                                          : AppColors.danger,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(item.name,
+                                    style: AppTypography.caption.copyWith(
+                                      fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }),
+              // Recent items bar — last 8 items for quick re-add.
+              Builder(builder: (context) {
+                final recent = ref.watch(recentItemsProvider);
+                if (recent.isEmpty) return const SizedBox.shrink();
+                return SizedBox(
+                  height: 44,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        alignment: Alignment.center,
+                        child: Text('RECENT',
+                          style: AppTypography.micro.copyWith(
+                            color: AppColors.ink50, letterSpacing: 1.0)),
+                      ),
+                      for (final item in recent)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: GestureDetector(
+                            onTap: () {
+                              ref.read(feedbackServiceProvider).fire(const FeedbackLight());
+                              ref.read(cartProvider.notifier).add(item);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppColors.terra50,
+                                borderRadius: const BorderRadius.all(AppRadii.pill),
+                                border: Border.all(
+                                  color: AppColors.terra200),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 8, height: 8,
+                                    decoration: BoxDecoration(
+                                      color: item.isVeg
+                                          ? AppColors.success
+                                          : AppColors.danger,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(item.name,
+                                    style: AppTypography.caption.copyWith(
+                                      fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }),
               Expanded(
                 child: sections.isEmpty
                   ? const Center(
@@ -236,9 +403,11 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                   _ItemRow(
                                     item: entry.value[i],
                                     onAdd: () {
-                                      HapticFeedback.selectionClick();
+                                      ref.read(feedbackServiceProvider).fire(const FeedbackLight());
                                       ref.read(cartProvider.notifier)
                                         .add(entry.value[i]);
+                                      ref.read(recentItemsProvider.notifier)
+                                        .track(entry.value[i]);
                                     },
                                     onTap: () => ItemDetailSheet.show(
                                         context, entry.value[i]),
@@ -254,33 +423,90 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       ],
                     ),
               ),
+              // Auto-KOT hint — shows when cart reaches threshold.
+              Builder(builder: (_) {
+                final flags = ref.watch(flagsProvider);
+                final itemCount = cart.fold<int>(0, (s, l) => s + l.qty);
+                if (!flags.autoKot || itemCount < flags.autoKotThreshold || cart.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.amber.withValues(alpha: 0.12),
+                      borderRadius: const BorderRadius.all(AppRadii.sm),
+                      border: Border.all(color: AppColors.amber.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.auto_awesome, color: AppColors.amber, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '$itemCount items ready — send KOT now?',
+                            style: AppTypography.caption.copyWith(
+                              color: AppColors.ink, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => context.push('/order/${widget.tableId}/review'),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: const BoxDecoration(
+                              color: AppColors.amber,
+                              borderRadius: BorderRadius.all(AppRadii.pill),
+                            ),
+                            child: Text('Send',
+                              style: AppTypography.caption.copyWith(
+                                color: Colors.white, fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
               if (cart.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: GestureDetector(
-                    onTap: () => context.push('/order/${widget.tableId}/review'),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [AppColors.terra400, AppColors.terra600],
+                  child: PredictiveScale(
+                    enabled: false, // Behind flag — enable when ready
+                    maxScaleBoost: 0.015,
+                    child: Hero(
+                      tag: HeroTags.cartBar,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: GestureDetector(
+                          onTap: () => context.push('/order/${widget.tableId}/review'),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [AppColors.terra400, AppColors.terra600],
+                              ),
+                              borderRadius: BorderRadius.all(AppRadii.md),
+                              boxShadow: AppShadows.terraGlow,
+                            ),
+                            child: Row(
+                              children: [
+                                Text('Review · ${cart.length} ${cart.length == 1 ? "item" : "items"}',
+                                  style: AppTypography.bodyMd.copyWith(
+                                    color: Colors.white, fontWeight: FontWeight.w600),
+                                ),
+                                const Spacer(),
+                                KineticRupeeCounter(
+                                  amount: cartTotal,
+                                  fontSize: 18,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.arrow_forward, color: Colors.white),
+                              ],
+                            ),
+                          ),
                         ),
-                        borderRadius: BorderRadius.all(AppRadii.md),
-                        boxShadow: AppShadows.terraGlow,
-                      ),
-                      child: Row(
-                        children: [
-                          Text('Review · ${cart.length} ${cart.length == 1 ? "item" : "items"}',
-                            style: AppTypography.bodyMd.copyWith(
-                              color: Colors.white, fontWeight: FontWeight.w600),
-                          ),
-                          const Spacer(),
-                          Text(formatRupeesCompact(cartTotal),
-                            style: AppTypography.title.copyWith(color: Colors.white),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.arrow_forward, color: Colors.white),
-                        ],
                       ),
                     ),
                   ),
@@ -303,17 +529,22 @@ class _SectionChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () { HapticFeedback.selectionClick(); onTap(); },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.ink : Colors.white.withValues(alpha: 0.6),
-          borderRadius: const BorderRadius.all(AppRadii.pill),
-          border: Border.all(
-            color: selected ? AppColors.ink : AppColors.ink10),
-        ),
+      onTap: onTap,
+      child: SpringBuilder(
+        to: selected ? 1.0 : 0.0,
+        spring: RestroSprings.snappy,
+        builder: (BuildContext _, double t, Widget? child) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: Color.lerp(Colors.white.withValues(alpha: 0.6), AppColors.ink, t),
+              borderRadius: const BorderRadius.all(AppRadii.pill),
+              border: Border.all(
+                color: Color.lerp(AppColors.ink10, AppColors.ink, t) ?? AppColors.ink10),
+            ),
+            child: child,
+          );
+        },
         child: Center(
           child: Text(label,
             style: AppTypography.caption.copyWith(

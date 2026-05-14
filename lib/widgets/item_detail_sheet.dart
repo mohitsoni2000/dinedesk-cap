@@ -223,16 +223,33 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                       leadingIcon: Icons.add,
                       onPressed: () {
                         HapticFeedback.mediumImpact();
-                        final modLabels = <String>[
-                          if (_spiceId != null)
-                            spiceLevels.firstWhere((x) => x.id == _spiceId).label,
-                          for (final id in _addOnIds)
-                            addOns.firstWhere((x) => x.id == id).label,
-                        ];
+                        final modLabels = <String>[];
+                        final selectedOpts = <SelectedOption>[];
+
+                        if (_spiceId != null) {
+                          final spice = spiceLevels.firstWhere((x) => x.id == _spiceId);
+                          modLabels.add(spice.label);
+                          selectedOpts.add(SelectedOption(
+                            groupName: 'Spice Level',
+                            optionName: spice.label,
+                            priceModifier: spice.extraPrice,
+                          ));
+                        }
+                        for (final id in _addOnIds) {
+                          final addon = addOns.firstWhere((x) => x.id == id);
+                          modLabels.add(addon.label);
+                          selectedOpts.add(SelectedOption(
+                            groupName: 'Add-ons',
+                            optionName: addon.label,
+                            priceModifier: addon.extraPrice,
+                          ));
+                        }
+
                         ref.read(cartProvider.notifier).addCustom(
                           item: widget.item,
                           qty: _qty,
                           mods: modLabels,
+                          selectedOptions: selectedOpts,
                           modsExtra: _addOnExtra,
                           itemNote: _note,
                         );

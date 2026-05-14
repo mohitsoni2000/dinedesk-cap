@@ -65,7 +65,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         if (!mounted) return;
         debugPrint('[Auth] ✓ PIN verified — applying initial sync');
         // Apply initial sync data from the verify response.
-        final syncData = response['sync'] as Map<String, dynamic>? ?? response;
+        final syncRaw = response['sync'];
+        final syncData = (syncRaw is Map)
+            ? Map<String, dynamic>.from(syncRaw)
+            : response;
         syncService.applyInitialSync(syncData);
         syncService.unregisterListeners();
         syncService.registerListeners();

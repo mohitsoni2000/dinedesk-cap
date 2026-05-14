@@ -76,7 +76,7 @@ class FeatureFlags {
       packages: flag('flag_packages'),
       multiFloor: flag('flag_multi_floor'),
       operatorPinAuth: flag('flag_operator_pin_auth', true),
-      operatorPinMode: (map['operator_pin_mode'] as String?) ?? 'per_action',
+      operatorPinMode: map['operator_pin_mode']?.toString() ?? 'per_action',
       operatorPinSessionMinutes: int.tryParse('${map['operator_pin_session_minutes']}') ?? 5,
       operatorPinKot: flag('operator_pin_kot'),
       operatorPinHold: flag('operator_pin_hold'),

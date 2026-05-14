@@ -13,7 +13,7 @@ import '../services/sync_service.dart';
 
 enum TableState { mine, other, dirty, reserved, free }
 
-enum OrderStatus { sent, modified, cancelled }
+enum OrderStatus { sent, modified, cancelled, paid }
 
 class RestaurantTable {
   static const _absent = Object();

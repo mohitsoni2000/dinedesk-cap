@@ -29,9 +29,8 @@ import 'widgets/page_transitions.dart';
 import 'widgets/root_shell.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  // Rebuild the redirect logic whenever auth state or connection state changes.
+  // Only watch auth state — connection changes handled by ConnectionBanner widget.
   final authed = ref.watch(isAuthenticatedProvider);
-  final conn = ref.watch(connectionProvider);
 
   return GoRouter(
     initialLocation: '/splash',
@@ -40,11 +39,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       const authFlow = ['/splash', '/scan', '/connecting', '/auth'];
       final onAuthFlow = authFlow.any((p) => loc.startsWith(p));
       final onDisconnect = loc == '/disconnected' || loc == '/force-disconnected';
-      if (!authed && !onAuthFlow && !onDisconnect) {
-        // Redirect to force-disconnected screen if kicked by admin.
-        if (conn.label.contains('admin')) return '/force-disconnected';
-        return '/auth';
-      }
+      if (!authed && !onAuthFlow && !onDisconnect) return '/auth';
       if (authed && onAuthFlow) return '/tables';
       return null;
     },

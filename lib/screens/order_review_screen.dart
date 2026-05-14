@@ -119,6 +119,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       if (createdOrderId != null) {
         socketService.emit('kot:send', <String, dynamic>{
           'order_id': createdOrderId!,
+        }, onAck: (kotResponse) {
+          if (kotResponse['kind'] == 'error') {
+            debugPrint('[Order] ✗ KOT send failed: ${kotResponse['message']}');
+          } else {
+            debugPrint('[Order] ✓ KOT sent to kitchen');
+          }
         });
       }
 

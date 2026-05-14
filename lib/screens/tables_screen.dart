@@ -6,7 +6,7 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/table_merge_sheet.dart';
+// table_merge_sheet disabled — requires server-side support
 
 class TablesScreen extends ConsumerStatefulWidget {
   const TablesScreen({super.key});
@@ -208,10 +208,8 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                       return _TableCard(
                         table: t,
                         onTap: () => _onTableTap(t),
-                        onLongPress: t.state == TableState.mine ||
-                                t.state == TableState.free
-                            ? () => TableMergeSheet.show(context, t)
-                            : null,
+                        // Table merge disabled — requires server-side support.
+                        onLongPress: null,
                       );
                     },
                   ),

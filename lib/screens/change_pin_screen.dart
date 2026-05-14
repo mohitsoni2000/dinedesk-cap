@@ -23,9 +23,10 @@ class ChangePinScreen extends ConsumerStatefulWidget {
 class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
   _Step _step = _Step.current;
   String _input = '';
+  String _currentPin = '';  // saved from step 1 for the change request
   String _newPin = '';
   String? _error;
-  bool _done = false;  // prevents double-advance into success modal
+  bool _done = false;
   bool _verifying = false;
 
   String get _heading => switch (_step) {
@@ -45,10 +46,12 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
       case _Step.current:
         final socketService = ref.read(socketServiceProvider);
         setState(() => _verifying = true);
-        socketService.emit('operator:verify_pin', {'pin': _input}, onAck: (response) {
+        // Use operator:verify — the only PIN check event the server supports.
+        socketService.emit('operator:verify', {'pin': _input}, onAck: (response) {
           if (!mounted) return;
           if (response['kind'] == 'success') {
             setState(() {
+              _currentPin = _input;  // save for the change request
               _step = _Step.fresh;
               _input = '';
               _verifying = false;
@@ -81,8 +84,9 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
           // Persist the new PIN on the server.
           setState(() => _verifying = true);
           final socketService = ref.read(socketServiceProvider);
+          // Server may not have operator:change_pin yet — emit and handle gracefully.
           socketService.emit('operator:change_pin', {
-            'current_pin': _input, // re-confirm current was already verified in step 1
+            'current_pin': _currentPin,
             'new_pin': _newPin,
           }, onAck: (response) {
             if (!mounted) return;

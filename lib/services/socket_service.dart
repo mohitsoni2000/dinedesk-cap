@@ -59,7 +59,8 @@ class SocketService {
   }) {
     debugPrint('$_tag → operator:verify (pin: ${'*' * pin.length})');
     _socket?.emitWithAckAsync('operator:verify', {'pin': pin}).then((res) {
-      final response = Map<String, dynamic>.from(res as Map);
+      if (res is! Map) { onRejected('Invalid server response'); return; }
+      final response = Map<String, dynamic>.from(res);
       debugPrint('$_tag ← operator:verify ack: kind=${response['kind']}');
       if (response['kind'] == 'success') {
         debugPrint('$_tag ✓ PIN verified — operator: ${response['operator']?['name'] ?? 'unknown'}');
@@ -80,7 +81,12 @@ class SocketService {
     debugPrint('$_tag → $event ${_summarize(data)}');
     if (onAck != null) {
       _socket?.emitWithAckAsync(event, data).then((res) {
-        final response = Map<String, dynamic>.from(res as Map);
+        if (res is! Map) {
+          debugPrint('$_tag ← $event ack: non-Map response ($res)');
+          onAck({'kind': 'error', 'message': 'Invalid server response'});
+          return;
+        }
+        final response = Map<String, dynamic>.from(res);
         debugPrint('$_tag ← $event ack: kind=${response['kind']}');
         if (response['kind'] == 'error') {
           debugPrint('$_tag   Error: ${response['message']}');

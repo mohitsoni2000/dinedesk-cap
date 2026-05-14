@@ -66,6 +66,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         selected: _statusFilter == OrderStatus.cancelled,
         onTap: () => setState(() => _statusFilter = OrderStatus.cancelled),
       ),
+      const SizedBox(width: 8),
+      _StatusChip(
+        label: 'Paid',
+        color: AppColors.teal,
+        count: scoped.where((o) => o.status == OrderStatus.paid).length,
+        selected: _statusFilter == OrderStatus.paid,
+        onTap: () => setState(() => _statusFilter = OrderStatus.paid),
+      ),
     ];
   }
 
@@ -317,6 +325,7 @@ class _OrderTile extends StatelessWidget {
     OrderStatus.sent      => AppColors.success,
     OrderStatus.modified  => AppColors.warn,
     OrderStatus.cancelled => AppColors.danger,
+    OrderStatus.paid      => AppColors.teal,
   };
 }
 
@@ -328,12 +337,14 @@ class _StatusBadge extends StatelessWidget {
     OrderStatus.sent      => AppColors.success,
     OrderStatus.modified  => AppColors.warn,
     OrderStatus.cancelled => AppColors.danger,
+    OrderStatus.paid      => AppColors.teal,
   };
 
   String get _label => switch (status) {
     OrderStatus.sent      => 'SENT',
     OrderStatus.modified  => 'MODIFIED',
     OrderStatus.cancelled => 'CANCELLED',
+    OrderStatus.paid      => 'PAID',
   };
 
   @override

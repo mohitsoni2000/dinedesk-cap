@@ -704,12 +704,14 @@ class _StatusBadge extends StatelessWidget {
     OrderStatus.sent      => AppColors.success,
     OrderStatus.modified  => AppColors.warn,
     OrderStatus.cancelled => AppColors.danger,
+    OrderStatus.paid      => AppColors.teal,
   };
 
   String get _label => switch (status) {
     OrderStatus.sent      => 'SENT',
     OrderStatus.modified  => 'MODIFIED',
     OrderStatus.cancelled => 'CANCELLED',
+    OrderStatus.paid      => 'PAID',
   };
 
   @override

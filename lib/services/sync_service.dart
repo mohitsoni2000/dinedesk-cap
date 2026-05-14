@@ -127,6 +127,17 @@ class SyncService {
             .read(activeOrdersProvider)
             .where((o) => o['id']?.toString() != id)
             .toList();
+        // Mark history entry as paid so UI doesn't show "Generate Bill" again.
+        _ref.read(historyProvider.notifier).state = [
+          for (final h in _ref.read(historyProvider))
+            if (h.orderId == id)
+              HistoryOrder(
+                id: h.id, orderId: h.orderId, tableId: h.tableId,
+                time: h.time, itemCount: h.itemCount, total: h.total,
+                status: OrderStatus.paid, lines: h.lines, notes: h.notes,
+              )
+            else h,
+        ];
       }
       _applyTablesFromEnvelope(env);
     });
@@ -404,9 +415,13 @@ class SyncService {
   OrderStatus _mapOrderStatus(String status) {
     switch (status) {
       case 'cancelled':
+      case 'voided':
         return OrderStatus.cancelled;
       case 'modified':
         return OrderStatus.modified;
+      case 'paid':
+      case 'closed':
+        return OrderStatus.paid;
       default:
         return OrderStatus.sent;
     }

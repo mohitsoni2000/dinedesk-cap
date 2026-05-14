@@ -4,13 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../models/feature_flags.dart';
+import '../models/server_models.dart';
 import 'socket_service.dart';
 
 const _tag = '[Sync]';
 
 class SyncService {
   final SocketService _socket;
-  final Ref _ref;  // Provider-scoped ref — never disposes
+  final Ref _ref;
   StreamSubscription<SocketState>? _stateSubscription;
   Map<String, String> _floorMap = {};
 
@@ -19,18 +20,17 @@ class SyncService {
   // ─── Listener registration ───────────────────────────────────────────────
 
   void registerListeners() {
-    final ref = _ref;
     debugPrint('$_tag Registering real-time listeners');
-    // Listen to socket reconnection and update connectionProvider
+
     _stateSubscription = _socket.stateStream.listen((state) {
       if (state == SocketState.connected || state == SocketState.verified) {
-        final restaurant = ref.read(restaurantProvider);
-        ref.read(connectionProvider.notifier).state = ConnectionStatus(
+        final restaurant = _ref.read(restaurantProvider);
+        _ref.read(connectionProvider.notifier).state = ConnectionStatus(
           online: true,
-          label: 'Connected · ${restaurant?.name ?? 'Restaurant'}',
+          label: 'Connected · ${restaurant?.name ?? "Restaurant"}',
         );
       } else if (state == SocketState.disconnected) {
-        ref.read(connectionProvider.notifier).state = const ConnectionStatus(
+        _ref.read(connectionProvider.notifier).state = const ConnectionStatus(
           online: false,
           label: 'Reconnecting...',
         );
@@ -38,351 +38,261 @@ class SyncService {
     });
 
     _socket.on('table:updated', (data) {
-      final map = Map<String, dynamic>.from(data as Map);
-      final currentOperatorId = ref.read(operatorProvider)?.username;
-      final updated = _parseTable(map, currentOperatorId, _floorMap);
-      if (updated == null) return;
-      final tables = [...ref.read(tablesProvider)];
+      final map = _toMap(data);
+      final st = ServerTable.fromMap(map);
+      final updated = _serverTableToLocal(st);
+      final tables = [..._ref.read(tablesProvider)];
       final idx = tables.indexWhere((t) => t.serverId == updated.serverId);
       if (idx >= 0) {
         tables[idx] = updated;
       } else {
         tables.add(updated);
       }
-      ref.read(tablesProvider.notifier).state = tables;
+      _ref.read(tablesProvider.notifier).state = tables;
     });
 
     _socket.on('order:created', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      final orderData = d['order'] as Map? ?? d;  // unwrap if nested
-      final map = Map<String, dynamic>.from(orderData);
-      final orders = [...ref.read(activeOrdersProvider), map];
-      ref.read(activeOrdersProvider.notifier).state = orders;
-
-      // Also add to history
-      ref.read(historyProvider.notifier).state = [
-        _parseHistoryOrder(map),
-        ...ref.read(historyProvider),
-      ];
-
-      // Update table state if tables data is included in the broadcast.
-      final tablesData = d['tables'];
-      if (tablesData is List) {
-        final currentOperatorId = ref.read(operatorProvider)?.username;
-        final tables = tablesData
-            .whereType<Map>()
-            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId, _floorMap))
-            .whereType<RestaurantTable>()
-            .toList();
-        ref.read(tablesProvider.notifier).state = tables;
+      final env = BroadcastEnvelope(_toMap(data));
+      final orderMap = env.orderMap;
+      if (orderMap != null) {
+        _ref.read(activeOrdersProvider.notifier).state = [
+          ..._ref.read(activeOrdersProvider),
+          orderMap,
+        ];
+        final parsed = ServerOrder.fromMap(orderMap);
+        _ref.read(historyProvider.notifier).state = [
+          _serverOrderToHistory(parsed),
+          ..._ref.read(historyProvider),
+        ];
+        final stats = _ref.read(operatorStatsProvider);
+        _ref.read(operatorStatsProvider.notifier).state = OperatorStats(
+          ordersToday: stats.ordersToday + 1,
+          tablesServed: stats.tablesServed,
+          itemsSold: stats.itemsSold + parsed.itemCount,
+        );
       }
-
-      // Update operator stats on new order.
-      final stats = ref.read(operatorStatsProvider);
-      ref.read(operatorStatsProvider.notifier).state = OperatorStats(
-        ordersToday: stats.ordersToday + 1,
-        tablesServed: stats.tablesServed,
-        itemsSold: stats.itemsSold + ((map['item_count'] as int?) ?? 0),
-      );
+      _applyTablesFromEnvelope(env);
     });
 
     _socket.on('order:updated', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      final orderData = d['order'] as Map? ?? d;  // unwrap if nested
-      final map = Map<String, dynamic>.from(orderData);
-      final orderId = map['id']?.toString();
-      if (orderId == null) return;
-      final orders = [
-        for (final o in ref.read(activeOrdersProvider))
-          if (o['id']?.toString() == orderId) map else o,
-      ];
-      ref.read(activeOrdersProvider.notifier).state = orders;
-
-      // Update table state if tables data is included in the broadcast.
-      final tablesData = d['tables'];
-      if (tablesData is List) {
-        final currentOperatorId = ref.read(operatorProvider)?.username;
-        final tables = tablesData
-            .whereType<Map>()
-            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId, _floorMap))
-            .whereType<RestaurantTable>()
-            .toList();
-        ref.read(tablesProvider.notifier).state = tables;
+      final env = BroadcastEnvelope(_toMap(data));
+      final orderMap = env.orderMap;
+      if (orderMap != null) {
+        _replaceActiveOrder(orderMap);
       }
+      _applyTablesFromEnvelope(env);
     });
 
     _socket.on('order:cancelled', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      // Unwrap: check d['order_id'] first, then d['order']?['id'], then d['id']
-      final orderData = d['order'] as Map?;
-      final orderId = d['order_id']?.toString() ??
-          (orderData != null ? orderData['id']?.toString() : null) ??
-          d['id']?.toString();
-      if (orderId == null) return;
-      final orders = ref.read(activeOrdersProvider)
-          .where((o) => o['id']?.toString() != orderId)
-          .toList();
-      ref.read(activeOrdersProvider.notifier).state = orders;
-
-      // Update table state if tables data is included in the broadcast.
-      final tablesData = d['tables'];
-      if (tablesData is List) {
-        final currentOperatorId = ref.read(operatorProvider)?.username;
-        final tables = tablesData
-            .whereType<Map>()
-            .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId, _floorMap))
-            .whereType<RestaurantTable>()
+      final env = BroadcastEnvelope(_toMap(data));
+      final id = env.orderId;
+      if (id != null) {
+        _ref.read(activeOrdersProvider.notifier).state = _ref
+            .read(activeOrdersProvider)
+            .where((o) => o['id']?.toString() != id)
             .toList();
-        ref.read(tablesProvider.notifier).state = tables;
+        // Update history status to cancelled.
+        _ref.read(historyProvider.notifier).state = [
+          for (final h in _ref.read(historyProvider))
+            if (h.orderId == id)
+              HistoryOrder(
+                id: h.id, orderId: h.orderId, tableId: h.tableId,
+                time: h.time, itemCount: h.itemCount, total: h.total,
+                status: OrderStatus.cancelled, lines: h.lines, notes: h.notes,
+              )
+            else h,
+        ];
       }
+      _applyTablesFromEnvelope(env);
     });
 
-    // I3 fix: unwrap nested flags key.
-    _socket.on('flags:updated', (data) {
-      final envelope = Map<String, dynamic>.from(data as Map);
-      final flagsMap = envelope['flags'] as Map? ?? envelope;
-      ref.read(flagsProvider.notifier).state =
-          FeatureFlags.fromMap(Map<String, dynamic>.from(flagsMap));
-    });
-
-    _socket.on('menu:updated', (data) {
-      final map = Map<String, dynamic>.from(data as Map);
-      final items = _parseMenuItems(map);
-      ref.read(menuProvider.notifier).state = items;
-      ref.read(rawMenuDataProvider.notifier).state = map;
-    });
-
-    // I1 fix: missing broadcast listeners.
     _socket.on('kot:sent', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      final orderData = d['order'] as Map? ?? d;
-      final map = Map<String, dynamic>.from(orderData);
-      final orderId = map['id']?.toString();
-      if (orderId == null) return;
-      ref.read(activeOrdersProvider.notifier).state = [
-        for (final o in ref.read(activeOrdersProvider))
-          if (o['id']?.toString() == orderId) map else o,
-      ];
-      _updateTablesFromBroadcast(d);
+      final env = BroadcastEnvelope(_toMap(data));
+      final orderMap = env.orderMap;
+      if (orderMap != null) _replaceActiveOrder(orderMap);
+      _applyTablesFromEnvelope(env);
     });
 
     _socket.on('bill:generated', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      final orderData = d['order'] as Map? ?? d;
-      final map = Map<String, dynamic>.from(orderData);
-      final orderId = map['id']?.toString();
-      if (orderId == null) return;
-      ref.read(activeOrdersProvider.notifier).state = [
-        for (final o in ref.read(activeOrdersProvider))
-          if (o['id']?.toString() == orderId) map else o,
-      ];
+      final env = BroadcastEnvelope(_toMap(data));
+      final orderMap = env.orderMap;
+      if (orderMap != null) _replaceActiveOrder(orderMap);
     });
 
     _socket.on('bill:paid', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      final orderData = d['order'] as Map?;
-      final orderId = orderData?['id']?.toString();
-      if (orderId != null) {
-        ref.read(activeOrdersProvider.notifier).state = ref
+      final env = BroadcastEnvelope(_toMap(data));
+      final id = env.orderId;
+      if (id != null) {
+        _ref.read(activeOrdersProvider.notifier).state = _ref
             .read(activeOrdersProvider)
-            .where((o) => o['id']?.toString() != orderId)
+            .where((o) => o['id']?.toString() != id)
             .toList();
       }
-      _updateTablesFromBroadcast(d);
+      _applyTablesFromEnvelope(env);
     });
 
     _socket.on('discount:applied', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      final orderData = d['order'] as Map? ?? d;
-      final map = Map<String, dynamic>.from(orderData);
-      final orderId = map['id']?.toString();
-      if (orderId == null) return;
-      ref.read(activeOrdersProvider.notifier).state = [
-        for (final o in ref.read(activeOrdersProvider))
-          if (o['id']?.toString() == orderId) map else o,
-      ];
+      final env = BroadcastEnvelope(_toMap(data));
+      final orderMap = env.orderMap;
+      if (orderMap != null) _replaceActiveOrder(orderMap);
     });
 
-    // I2 fix: operator presence.
+    _socket.on('flags:updated', (data) {
+      final envelope = _toMap(data);
+      final flagsRaw = envelope['flags'];
+      final flagsMap = (flagsRaw is Map)
+          ? Map<String, dynamic>.from(flagsRaw)
+          : envelope;
+      _ref.read(flagsProvider.notifier).state = FeatureFlags.fromMap(flagsMap);
+    });
+
+    _socket.on('menu:updated', (data) {
+      final map = _toMap(data);
+      _ref.read(menuProvider.notifier).state = _parseMenuItems(map);
+      _ref.read(rawMenuDataProvider.notifier).state = map;
+    });
+
     _socket.on('operator:online', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      final name = d['operatorName']?.toString() ?? '';
-      final role = d['role']?.toString() ?? '';
-      if (name.isEmpty) return;
-      final current = ref.read(activeOperatorsProvider);
-      if (current.any((o) => o.name == name)) return;
-      ref.read(activeOperatorsProvider.notifier).state = [
+      final op = ServerOperatorPresence.fromMap(_toMap(data));
+      if (op.operatorName.isEmpty) return;
+      final current = _ref.read(activeOperatorsProvider);
+      if (current.any((o) => o.name == op.operatorName)) return;
+      _ref.read(activeOperatorsProvider.notifier).state = [
         ...current,
-        ActiveOperator(name: name, role: role),
+        ActiveOperator(name: op.operatorName, role: op.role),
       ];
     });
 
     _socket.on('operator:offline', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      final name = d['operatorName']?.toString() ?? '';
-      ref.read(activeOperatorsProvider.notifier).state =
-          ref.read(activeOperatorsProvider).where((o) => o.name != name).toList();
+      final op = ServerOperatorPresence.fromMap(_toMap(data));
+      _ref.read(activeOperatorsProvider.notifier).state = _ref
+          .read(activeOperatorsProvider)
+          .where((o) => o.name != op.operatorName)
+          .toList();
     });
 
-    // I5 fix: clean up listeners before disconnecting.
     _socket.on('force:disconnect', (_) {
       unregisterListeners();
-      ref.read(isAuthenticatedProvider.notifier).state = false;
-      ref.read(connectionProvider.notifier).state =
+      _ref.read(isAuthenticatedProvider.notifier).state = false;
+      _ref.read(connectionProvider.notifier).state =
           const ConnectionStatus(online: false, label: 'Disconnected by admin');
       _socket.disconnect();
     });
   }
 
-  // ─── Initial sync population ─────────────────────────────────────────────
+  // ─── Initial sync ─────────────────────────────────────────────────────────
 
   void applyInitialSync(Map<String, dynamic> data) {
-    final ref = _ref;
     debugPrint('$_tag ── Applying initial sync ──');
-    debugPrint('$_tag   Keys received: ${data.keys.toList()}');
+    debugPrint('$_tag   Keys: ${data.keys.toList()}');
 
-    // Restaurant info
-    final restaurant = data['restaurant_info'] ?? data['restaurant'];
-    if (restaurant is Map) {
-      final r = Map<String, dynamic>.from(restaurant);
-      ref.read(restaurantProvider.notifier).state = RestaurantInfo(
-        name: r['restaurant_name']?.toString() ?? r['name']?.toString() ?? 'Restaurant',
-        address: r['address']?.toString() ?? '',
-        adminDeviceLabel: r['device_label']?.toString() ?? '',
-        adminIp: r['ip']?.toString() ?? '',
+    // Restaurant info.
+    final restaurantRaw = data['restaurant_info'] ?? data['restaurant'];
+    if (restaurantRaw is Map) {
+      final info = ServerRestaurantInfo.fromMap(Map<String, dynamic>.from(restaurantRaw));
+      _ref.read(restaurantProvider.notifier).state = RestaurantInfo(
+        name: info.name,
+        address: info.address,
+        adminDeviceLabel: '',
+        adminIp: '',
       );
+      debugPrint('$_tag   Restaurant: ${info.name}');
     }
 
-    debugPrint('$_tag   Restaurant: ${restaurant is Map ? restaurant['name'] ?? restaurant['restaurant_name'] : 'not provided'}');
-
-    // Feature flags
-    final flags = data['feature_flags'] ?? data['flags'];
-    if (flags is Map) {
-      ref.read(flagsProvider.notifier).state =
-          FeatureFlags.fromMap(Map<String, dynamic>.from(flags));
+    // Feature flags.
+    final flagsRaw = data['feature_flags'] ?? data['flags'];
+    if (flagsRaw is Map) {
+      _ref.read(flagsProvider.notifier).state =
+          FeatureFlags.fromMap(Map<String, dynamic>.from(flagsRaw));
+      debugPrint('$_tag   Flags: loaded');
     }
 
-    debugPrint('$_tag   Flags: ${flags is Map ? 'loaded' : 'not provided'}');
-
-    // Floors — build a lookup map so tables can resolve floor_id → floor name.
+    // Floors → build lookup map.
     final floorsList = data['floors'];
-    final floorMap = <String, String>{};
+    _floorMap = {};
     if (floorsList is List) {
-      for (final f in floorsList) {
-        if (f is Map) {
-          final fid = f['id']?.toString();
-          final fname = f['name']?.toString();
-          if (fid != null && fname != null) floorMap[fid] = fname;
+      for (final raw in floorsList) {
+        if (raw is Map) {
+          final f = ServerFloor.fromMap(Map<String, dynamic>.from(raw));
+          if (f.id.isNotEmpty) _floorMap[f.id] = f.name;
         }
       }
     }
-    _floorMap = floorMap;
-    debugPrint('$_tag   Floors: ${floorMap.length} → ${floorMap.values.toList()}');
+    debugPrint('$_tag   Floors: ${_floorMap.length} → ${_floorMap.values.toList()}');
 
-    // Tables
-    final currentOperatorId = ref.read(operatorProvider)?.username;
+    // Tables.
     final tablesList = data['tables'];
     if (tablesList is List) {
-      // Log first table's raw keys for debugging.
       if (tablesList.isNotEmpty && tablesList.first is Map) {
-        final sample = Map<String, dynamic>.from(tablesList.first as Map);
-        debugPrint('$_tag   Table[0] raw keys: ${sample.keys.toList()}');
-        debugPrint('$_tag   Table[0] name=${sample['name']}, id=${sample['id']}, '
-            'floor_id=${sample['floor_id']}, capacity=${sample['capacity']}, '
-            'status=${sample['status']}');
+        final sample = Map<String, dynamic>.from(tablesList.first);
+        debugPrint('$_tag   Table[0] keys: ${sample.keys.toList()}');
+        debugPrint('$_tag   Table[0] name=${sample['name']}, '
+            'order_total=${sample['order_total']}, status=${sample['status']}');
       }
 
-      final tables = tablesList
-          .whereType<Map>()
-          .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId, floorMap))
-          .whereType<RestaurantTable>()
-          .toList();
-      ref.read(tablesProvider.notifier).state = tables;
+      final tables = <RestaurantTable>[];
+      for (final raw in tablesList) {
+        if (raw is Map) {
+          final st = ServerTable.fromMap(Map<String, dynamic>.from(raw));
+          tables.add(_serverTableToLocal(st));
+        }
+      }
+      _ref.read(tablesProvider.notifier).state = tables;
 
-      // Log parsed result.
       for (final t in tables.take(3)) {
-        debugPrint('$_tag   Parsed → name=${t.id}, serverId=${t.serverId}, '
-            'floor=${t.floor}, seats=${t.seats}, state=${t.state}');
+        debugPrint('$_tag   Parsed → ${t.id} (${t.serverId}), '
+            'floor=${t.floor}, bill=${t.bill}, state=${t.state}');
       }
+      debugPrint('$_tag   Tables: ${tables.length} loaded');
     }
 
-    debugPrint('$_tag   Tables: ${tablesList is List ? '${tablesList.length} loaded' : 'not provided'}');
-
-    // Menu
-    final menuData = data['menu'];
-    if (menuData is Map) {
-      final menuMap = Map<String, dynamic>.from(menuData);
-      ref.read(menuProvider.notifier).state = _parseMenuItems(menuMap);
-      ref.read(rawMenuDataProvider.notifier).state = menuMap;
+    // Menu.
+    final menuRaw = data['menu'];
+    if (menuRaw is Map) {
+      final menuMap = Map<String, dynamic>.from(menuRaw);
+      _ref.read(menuProvider.notifier).state = _parseMenuItems(menuMap);
+      _ref.read(rawMenuDataProvider.notifier).state = menuMap;
+      debugPrint('$_tag   Menu items: ${_ref.read(menuProvider).length}');
     }
 
-    debugPrint('$_tag   Menu items: ${menuData is Map ? ref.read(menuProvider).length.toString() : 'not provided'}');
-
-    // Active orders
+    // Active orders → also populate history.
     final ordersList = data['active_orders'] ?? data['orders'];
     if (ordersList is List) {
-      final orders = ordersList
-          .whereType<Map>()
-          .map((m) => Map<String, dynamic>.from(m))
-          .toList();
-      ref.read(activeOrdersProvider.notifier).state = orders;
-
-      // Populate history from active orders
-      ref.read(historyProvider.notifier).state =
-          orders.map(_parseHistoryOrder).toList();
+      final rawOrders = <Map<String, dynamic>>[];
+      final historyEntries = <HistoryOrder>[];
+      for (final raw in ordersList) {
+        if (raw is Map) {
+          final m = Map<String, dynamic>.from(raw);
+          rawOrders.add(m);
+          final so = ServerOrder.fromMap(m);
+          historyEntries.add(_serverOrderToHistory(so));
+        }
+      }
+      _ref.read(activeOrdersProvider.notifier).state = rawOrders;
+      _ref.read(historyProvider.notifier).state = historyEntries;
+      debugPrint('$_tag   Active orders: ${rawOrders.length}');
     }
 
-    debugPrint('$_tag   Active orders: ${ordersList is List ? '${ordersList.length} loaded' : 'not provided'}');
-
-    // Discounts
-    final discountsRaw = data['discounts'] as List<dynamic>? ?? [];
-    ref.read(discountsProvider.notifier).state =
-        discountsRaw.map((d) => Map<String, dynamic>.from(d as Map)).toList();
-
-    // Active operators
-    final operatorsList = data['active_operators'];
-    if (operatorsList is List) {
-      final operators = operatorsList
-          .whereType<Map>()
-          .map((m) {
-            final om = Map<String, dynamic>.from(m);
-            return ActiveOperator(
-              name: om['name']?.toString() ?? '',
-              role: om['role']?.toString() ?? '',
-            );
-          })
-          .toList();
-      ref.read(activeOperatorsProvider.notifier).state = operators;
+    // Discounts.
+    final discountsRaw = data['discounts'];
+    if (discountsRaw is List) {
+      final discounts = <Map<String, dynamic>>[];
+      for (final d in discountsRaw) {
+        if (d is Map) discounts.add(Map<String, dynamic>.from(d));
+      }
+      _ref.read(discountsProvider.notifier).state = discounts;
+      debugPrint('$_tag   Discounts: ${discounts.length}');
     }
 
-    debugPrint('$_tag   Discounts: ${discountsRaw.length} loaded');
-    debugPrint('$_tag   Active operators: ${operatorsList is List ? '${operatorsList.length}' : '0'}');
+    // Connection status.
+    final name = _ref.read(restaurantProvider)?.name ?? 'POS';
+    _ref.read(connectionProvider.notifier).state =
+        ConnectionStatus(online: true, label: 'Connected · $name');
+
     debugPrint('$_tag ── Initial sync complete ──');
-
-    // Mark connected
-    final restaurantName = (restaurant is Map)
-        ? restaurant['restaurant_name']?.toString() ?? restaurant['name']?.toString() ?? 'POS'
-        : 'POS';
-    ref.read(connectionProvider.notifier).state =
-        ConnectionStatus(online: true, label: 'Connected · $restaurantName');
   }
 
-  // ─── Unregister all listeners ─────────────────────────────────────────────
-
-  /// Helper: update tablesProvider from broadcast data that includes a `tables` key.
-  void _updateTablesFromBroadcast(Map<String, dynamic> d) {
-    final ref = _ref;
-    final tablesData = d['tables'];
-    if (tablesData is List) {
-      final currentOperatorId = ref.read(operatorProvider)?.username;
-      final tables = tablesData
-          .whereType<Map>()
-          .map((m) => _parseTable(Map<String, dynamic>.from(m), currentOperatorId, _floorMap))
-          .whereType<RestaurantTable>()
-          .toList();
-      ref.read(tablesProvider.notifier).state = tables;
-    }
-  }
+  // ─── Unregister ───────────────────────────────────────────────────────────
 
   void unregisterListeners() {
     _stateSubscription?.cancel();
@@ -397,95 +307,101 @@ class SyncService {
     }
   }
 
-  // ─── Parsers ──────────────────────────────────────────────────────────────
+  // ─── Converters (ServerModel → local provider model) ──────────────────────
 
-  /// Builds a [HistoryOrder] from a raw order map (used in both the
-  /// `order:created` socket listener and `applyInitialSync`).
-  HistoryOrder _parseHistoryOrder(Map<String, dynamic> o) {
-    final serverUuid = o['id']?.toString() ?? '';
-    return HistoryOrder(
-      id: o['kot_number'] as String? ?? o['order_number'] as String? ?? serverUuid,
-      orderId: serverUuid,
-      tableId: o['table_id'] as String? ?? '',
-      time: _formatTime(o['created_at'] as String?),
-      itemCount: (o['item_count'] as int?) ?? 0,
-      total: (o['total'] as num?)?.toDouble() ?? 0,
-      status: _parseOrderStatus(o['status'] as String?),
-      lines: const [],
-      notes: o['notes'] as String?,
-    );
-  }
-
-  RestaurantTable? _parseTable(
-    Map<String, dynamic> m,
-    String? currentOperatorId, [
-    Map<String, String> floorMap = const {},
-  ]) {
-    final serverUuid = m['id']?.toString() ?? m['table_id']?.toString();
-    final displayName = m['name']?.toString() ?? serverUuid;
-    if (serverUuid == null) return null;
-
-    final seats = int.tryParse('${m['capacity'] ?? m['seats'] ?? 4}') ?? 4;
-
-    // Resolve floor: floor_name (direct) > floor_id lookup > floor > fallback.
-    final floorId = m['floor_id']?.toString();
-    final floor = m['floor_name']?.toString() ??
-        (floorId != null ? floorMap[floorId] : null) ??
-        m['floor']?.toString() ??
-        'Ground';
-
-    final stateRaw = m['status']?.toString() ?? m['state']?.toString() ?? 'free';
-    final createdBy = m['created_by']?.toString() ??
-        m['operator_id']?.toString() ??
-        m['active_order_created_by']?.toString();
-    final tableState = _parseTableState(stateRaw, createdBy, currentOperatorId);
+  RestaurantTable _serverTableToLocal(ServerTable st) {
+    final floorName = _floorMap[st.floorId] ?? st.floorId;
+    final currentOperatorId = _ref.read(operatorProvider)?.username;
+    final tableState = _mapTableStatus(st.status, currentOperatorId);
 
     return RestaurantTable(
-      id: displayName!,
-      serverId: serverUuid,
-      seats: seats,
-      floor: floor,
+      id: st.name,
+      serverId: st.id,
+      seats: st.capacity,
+      floor: floorName,
       state: tableState,
-      waiterName: m['waiter_name']?.toString() ?? m['operator_name']?.toString(),
-      coverCount: int.tryParse('${m['cover_count'] ?? m['covers'] ?? ''}'),
-      bill: double.tryParse('${m['bill'] ?? m['order_total'] ?? m['total'] ?? ''}'),
-      note: m['note']?.toString() ??
-          m['reservation_customer']?.toString() ??
-          m['reservation_note']?.toString(),
+      bill: st.orderTotal > 0 ? st.orderTotal : null,
+      note: st.reservationCustomer,
     );
   }
 
-  /// Maps server status string to client [TableState].
-  /// Server sends: 'free', 'occupied', 'reserved', 'cleaning'.
-  /// 'mine' vs 'other' is derived from the active order's `created_by`.
-  TableState _parseTableState(String raw, String? createdBy, String? currentOperatorId) {
-    switch (raw.toLowerCase()) {
+  HistoryOrder _serverOrderToHistory(ServerOrder so) {
+    // Resolve table display name.
+    final tables = _ref.read(tablesProvider);
+    String tableDisplay = so.tableId;
+    for (final t in tables) {
+      if (t.serverId == so.tableId) { tableDisplay = t.id; break; }
+    }
+
+    String displayId = so.id;
+    if (so.kotNumber != null && so.kotNumber!.isNotEmpty) {
+      displayId = so.kotNumber!;
+    } else if (so.orderNumber.isNotEmpty) {
+      displayId = so.orderNumber;
+    }
+
+    debugPrint('$_tag   Order $displayId: total=${so.total}, '
+        'items=${so.itemCount}, status=${so.status}');
+
+    return HistoryOrder(
+      id: displayId,
+      orderId: so.id,
+      tableId: tableDisplay,
+      time: _formatTime(so.createdAt),
+      itemCount: so.itemCount,
+      total: so.total,
+      status: _mapOrderStatus(so.status),
+      lines: so.items.map(_serverItemToLine).toList(),
+      notes: so.notes,
+    );
+  }
+
+  HistoryOrderLine _serverItemToLine(ServerOrderItem item) {
+    return HistoryOrderLine(
+      name: item.itemName,
+      qty: item.quantity,
+      price: item.unitPrice > 0 ? item.unitPrice : item.totalPrice,
+      kitchenSection: item.itemType,
+      mods: item.selectedOptions.isNotEmpty ? [item.selectedOptions] : const [],
+    );
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  void _replaceActiveOrder(Map<String, dynamic> orderMap) {
+    final orderId = orderMap['id']?.toString();
+    if (orderId == null) return;
+    _ref.read(activeOrdersProvider.notifier).state = [
+      for (final o in _ref.read(activeOrdersProvider))
+        if (o['id']?.toString() == orderId) orderMap else o,
+    ];
+  }
+
+  void _applyTablesFromEnvelope(BroadcastEnvelope env) {
+    final tableMaps = env.tablesList;
+    if (tableMaps.isEmpty) return;
+    final tables = tableMaps.map((m) {
+      final st = ServerTable.fromMap(m);
+      return _serverTableToLocal(st);
+    }).toList();
+    _ref.read(tablesProvider.notifier).state = tables;
+  }
+
+  TableState _mapTableStatus(String status, String? currentOperatorId) {
+    switch (status.toLowerCase()) {
       case 'dirty':
       case 'cleaning':
         return TableState.dirty;
       case 'reserved':
         return TableState.reserved;
       case 'occupied':
-        if (createdBy != null && currentOperatorId != null && createdBy == currentOperatorId) {
-          return TableState.mine;
-        }
         return TableState.other;
       default:
         return TableState.free;
     }
   }
 
-  String _formatTime(String? isoDate) {
-    if (isoDate == null) return '';
-    try {
-      final dt = DateTime.parse(isoDate);
-      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return '';
-    }
-  }
-
-  OrderStatus _parseOrderStatus(String? status) {
+  OrderStatus _mapOrderStatus(String status) {
     switch (status) {
       case 'cancelled':
         return OrderStatus.cancelled;
@@ -496,79 +412,71 @@ class SyncService {
     }
   }
 
+  String _formatTime(String isoDate) {
+    if (isoDate.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(isoDate);
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  // ─── Menu parsing ─────────────────────────────────────────────────────────
+
   List<MenuItem> _parseMenuItems(Map<String, dynamic> data) {
     final items = <MenuItem>[];
-
-    // Support both { items: [...] } and { categories: [{ items: [...] }] }
     final rawItems = data['items'];
     final rawCategories = data['categories'];
 
     if (rawItems is List) {
       for (final entry in rawItems) {
-        if (entry is! Map) continue;
-        final item = _parseMenuItem(Map<String, dynamic>.from(entry));
-        if (item != null) items.add(item);
+        if (entry is Map) {
+          final si = ServerMenuItem.fromMap(Map<String, dynamic>.from(entry));
+          items.add(_serverMenuItemToLocal(si));
+        }
       }
     } else if (rawCategories is List) {
       for (final cat in rawCategories) {
-        if (cat is! Map) continue;
-        final catMap = Map<String, dynamic>.from(cat);
-        final catItems = catMap['items'];
-        if (catItems is! List) continue;
-        for (final entry in catItems) {
-          if (entry is! Map) continue;
-          final item = _parseMenuItem(Map<String, dynamic>.from(entry));
-          if (item != null) items.add(item);
+        if (cat is Map) {
+          final catMap = Map<String, dynamic>.from(cat);
+          final catName = catMap['name']?.toString() ?? 'Other';
+          final catType = catMap['type']?.toString() ?? 'food';
+          final catItems = catMap['items'];
+          if (catItems is List) {
+            for (final entry in catItems) {
+              if (entry is Map) {
+                final m = Map<String, dynamic>.from(entry);
+                m['category_name'] = catName;
+                m['category_type'] = catType;
+                final si = ServerMenuItem.fromMap(m);
+                items.add(_serverMenuItemToLocal(si));
+              }
+            }
+          }
         }
       }
     }
-
     return items;
   }
 
-  MenuItem? _parseMenuItem(Map<String, dynamic> m) {
-    final id = m['id']?.toString() ?? m['item_id']?.toString();
-    final name = m['name']?.toString();
-    if (id == null || name == null) return null;
-
-    final section = m['section']?.toString() ??
-        m['category']?.toString() ??
-        m['category_name']?.toString() ??
-        'Other';
-    final kitchenSection = m['kitchen_section']?.toString() ??
-        m['kitchen']?.toString() ??
-        section.toLowerCase();
-    final price = double.tryParse('${m['price'] ?? 0}') ?? 0.0;
-
-    final vegRaw = m['is_veg'] ?? m['veg'];
-    bool isVeg = false;
-    if (vegRaw is bool) {
-      isVeg = vegRaw;
-    } else if (vegRaw is int) {
-      isVeg = vegRaw == 1;
-    } else if (vegRaw is String) {
-      isVeg = vegRaw == '1' || vegRaw == 'true';
-    }
-
-    final availRaw = m['available'] ?? m['is_available'] ?? true;
-    bool available = true;
-    if (availRaw is bool) {
-      available = availRaw;
-    } else if (availRaw is int) {
-      available = availRaw == 1;
-    } else if (availRaw is String) {
-      available = availRaw == '1' || availRaw == 'true';
-    }
-
+  MenuItem _serverMenuItemToLocal(ServerMenuItem si) {
     return MenuItem(
-      id: id,
-      name: name,
-      section: section,
-      kitchenSection: kitchenSection,
-      price: price,
-      isVeg: isVeg,
-      available: available,
-      note: m['note']?.toString(),
+      id: si.id,
+      name: si.name,
+      section: si.categoryName,
+      kitchenSection: si.categoryType,
+      price: si.basePrice,
+      isVeg: si.isVeg,
+      available: si.isAvailable,
+      note: si.note,
     );
+  }
+
+  // ─── Utility ──────────────────────────────────────────────────────────────
+
+  static Map<String, dynamic> _toMap(dynamic data) {
+    if (data is Map) return Map<String, dynamic>.from(data);
+    return const {};
   }
 }

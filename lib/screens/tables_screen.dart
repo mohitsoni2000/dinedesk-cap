@@ -6,7 +6,6 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/customer_count_sheet.dart';
 import '../widgets/table_merge_sheet.dart';
 
 class TablesScreen extends ConsumerStatefulWidget {
@@ -22,13 +21,11 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
 
   void _onTableTap(RestaurantTable t) async {
     if (t.state == TableState.free) {
-      // Free table → ask customer count, then open builder.
-      final count = await CustomerCountSheet.show(context, t);
-      if (!mounted || count == null) return;
+      // Free table → go straight to order builder.
       ref.read(cartProvider.notifier).clear();
       ref.read(orderNotesProvider.notifier).state = '';
       ref.read(selectedTableIdProvider.notifier).state = t.serverId;
-      if (mounted) context.push('/order/${t.serverId}');
+      context.push('/order/${t.serverId}');
     } else if (t.state == TableState.mine) {
       // Clear stale cart if switching to a different table (C1 fix).
       final prevTable = ref.read(selectedTableIdProvider);

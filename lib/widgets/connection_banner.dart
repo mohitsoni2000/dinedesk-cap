@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
+import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import 'liquid_glass_surface.dart';
 
@@ -78,15 +79,21 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
           top: 0, left: 0, right: 0,
           child: IgnorePointer(
             ignoring: conn.online,
-            child: AnimatedSlide(
-            offset: conn.online ? const Offset(0, -1.5) : Offset.zero,
-            duration: const Duration(milliseconds: 320),
-            curve: Curves.easeOutCubic,
+            child: SpringBuilder(
+            from: conn.online ? 0.0 : 1.0,
+            to: conn.online ? 0.0 : 1.0,
+            spring: RestroSprings.soft,
+            builder: (BuildContext _, double t, Widget? child) {
+              return Transform.translate(
+                offset: Offset(0, -1.5 * (1.0 - t) * 100),
+                child: Opacity(
+                  opacity: t.clamp(0.0, 1.0),
+                  child: child,
+                ),
+              );
+            },
             child: TickerMode(
               enabled: !conn.online,
-              child: AnimatedOpacity(
-              opacity: conn.online ? 0 : 1,
-              duration: const Duration(milliseconds: 220),
               child: SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -140,7 +147,6 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
               ),
             ),
           ),
-        ),
         ),  // IgnorePointer
         ),  // Positioned
       ],

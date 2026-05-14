@@ -1,6 +1,7 @@
 // Reusable liquid-glass chrome: app bar, bottom nav, pills, FAB.
 
 import 'package:flutter/material.dart';
+import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import 'liquid_glass_surface.dart';
 
@@ -162,9 +163,13 @@ class _LiquidPrimaryButtonState extends State<LiquidPrimaryButton> {
       onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
       onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
       onTap: widget.onPressed,
-      child: AnimatedScale(
-        scale: _pressed ? 0.97 : 1.0,
-        duration: const Duration(milliseconds: 100),
+      child: SpringBuilder(
+        from: 1.0,
+        to: _pressed ? 0.97 : 1.0,
+        spring: RestroSprings.snappy,
+        builder: (BuildContext _, double scale, Widget? child) {
+          return Transform.scale(scale: scale, child: child);
+        },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
@@ -226,9 +231,13 @@ class _LiquidSecondaryButtonState extends State<LiquidSecondaryButton> {
       onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
       onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
       onTap: widget.onPressed,
-      child: AnimatedScale(
-        scale: _pressed ? 0.97 : 1.0,
-        duration: const Duration(milliseconds: 100),
+      child: SpringBuilder(
+        from: 1.0,
+        to: _pressed ? 0.97 : 1.0,
+        spring: RestroSprings.snappy,
+        builder: (BuildContext _, double scale, Widget? child) {
+          return Transform.scale(scale: scale, child: child);
+        },
         child: LiquidGlassSurface(
           borderRadius: const BorderRadius.all(AppRadii.md),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../data/providers.dart';
+import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_mesh_background.dart';
@@ -17,17 +18,15 @@ class OrderSuccessScreen extends ConsumerStatefulWidget {
   ConsumerState<OrderSuccessScreen> createState() => _OrderSuccessScreenState();
 }
 
-class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _txt =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
+  bool _showText = false;
   Timer? _autoNav;
 
   @override
   void initState() {
     super.initState();
     Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) _txt.forward();
+      if (mounted) setState(() => _showText = true);
     });
     // Auto-return to tables after 3.5s.
     _autoNav = Timer(const Duration(milliseconds: 3500), () {
@@ -36,7 +35,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen>
   }
 
   @override
-  void dispose() { _autoNav?.cancel(); _txt.dispose(); super.dispose(); }
+  void dispose() { _autoNav?.cancel(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
@@ -52,14 +51,20 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen>
                   const Spacer(),
                   const AnimatedCheckDraw(size: 132),
                   const SizedBox(height: 28),
-                  FadeTransition(
-                    opacity: _txt,
-                    child: SlideTransition(
-                      position: Tween(
-                        begin: const Offset(0, 0.2),
-                        end: Offset.zero,
-                      ).animate(CurvedAnimation(parent: _txt, curve: Curves.easeOutCubic)),
-                      child: Column(children: [
+                  SpringBuilder(
+                    from: 0.0,
+                    to: _showText ? 1.0 : 0.0,
+                    spring: RestroSprings.soft,
+                    builder: (BuildContext _, double t, Widget? child) {
+                      return Opacity(
+                        opacity: t.clamp(0.0, 1.0),
+                        child: Transform.translate(
+                          offset: Offset(0, 20.0 * (1.0 - t)),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: Column(children: [
                         const Text('Sent to Kitchen', style: AppTypography.displayMd),
                         const SizedBox(height: 8),
                         Text('Table ${widget.tableId} · KOT ${ref.watch(lastKotIdProvider)}',
@@ -72,12 +77,19 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen>
                             )),
                       ]),
                     ),
-                  ),
                   const Spacer(),
                   Padding(
                     padding: const EdgeInsets.all(AppSpacing.lg),
-                    child: FadeTransition(
-                      opacity: _txt,
+                    child: SpringBuilder(
+                      from: 0.0,
+                      to: _showText ? 1.0 : 0.0,
+                      spring: RestroSprings.soft,
+                      builder: (BuildContext _, double t, Widget? child) {
+                        return Opacity(
+                          opacity: t.clamp(0.0, 1.0),
+                          child: child,
+                        );
+                      },
                       child: LiquidPrimaryButton(
                         label: 'Back to Tables',
                         fullWidth: true,

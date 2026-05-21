@@ -55,7 +55,19 @@ Future<bool> requirePinIfNeeded(
 
   if (!required) return true;
 
+  if (flags.operatorPinMode == 'session') {
+    final verifiedAt = ref.read(pinVerifiedAtProvider);
+    final minutes = flags.operatorPinSessionMinutes;
+    if (verifiedAt != null &&
+        DateTime.now().difference(verifiedAt).inMinutes < minutes) {
+      return true;
+    }
+  }
+
   // Show PIN sheet — returns true/false/null (null when dismissed).
   final result = await PinVerifySheet.show(context, action: action);
+  if (result == true && flags.operatorPinMode == 'session') {
+    ref.read(pinVerifiedAtProvider.notifier).state = DateTime.now();
+  }
   return result ?? false;
 }

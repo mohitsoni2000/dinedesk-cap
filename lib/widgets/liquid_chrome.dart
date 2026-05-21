@@ -34,7 +34,8 @@ class LiquidAppBar extends StatelessWidget implements PreferredSizeWidget {
             if (leading != null) leading!,
             const SizedBox(width: 8),
             Expanded(
-              child: Text(title, style: AppTypography.title, overflow: TextOverflow.ellipsis),
+              child: Text(title,
+                  style: AppTypography.title, overflow: TextOverflow.ellipsis),
             ),
             ...actions,
           ],
@@ -71,26 +72,36 @@ class LiquidBottomNav extends StatelessWidget {
               Expanded(
                 child: GestureDetector(
                   onTap: () => onTap(i),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 280),
-                    curve: Curves.easeOutCubic,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: i == currentIndex ? AppColors.ink : Colors.transparent,
-                      borderRadius: const BorderRadius.all(AppRadii.sm),
-                    ),
+                  child: SpringBuilder(
+                    to: i == currentIndex ? 1.0 : 0.0,
+                    spring: RestroSprings.snappy,
+                    builder: (BuildContext _, double t, Widget? child) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color:
+                              Color.lerp(Colors.transparent, AppColors.ink, t),
+                          borderRadius: const BorderRadius.all(AppRadii.sm),
+                        ),
+                        child: child,
+                      );
+                    },
                     child: Column(
                       children: [
                         Icon(
                           items[i].icon,
                           size: 22,
-                          color: i == currentIndex ? Colors.white : AppColors.ink70,
+                          color: i == currentIndex
+                              ? Colors.white
+                              : AppColors.ink70,
                         ),
                         const SizedBox(height: 2),
                         Text(
                           items[i].label,
                           style: AppTypography.micro.copyWith(
-                            color: i == currentIndex ? Colors.white : AppColors.ink50,
+                            color: i == currentIndex
+                                ? Colors.white
+                                : AppColors.ink50,
                             decoration: TextDecoration.none,
                           ),
                         ),
@@ -186,16 +197,19 @@ class _LiquidPrimaryButtonState extends State<LiquidPrimaryButton> {
             boxShadow: enabled ? AppShadows.terraGlow : null,
           ),
           child: Row(
-            mainAxisSize: widget.fullWidth ? MainAxisSize.max : MainAxisSize.min,
+            mainAxisSize:
+                widget.fullWidth ? MainAxisSize.max : MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (widget.leadingIcon != null) ...[
-                Icon(widget.leadingIcon, color: enabled ? Colors.white : AppColors.ink30, size: 20),
+                Icon(widget.leadingIcon,
+                    color: enabled ? Colors.white : AppColors.ink30, size: 20),
                 const SizedBox(width: 8),
               ],
-              Text(widget.label, style: AppTypography.bodyMd.copyWith(
-                color: enabled ? Colors.white : AppColors.ink30,
-                fontWeight: FontWeight.w600)),
+              Text(widget.label,
+                  style: AppTypography.bodyMd.copyWith(
+                      color: enabled ? Colors.white : AppColors.ink30,
+                      fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -250,7 +264,9 @@ class _LiquidSecondaryButtonState extends State<LiquidSecondaryButton> {
                 Icon(widget.leadingIcon, color: AppColors.ink, size: 20),
                 const SizedBox(width: 8),
               ],
-              Text(widget.label, style: AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w600)),
+              Text(widget.label,
+                  style: AppTypography.bodyMd
+                      .copyWith(fontWeight: FontWeight.w600)),
             ],
           ),
         ),

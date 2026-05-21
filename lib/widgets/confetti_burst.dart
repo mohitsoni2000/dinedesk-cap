@@ -56,7 +56,10 @@ class _ConfettiBurstState extends State<ConfettiBurst>
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,8 +80,13 @@ class _Particle {
   final double vx, vy, spin, size, seed;
   final int shape; // 0 rect, 1 circle, 2 streamer
   _Particle({
-    required this.color, required this.vx, required this.vy,
-    required this.spin, required this.size, required this.shape, required this.seed,
+    required this.color,
+    required this.vx,
+    required this.vy,
+    required this.spin,
+    required this.size,
+    required this.shape,
+    required this.seed,
   });
 }
 
@@ -107,11 +115,13 @@ class _ConfettiPainter extends CustomPainter {
       canvas.translate(pos.dx, pos.dy);
       canvas.rotate(p.spin * t + p.seed * 6.28);
 
-      final paint = Paint()..color = p.color.withValues(alpha: fade.clamp(0, 1));
+      final paint = Paint()
+        ..color = p.color.withValues(alpha: fade.clamp(0, 1));
       switch (p.shape) {
         case 0:
           canvas.drawRect(
-            Rect.fromCenter(center: Offset.zero, width: p.size, height: p.size * 0.6),
+            Rect.fromCenter(
+                center: Offset.zero, width: p.size, height: p.size * 0.6),
             paint,
           );
           break;
@@ -122,7 +132,11 @@ class _ConfettiPainter extends CustomPainter {
           final path = Path()
             ..moveTo(-p.size, 0)
             ..quadraticBezierTo(0, -p.size, p.size, 0);
-          canvas.drawPath(path, paint..style = PaintingStyle.stroke..strokeWidth = 2);
+          canvas.drawPath(
+              path,
+              paint
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 2);
           break;
       }
       canvas.restore();

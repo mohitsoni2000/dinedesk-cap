@@ -197,8 +197,8 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
                       decoration: const InputDecoration(
                         border: InputBorder.none,
                         hintText: 'Name or phone number...',
-                        icon:
-                            Icon(Icons.search, color: AppColors.ink50, size: 20),
+                        icon: Icon(Icons.search,
+                            color: AppColors.ink50, size: 20),
                         isDense: true,
                       ),
                       onChanged: _onSearchChanged,
@@ -335,8 +335,8 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
                 child: Center(
                   child: Text(
                     name.isNotEmpty ? name[0].toUpperCase() : '?',
-                    style: AppTypography.title
-                        .copyWith(color: AppColors.terra600),
+                    style:
+                        AppTypography.title.copyWith(color: AppColors.terra600),
                   ),
                 ),
               ),
@@ -387,7 +387,8 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
         const Text('Fill in the details to create a customer',
             style: AppTypography.caption),
         const SizedBox(height: 16),
-        _FormField(controller: _name, label: 'Name *', icon: Icons.person_outline),
+        _FormField(
+            controller: _name, label: 'Name *', icon: Icons.person_outline),
         const SizedBox(height: 12),
         _FormField(
             controller: _phone,

@@ -107,12 +107,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     _DateTab(
                       label: 'TODAY',
                       selected: _dateScope == _DateScope.today,
-                      onTap: () => setState(() => _dateScope = _DateScope.today),
+                      onTap: () =>
+                          setState(() => _dateScope = _DateScope.today),
                     ),
                     _DateTab(
                       label: 'YESTERDAY',
                       selected: _dateScope == _DateScope.yesterday,
-                      onTap: () => setState(() => _dateScope = _DateScope.yesterday),
+                      onTap: () =>
+                          setState(() => _dateScope = _DateScope.yesterday),
                     ),
                   ],
                 ),
@@ -133,46 +135,46 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             const SizedBox(height: 8),
             Expanded(
               child: filtered.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.receipt_long,
-                            color: AppColors.ink30, size: 48),
-                          const SizedBox(height: 12),
-                          Text(
-                            _dateScope == _DateScope.yesterday
-                              ? 'Nothing from yesterday'
-                              : 'No orders yet',
-                            style: AppTypography.title),
-                          const SizedBox(height: 4),
-                          Text(
-                            _statusFilter == null
-                              ? 'Orders you send will appear here'
-                              : 'No orders match this filter',
-                            style: AppTypography.caption,
-                            textAlign: TextAlign.center),
-                        ],
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.receipt_long,
+                                color: AppColors.ink30, size: 48),
+                            const SizedBox(height: 12),
+                            Text(
+                                _dateScope == _DateScope.yesterday
+                                    ? 'Nothing from yesterday'
+                                    : 'No orders yet',
+                                style: AppTypography.title),
+                            const SizedBox(height: 4),
+                            Text(
+                                _statusFilter == null
+                                    ? 'Orders you send will appear here'
+                                    : 'No orders match this filter',
+                                style: AppTypography.caption,
+                                textAlign: TextAlign.center),
+                          ],
+                        ),
                       ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (_, i) {
+                        final o = filtered[i];
+                        return _OrderTile(
+                          order: o,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            context.push('/history/${o.id}');
+                          },
+                        );
+                      },
                     ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) {
-                      final o = filtered[i];
-                      return _OrderTile(
-                        order: o,
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          context.push('/history/${o.id}');
-                        },
-                      );
-                    },
-                  ),
             ),
           ],
         ),
@@ -185,8 +187,8 @@ class _DateTab extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _DateTab({
-    required this.label, required this.selected, required this.onTap});
+  const _DateTab(
+      {required this.label, required this.selected, required this.onTap});
   @override
   Widget build(BuildContext context) {
     return Expanded(
@@ -200,7 +202,8 @@ class _DateTab extends StatelessWidget {
             borderRadius: const BorderRadius.all(AppRadii.xs),
           ),
           alignment: Alignment.center,
-          child: Text(label,
+          child: Text(
+            label,
             style: AppTypography.micro.copyWith(
               color: selected ? Colors.white : AppColors.ink70,
             ),
@@ -227,7 +230,10 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () { HapticFeedback.selectionClick(); onTap(); },
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -241,22 +247,25 @@ class _StatusChip extends StatelessWidget {
           children: [
             if (color != null) ...[
               Container(
-                width: 6, height: 6,
+                width: 6,
+                height: 6,
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
               const SizedBox(width: 6),
             ],
             Text(label,
-              style: AppTypography.caption.copyWith(
-                color: selected ? Colors.white : AppColors.ink,
-                fontWeight: FontWeight.w600,
-              )),
+                style: AppTypography.caption.copyWith(
+                  color: selected ? Colors.white : AppColors.ink,
+                  fontWeight: FontWeight.w600,
+                )),
             const SizedBox(width: 6),
             Text('$count',
-              style: AppTypography.caption.copyWith(
-                color: selected ? Colors.white.withValues(alpha: 0.7) : AppColors.ink50,
-                fontWeight: FontWeight.w500,
-              )),
+                style: AppTypography.caption.copyWith(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.7)
+                      : AppColors.ink50,
+                  fontWeight: FontWeight.w500,
+                )),
           ],
         ),
       ),
@@ -276,7 +285,8 @@ class _OrderTile extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 4, height: 48,
+            width: 4,
+            height: 48,
             decoration: BoxDecoration(
               color: _statusColor(order.status),
               borderRadius: BorderRadius.circular(2),
@@ -290,8 +300,10 @@ class _OrderTile extends StatelessWidget {
                 Row(
                   children: [
                     Flexible(
-                      child: Text(order.id, style: AppTypography.title,
-                        overflow: TextOverflow.ellipsis, maxLines: 1),
+                      child: Text(order.id,
+                          style: AppTypography.title,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1),
                     ),
                     const SizedBox(width: 8),
                     _StatusBadge(status: order.status),
@@ -301,7 +313,8 @@ class _OrderTile extends StatelessWidget {
                 Text(
                   '${order.tableId} · ${order.time} · ${order.itemCount} items',
                   style: AppTypography.caption,
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -310,10 +323,9 @@ class _OrderTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(formatRupeesCompact(order.total),
-                style: AppTypography.headline),
+                  style: AppTypography.headline),
               const SizedBox(height: 2),
-              const Icon(Icons.chevron_right,
-                color: AppColors.ink30, size: 18),
+              const Icon(Icons.chevron_right, color: AppColors.ink30, size: 18),
             ],
           ),
         ],
@@ -322,11 +334,11 @@ class _OrderTile extends StatelessWidget {
   }
 
   static Color _statusColor(OrderStatus s) => switch (s) {
-    OrderStatus.sent      => AppColors.success,
-    OrderStatus.modified  => AppColors.warn,
-    OrderStatus.cancelled => AppColors.danger,
-    OrderStatus.paid      => AppColors.teal,
-  };
+        OrderStatus.sent => AppColors.success,
+        OrderStatus.modified => AppColors.warn,
+        OrderStatus.cancelled => AppColors.danger,
+        OrderStatus.paid => AppColors.teal,
+      };
 }
 
 class _StatusBadge extends StatelessWidget {
@@ -334,18 +346,18 @@ class _StatusBadge extends StatelessWidget {
   const _StatusBadge({required this.status});
 
   Color get _color => switch (status) {
-    OrderStatus.sent      => AppColors.success,
-    OrderStatus.modified  => AppColors.warn,
-    OrderStatus.cancelled => AppColors.danger,
-    OrderStatus.paid      => AppColors.teal,
-  };
+        OrderStatus.sent => AppColors.success,
+        OrderStatus.modified => AppColors.warn,
+        OrderStatus.cancelled => AppColors.danger,
+        OrderStatus.paid => AppColors.teal,
+      };
 
   String get _label => switch (status) {
-    OrderStatus.sent      => 'SENT',
-    OrderStatus.modified  => 'MODIFIED',
-    OrderStatus.cancelled => 'CANCELLED',
-    OrderStatus.paid      => 'PAID',
-  };
+        OrderStatus.sent => 'SENT',
+        OrderStatus.modified => 'MODIFIED',
+        OrderStatus.cancelled => 'CANCELLED',
+        OrderStatus.paid => 'PAID',
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -356,9 +368,10 @@ class _StatusBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(_label,
-        style: AppTypography.micro.copyWith(
-          color: _color, letterSpacing: 0.8,
-        )),
+          style: AppTypography.micro.copyWith(
+            color: _color,
+            letterSpacing: 0.8,
+          )),
     );
   }
 }

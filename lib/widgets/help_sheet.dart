@@ -31,14 +31,16 @@ class _HelpSheet extends StatelessWidget {
       minChildSize: 0.5,
       expand: false,
       builder: (_, scroll) => LiquidGlassSurface(
-        blur: 30, thickness: 14,
+        blur: 30,
+        thickness: 14,
         borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
         padding: EdgeInsets.zero,
         child: Column(
           children: [
             const SizedBox(height: 8),
             Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
                 color: AppColors.ink30,
                 borderRadius: BorderRadius.circular(2),
@@ -54,50 +56,58 @@ class _HelpSheet extends StatelessWidget {
                   Text('Help', style: AppTypography.displayMd),
                   SizedBox(height: 4),
                   Text('Pair, sign in, and troubleshoot',
-                    style: AppTypography.caption),
+                      style: AppTypography.caption),
                   SizedBox(height: 24),
-
                   _Section(
                     title: 'How to pair this device',
                     children: [
-                      _Step(num: 1, label:
-                        'On the admin desktop, open Settings → Operator Mobile App → Pairing QR.'),
-                      _Step(num: 2, label:
-                        'Make sure your phone is on the same WiFi as the admin PC.'),
-                      _Step(num: 3, label:
-                        'Tap "Pair Device" here and scan the QR shown on screen.'),
-                      _Step(num: 4, label:
-                        'Enter your username and PIN — given to you by your manager.'),
+                      _Step(
+                          num: 1,
+                          label:
+                              'On the admin desktop, open Settings → Operator Mobile App → Pairing QR.'),
+                      _Step(
+                          num: 2,
+                          label:
+                              'Make sure your phone is on the same WiFi as the admin PC.'),
+                      _Step(
+                          num: 3,
+                          label:
+                              'Tap "Pair Device" here and scan the QR shown on screen.'),
+                      _Step(
+                          num: 4,
+                          label:
+                              'Enter your username and PIN — given to you by your manager.'),
                     ],
                   ),
                   SizedBox(height: 16),
-
                   _Section(
                     title: 'QR not working?',
                     children: [
-                      _Tip(label:
-                        'QR refreshes every 25 seconds — wait for a new one if it fails.'),
-                      _Tip(label:
-                        'Hold the phone steady, ~20 cm from the screen.'),
-                      _Tip(label:
-                        'Turn on the torch in low light.'),
-                      _Tip(label:
-                        'If you still can\'t connect, ensure both devices are on the same WiFi.'),
+                      _Tip(
+                          label:
+                              'QR refreshes every 25 seconds — wait for a new one if it fails.'),
+                      _Tip(
+                          label:
+                              'Hold the phone steady, ~20 cm from the screen.'),
+                      _Tip(label: 'Turn on the torch in low light.'),
+                      _Tip(
+                          label:
+                              'If you still can\'t connect, ensure both devices are on the same WiFi.'),
                     ],
                   ),
                   SizedBox(height: 16),
-
                   _Section(
                     title: 'Forgot your PIN?',
                     children: [
-                      _Tip(label:
-                        'Ask your manager to reset it from User Management on the admin desktop.'),
-                      _Tip(label:
-                        'You\'ll be prompted to set a new PIN on the next sign-in.'),
+                      _Tip(
+                          label:
+                              'Ask your manager to reset it from User Management on the admin desktop.'),
+                      _Tip(
+                          label:
+                              'You\'ll be prompted to set a new PIN on the next sign-in.'),
                     ],
                   ),
                   SizedBox(height: 24),
-
                   SizedBox(height: 8),
                   _ContactRow(
                     icon: Icons.admin_panel_settings_outlined,
@@ -108,8 +118,8 @@ class _HelpSheet extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16,
-                16 + MediaQuery.of(context).viewPadding.bottom),
+              padding: EdgeInsets.fromLTRB(
+                  16, 8, 16, 16 + MediaQuery.of(context).viewPadding.bottom),
               child: LiquidPrimaryButton(
                 label: 'Got it',
                 fullWidth: true,
@@ -152,7 +162,8 @@ class _Step extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 24, height: 24,
+            width: 24,
+            height: 24,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 colors: [AppColors.terra400, AppColors.terra600],
@@ -161,8 +172,8 @@ class _Step extends StatelessWidget {
             ),
             child: Center(
               child: Text('$num',
-                style: AppTypography.caption.copyWith(
-                  color: Colors.white, fontWeight: FontWeight.w700)),
+                  style: AppTypography.caption.copyWith(
+                      color: Colors.white, fontWeight: FontWeight.w700)),
             ),
           ),
           const SizedBox(width: 10),

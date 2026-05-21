@@ -41,7 +41,8 @@ class ProfileScreen extends ConsumerWidget {
                     child: Row(
                       children: [
                         Container(
-                          width: 56, height: 56,
+                          width: 56,
+                          height: 56,
                           decoration: const BoxDecoration(
                             gradient: LinearGradient(
                               colors: [AppColors.terra400, AppColors.terra600],
@@ -49,8 +50,12 @@ class ProfileScreen extends ConsumerWidget {
                             shape: BoxShape.circle,
                           ),
                           child: Center(
-                            child: Text(opName.isNotEmpty ? opName[0].toUpperCase() : '?',
-                              style: AppTypography.headline.copyWith(color: Colors.white)),
+                            child: Text(
+                                opName.isNotEmpty
+                                    ? opName[0].toUpperCase()
+                                    : '?',
+                                style: AppTypography.headline
+                                    .copyWith(color: Colors.white)),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -61,12 +66,12 @@ class ProfileScreen extends ConsumerWidget {
                               Text(opName, style: AppTypography.title),
                               const SizedBox(height: 2),
                               Text('@$opUsername · $opRole',
-                                style: AppTypography.caption),
+                                  style: AppTypography.caption),
                               const SizedBox(height: 4),
                               Text(opShift,
-                                style: AppTypography.caption.copyWith(
-                                  color: AppColors.terra600,
-                                  fontWeight: FontWeight.w600)),
+                                  style: AppTypography.caption.copyWith(
+                                      color: AppColors.terra600,
+                                      fontWeight: FontWeight.w600)),
                             ],
                           ),
                         ),
@@ -77,23 +82,26 @@ class ProfileScreen extends ConsumerWidget {
 
                   // Today's KPIs.
                   Text("TODAY'S SHIFT",
-                    style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
+                      style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Expanded(child: _Kpi(
+                      Expanded(
+                          child: _Kpi(
                         value: '${stats.ordersToday}',
                         label: 'Orders',
                         tint: AppColors.terra500,
                       )),
                       const SizedBox(width: 8),
-                      Expanded(child: _Kpi(
+                      Expanded(
+                          child: _Kpi(
                         value: '${stats.tablesServed}',
                         label: 'Tables',
                         tint: AppColors.violet,
                       )),
                       const SizedBox(width: 8),
-                      Expanded(child: _Kpi(
+                      Expanded(
+                          child: _Kpi(
                         value: '${stats.itemsSold}',
                         label: 'Items',
                         tint: AppColors.success,
@@ -104,7 +112,7 @@ class ProfileScreen extends ConsumerWidget {
 
                   // Restaurant + connection info.
                   Text('PAIRED WITH',
-                    style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
+                      style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 8),
                   AppCard(
                     child: Column(
@@ -113,16 +121,21 @@ class ProfileScreen extends ConsumerWidget {
                         Row(
                           children: [
                             Container(
-                              width: 8, height: 8,
+                              width: 8,
+                              height: 8,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: conn.online ? AppColors.success : AppColors.warn,
+                                color: conn.online
+                                    ? AppColors.success
+                                    : AppColors.warn,
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(restaurantName, style: AppTypography.title,
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                              child: Text(restaurantName,
+                                  style: AppTypography.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
                             ),
                           ],
                         ),
@@ -132,14 +145,14 @@ class ProfileScreen extends ConsumerWidget {
                         const Divider(height: 1, color: AppColors.ink10),
                         const SizedBox(height: 10),
                         _InfoRow(
-                          icon: Icons.computer,
-                          label: 'Admin device',
-                          value: restaurantDevice),
+                            icon: Icons.computer,
+                            label: 'Admin device',
+                            value: restaurantDevice),
                         const SizedBox(height: 6),
                         _InfoRow(
-                          icon: Icons.wifi,
-                          label: 'Network',
-                          value: '$restaurantIp · LAN'),
+                            icon: Icons.wifi,
+                            label: 'Network',
+                            value: '$restaurantIp · LAN'),
                       ],
                     ),
                   ),
@@ -149,20 +162,25 @@ class ProfileScreen extends ConsumerWidget {
                   AppCard(
                     padding: EdgeInsets.zero,
                     child: Column(children: [
-                      ListTile(
-                        leading: const Icon(Icons.password, color: AppColors.ink70),
-                        title: const Text('Change PIN', style: AppTypography.bodyMd),
-                        trailing: const Icon(Icons.chevron_right, color: AppColors.ink30),
-                        onTap: () => context.push('/change-pin'),
+                      const ListTile(
+                        leading: Icon(Icons.admin_panel_settings_outlined,
+                            color: AppColors.ink70),
+                        title: Text('PIN managed on desktop',
+                            style: AppTypography.bodyMd),
+                        subtitle: Text('Ask an admin to reset operator PIN',
+                            style: AppTypography.caption),
                       ),
                       const Divider(height: 1, color: AppColors.ink10),
                       ListTile(
-                        leading: const Icon(Icons.qr_code_scanner, color: AppColors.ink70),
+                        leading: const Icon(Icons.qr_code_scanner,
+                            color: AppColors.ink70),
                         title: const Text('Re-pair this device',
-                          style: AppTypography.bodyMd),
-                        subtitle: const Text('Scan a fresh QR from the admin desktop',
-                          style: AppTypography.caption),
-                        trailing: const Icon(Icons.chevron_right, color: AppColors.ink30),
+                            style: AppTypography.bodyMd),
+                        subtitle: const Text(
+                            'Scan a fresh QR from the admin desktop',
+                            style: AppTypography.caption),
+                        trailing: const Icon(Icons.chevron_right,
+                            color: AppColors.ink30),
                         onTap: () => context.go('/scan'),
                       ),
                     ]),
@@ -179,6 +197,8 @@ class ProfileScreen extends ConsumerWidget {
                       ref.read(cartProvider.notifier).clear();
                       ref.read(orderNotesProvider.notifier).state = '';
                       ref.read(selectedTableIdProvider.notifier).state = null;
+                      ref.read(forceDisconnectedProvider.notifier).state =
+                          false;
                       ref.read(isAuthenticatedProvider.notifier).state = false;
                       context.go('/scan');
                     },
@@ -186,7 +206,8 @@ class ProfileScreen extends ConsumerWidget {
                   const SizedBox(height: 16),
                   Center(
                     child: Text('RestroApp v1.0.0',
-                      style: AppTypography.micro.copyWith(letterSpacing: 1.0)),
+                        style:
+                            AppTypography.micro.copyWith(letterSpacing: 1.0)),
                   ),
                 ],
               ),
@@ -210,7 +231,8 @@ class _Kpi extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 8, height: 8,
+            width: 8,
+            height: 8,
             decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
           ),
           const SizedBox(height: 8),
@@ -227,7 +249,8 @@ class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
-  const _InfoRow({required this.icon, required this.label, required this.value});
+  const _InfoRow(
+      {required this.icon, required this.label, required this.value});
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -237,8 +260,8 @@ class _InfoRow extends StatelessWidget {
         SizedBox(width: 90, child: Text(label, style: AppTypography.caption)),
         Expanded(
           child: Text(value,
-            style: AppTypography.bodyMd.copyWith(
-              fontFamily: 'monospace', fontSize: 13)),
+              style: AppTypography.bodyMd
+                  .copyWith(fontFamily: 'monospace', fontSize: 13)),
         ),
       ],
     );

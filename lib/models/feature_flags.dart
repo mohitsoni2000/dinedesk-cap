@@ -23,6 +23,9 @@ class FeatureFlags {
   final bool operatorPinCancelOrder;
   final bool operatorPinKotEdit;
   final bool operatorPinQuickSettle;
+  final bool autoKot;
+  final int autoKotThreshold;
+  final bool predictiveMotion;
 
   const FeatureFlags({
     this.discounts = true,
@@ -49,6 +52,9 @@ class FeatureFlags {
     this.operatorPinCancelOrder = false,
     this.operatorPinKotEdit = false,
     this.operatorPinQuickSettle = false,
+    this.autoKot = false,
+    this.autoKotThreshold = 5,
+    this.predictiveMotion = false,
   });
 
   factory FeatureFlags.fromMap(Map<String, dynamic> map) {
@@ -77,7 +83,8 @@ class FeatureFlags {
       multiFloor: flag('flag_multi_floor'),
       operatorPinAuth: flag('flag_operator_pin_auth', true),
       operatorPinMode: map['operator_pin_mode']?.toString() ?? 'per_action',
-      operatorPinSessionMinutes: int.tryParse('${map['operator_pin_session_minutes']}') ?? 5,
+      operatorPinSessionMinutes:
+          int.tryParse('${map['operator_pin_session_minutes']}') ?? 5,
       operatorPinKot: flag('operator_pin_kot'),
       operatorPinHold: flag('operator_pin_hold'),
       operatorPinKotAndBill: flag('operator_pin_kot_and_bill'),
@@ -86,6 +93,9 @@ class FeatureFlags {
       operatorPinCancelOrder: flag('operator_pin_cancel_order'),
       operatorPinKotEdit: flag('operator_pin_kot_edit'),
       operatorPinQuickSettle: flag('operator_pin_quick_settle'),
+      autoKot: flag('flag_auto_kot'),
+      autoKotThreshold: int.tryParse('${map['auto_kot_threshold']}') ?? 5,
+      predictiveMotion: flag('flag_predictive_motion'),
     );
   }
 }

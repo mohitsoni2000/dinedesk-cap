@@ -24,10 +24,13 @@ class ConnectionBanner extends ConsumerStatefulWidget {
 
 class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
   Timer? _ticker;
-  int _remaining = 120;       // seconds — full 2-min grace window
+  int _remaining = 120; // seconds — full 2-min grace window
 
   @override
-  void dispose() { _ticker?.cancel(); super.dispose(); }
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
 
   void _startTimer() {
     _ticker?.cancel();
@@ -43,6 +46,9 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
         });
       } else {
         setState(() => _remaining--);
+        if (_remaining == 30) {
+          ref.read(feedbackServiceProvider).fire(const FeedbackWarning());
+        }
       }
     });
   }
@@ -80,75 +86,84 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
           child: IgnorePointer(
             ignoring: conn.online,
             child: SpringBuilder(
-            from: conn.online ? 0.0 : 1.0,
-            to: conn.online ? 0.0 : 1.0,
-            spring: RestroSprings.soft,
-            builder: (BuildContext _, double t, Widget? child) {
-              return Transform.translate(
-                offset: Offset(0, -1.5 * (1.0 - t) * 100),
-                child: Opacity(
-                  opacity: t.clamp(0.0, 1.0),
-                  child: child,
-                ),
-              );
-            },
-            child: TickerMode(
-              enabled: !conn.online,
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                  child: LiquidGlassSurface(
-                    borderRadius: const BorderRadius.all(AppRadii.md),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    blur: 24, thickness: 12,
-                    tint: AppColors.danger.withValues(alpha: 0.12),
-                    child: Row(
-                      children: [
-                        const _PulseDot(color: AppColors.danger),
-                        const SizedBox(width: 10),
-                        Expanded(child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Reconnecting…', style: AppTypography.bodyMd.copyWith(
-                              color: AppColors.danger, fontWeight: FontWeight.w600)),
-                            Text(_label, style: AppTypography.micro.copyWith(
-                              color: AppColors.ink70)),
-                          ],
-                        )),
-                        // Countdown ring.
-                        SizedBox(
-                          width: 32, height: 32,
-                          child: Stack(
-                            alignment: Alignment.center,
+              from: conn.online ? 0.0 : 1.0,
+              to: conn.online ? 0.0 : 1.0,
+              spring: RestroSprings.soft,
+              builder: (BuildContext _, double t, Widget? child) {
+                return Transform.translate(
+                  offset: Offset(0, -1.5 * (1.0 - t) * 100),
+                  child: Opacity(
+                    opacity: t.clamp(0.0, 1.0),
+                    child: child,
+                  ),
+                );
+              },
+              child: TickerMode(
+                enabled: !conn.online,
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    child: LiquidGlassSurface(
+                      borderRadius: const BorderRadius.all(AppRadii.md),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      blur: 24,
+                      thickness: 12,
+                      tint: AppColors.danger.withValues(alpha: 0.12),
+                      child: Row(
+                        children: [
+                          const _PulseDot(color: AppColors.danger),
+                          const SizedBox(width: 10),
+                          Expanded(
+                              child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              SizedBox(
-                                width: 32, height: 32,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  value: _remaining / 120,
-                                  color: AppColors.danger,
-                                  backgroundColor: AppColors.ink10,
-                                ),
-                              ),
-                              Text(
-                                _remaining > 0 ? '${_remaining ~/ 60}m' : '!',
-                                style: AppTypography.micro.copyWith(
-                                  color: AppColors.danger, letterSpacing: 0,
-                                  fontSize: 9,
-                                ),
-                              ),
+                              Text('Reconnecting…',
+                                  style: AppTypography.bodyMd.copyWith(
+                                      color: AppColors.danger,
+                                      fontWeight: FontWeight.w600)),
+                              Text(_label,
+                                  style: AppTypography.micro
+                                      .copyWith(color: AppColors.ink70)),
                             ],
+                          )),
+                          // Countdown ring.
+                          SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 32,
+                                  height: 32,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    value: _remaining / 120,
+                                    color: AppColors.danger,
+                                    backgroundColor: AppColors.ink10,
+                                  ),
+                                ),
+                                Text(
+                                  _remaining > 0 ? '${_remaining ~/ 60}m' : '!',
+                                  style: AppTypography.micro.copyWith(
+                                    color: AppColors.danger,
+                                    letterSpacing: 0,
+                                    fontSize: 9,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        ),  // IgnorePointer
-        ),  // Positioned
+          ), // IgnorePointer
+        ), // Positioned
       ],
     );
   }
@@ -163,15 +178,20 @@ class _PulseDot extends StatefulWidget {
 
 class _PulseDotState extends State<_PulseDot>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-    AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
-      ..repeat();
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 1100))
+    ..repeat();
   @override
-  void dispose() { _c.dispose(); super.dispose(); }
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 12, height: 12,
+      width: 12,
+      height: 12,
       child: AnimatedBuilder(
         animation: _c,
         builder: (_, __) {
@@ -189,8 +209,10 @@ class _PulseDotState extends State<_PulseDot>
               ),
             ),
             Container(
-              width: 8, height: 8,
-              decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
+              width: 8,
+              height: 8,
+              decoration:
+                  BoxDecoration(color: widget.color, shape: BoxShape.circle),
             ),
           ]);
         },

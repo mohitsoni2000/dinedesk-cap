@@ -25,6 +25,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
   @override
   void initState() {
     super.initState();
+    ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) setState(() => _showText = true);
     });
@@ -35,7 +36,10 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
   }
 
   @override
-  void dispose() { _autoNav?.cancel(); super.dispose(); }
+  void dispose() {
+    _autoNav?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +53,10 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
               child: Column(
                 children: [
                   const Spacer(),
-                  const AnimatedCheckDraw(size: 132),
+                  const Hero(
+                    tag: HeroTags.kotBadge,
+                    child: AnimatedCheckDraw(size: 132),
+                  ),
                   const SizedBox(height: 28),
                   SpringBuilder(
                     from: 0.0,
@@ -65,18 +72,29 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                       );
                     },
                     child: Column(children: [
-                        const Text('Sent to Kitchen', style: AppTypography.displayMd),
-                        const SizedBox(height: 8),
-                        Text('Table ${widget.tableId} · KOT ${ref.watch(lastKotIdProvider)}',
-                            style: AppTypography.caption),
-                        const SizedBox(height: 4),
-                        Text('Printing on admin desktop',
-                            style: AppTypography.micro.copyWith(
-                              letterSpacing: 1.4,
-                              color: AppColors.success,
-                            )),
-                      ]),
-                    ),
+                      const Text('Sent to Kitchen',
+                          style: AppTypography.displayMd),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Table ${widget.tableId} · KOT ',
+                              style: AppTypography.caption),
+                          KineticKotNumber(
+                            number:
+                                int.tryParse(ref.watch(lastKotIdProvider)) ?? 0,
+                            fontSize: 14,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text('Printing on admin desktop',
+                          style: AppTypography.micro.copyWith(
+                            letterSpacing: 1.4,
+                            color: AppColors.success,
+                          )),
+                    ]),
+                  ),
                   const Spacer(),
                   Padding(
                     padding: const EdgeInsets.all(AppSpacing.lg),

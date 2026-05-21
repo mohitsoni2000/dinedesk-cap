@@ -19,7 +19,8 @@ class SocketService {
     disconnect();
     _setState(SocketState.connecting);
     debugPrint('$_tag Connecting to http://$host:$port/operator ...');
-    debugPrint('$_tag Token: ${token.length > 20 ? '${token.substring(0, 20)}…' : token}');
+    debugPrint(
+        '$_tag Token: ${token.length > 20 ? '${token.substring(0, 20)}…' : token}');
 
     _socket = io.io(
       'http://$host:$port/operator',
@@ -53,18 +54,29 @@ class SocketService {
     _socket!.connect();
   }
 
-  void verifyPin(String pin, {
+  void verifyPin(
+    String pin, {
     required Function(Map<String, dynamic>) onVerified,
     required Function(String) onRejected,
   }) {
     debugPrint('$_tag → operator:verify (pin: ${'*' * pin.length})');
-    _socket?.emitWithAckAsync('operator:verify', {'pin': pin}).then((res) {
-      if (res is! Map) { onRejected('Invalid server response'); return; }
+    final socket = _socket;
+    if (socket == null || _state == SocketState.disconnected) {
+      onRejected('Connection lost');
+      return;
+    }
+    socket.emitWithAckAsync('operator:verify', {'pin': pin}).then((res) {
+      if (res is! Map) {
+        onRejected('Invalid server response');
+        return;
+      }
       final response = Map<String, dynamic>.from(res);
       debugPrint('$_tag ← operator:verify ack: kind=${response['kind']}');
       if (response['kind'] == 'success') {
-        debugPrint('$_tag ✓ PIN verified — operator: ${response['operator']?['name'] ?? 'unknown'}');
-        debugPrint('$_tag   Sync keys: ${(response['sync'] as Map?)?.keys.toList() ?? response.keys.toList()}');
+        debugPrint(
+            '$_tag ✓ PIN verified — operator: ${response['operator']?['name'] ?? 'unknown'}');
+        debugPrint(
+            '$_tag   Sync keys: ${(response['sync'] as Map?)?.keys.toList() ?? response.keys.toList()}');
         _setState(SocketState.verified);
         onVerified(response);
       } else {
@@ -77,10 +89,18 @@ class SocketService {
     });
   }
 
-  void emit(String event, Map<String, dynamic> data, {Function(Map<String, dynamic>)? onAck}) {
+  void emit(String event, Map<String, dynamic> data,
+      {Function(Map<String, dynamic>)? onAck}) {
     debugPrint('$_tag → $event ${_summarize(data)}');
+    final socket = _socket;
+    if (socket == null || _state == SocketState.disconnected) {
+      if (onAck != null) {
+        onAck({'kind': 'error', 'message': 'Connection lost'});
+      }
+      return;
+    }
     if (onAck != null) {
-      _socket?.emitWithAckAsync(event, data).then((res) {
+      socket.emitWithAckAsync(event, data).then((res) {
         if (res is! Map) {
           debugPrint('$_tag ← $event ack: non-Map response ($res)');
           onAck({'kind': 'error', 'message': 'Invalid server response'});
@@ -97,8 +117,35 @@ class SocketService {
         onAck({'kind': 'error', 'message': 'Connection lost'});
       });
     } else {
-      _socket?.emit(event, data);
+      socket.emit(event, data);
     }
+  }
+
+  Future<Map<String, dynamic>> emitAck(
+    String event,
+    Map<String, dynamic> data, {
+    Duration timeout = const Duration(seconds: 12),
+  }) {
+    final socket = _socket;
+    debugPrint('$_tag → $event ${_summarize(data)}');
+    if (socket == null || _state == SocketState.disconnected) {
+      return Future.value({'kind': 'error', 'message': 'Connection lost'});
+    }
+    return socket.emitWithAckAsync(event, data).timeout(timeout).then((res) {
+      if (res is! Map) {
+        debugPrint('$_tag ← $event ack: non-Map response ($res)');
+        return {'kind': 'error', 'message': 'Invalid server response'};
+      }
+      final response = Map<String, dynamic>.from(res);
+      debugPrint('$_tag ← $event ack: kind=${response['kind']}');
+      if (response['kind'] == 'error') {
+        debugPrint('$_tag   Error: ${response['message']}');
+      }
+      return response;
+    }).catchError((err) {
+      debugPrint('$_tag ✗ $event error: $err');
+      return {'kind': 'error', 'message': 'Connection lost'};
+    });
   }
 
   void on(String event, Function(dynamic) handler) {

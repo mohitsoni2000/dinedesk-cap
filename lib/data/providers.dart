@@ -18,8 +18,8 @@ enum OrderStatus { sent, modified, cancelled, paid }
 class RestaurantTable {
   static const _absent = Object();
 
-  final String id;        // Display name — "T-04", "F1", etc.
-  final String serverId;  // Server UUID — used in all socket emits
+  final String id; // Display name — "T-04", "F1", etc.
+  final String serverId; // Server UUID — used in all socket emits
   final int seats;
   final String floor;
   final TableState state;
@@ -27,6 +27,11 @@ class RestaurantTable {
   final int? coverCount;
   final double? bill;
   final String? note;
+  final String? activeOrderId;
+  final int activeBillCount;
+  final int orderItemCount;
+  final int oldestKotMinutes;
+  final int kotCount;
   const RestaurantTable({
     required this.id,
     required this.serverId,
@@ -37,6 +42,11 @@ class RestaurantTable {
     this.coverCount,
     this.bill,
     this.note,
+    this.activeOrderId,
+    this.activeBillCount = 0,
+    this.orderItemCount = 0,
+    this.oldestKotMinutes = 0,
+    this.kotCount = 0,
   });
 
   RestaurantTable copyWith({
@@ -49,6 +59,11 @@ class RestaurantTable {
     Object? coverCount = _absent,
     Object? bill = _absent,
     Object? note = _absent,
+    Object? activeOrderId = _absent,
+    int? activeBillCount,
+    int? orderItemCount,
+    int? oldestKotMinutes,
+    int? kotCount,
   }) =>
       RestaurantTable(
         id: id ?? this.id,
@@ -56,22 +71,65 @@ class RestaurantTable {
         seats: seats ?? this.seats,
         floor: floor ?? this.floor,
         state: state ?? this.state,
-        waiterName: waiterName == _absent ? this.waiterName : waiterName as String?,
-        coverCount: coverCount == _absent ? this.coverCount : coverCount as int?,
+        waiterName:
+            waiterName == _absent ? this.waiterName : waiterName as String?,
+        coverCount:
+            coverCount == _absent ? this.coverCount : coverCount as int?,
         bill: bill == _absent ? this.bill : bill as double?,
         note: note == _absent ? this.note : note as String?,
+        activeOrderId: activeOrderId == _absent
+            ? this.activeOrderId
+            : activeOrderId as String?,
+        activeBillCount: activeBillCount ?? this.activeBillCount,
+        orderItemCount: orderItemCount ?? this.orderItemCount,
+        oldestKotMinutes: oldestKotMinutes ?? this.oldestKotMinutes,
+        kotCount: kotCount ?? this.kotCount,
       );
+}
+
+class MenuOption {
+  final String id;
+  final String groupId;
+  final String name;
+  final double priceModifier;
+  const MenuOption({
+    required this.id,
+    required this.groupId,
+    required this.name,
+    this.priceModifier = 0,
+  });
+}
+
+class MenuOptionGroup {
+  final String id;
+  final String itemId;
+  final String name;
+  final bool isRequired;
+  final int minSelect;
+  final int maxSelect;
+  final List<MenuOption> options;
+  const MenuOptionGroup({
+    required this.id,
+    required this.itemId,
+    required this.name,
+    this.isRequired = false,
+    this.minSelect = 0,
+    this.maxSelect = 1,
+    this.options = const [],
+  });
 }
 
 class MenuItem {
   final String id;
   final String name;
-  final String section;          // menu category — "Tandoor", "Chinese", etc.
-  final String kitchenSection;   // routing — "tandoor", "curry", "south", "chinese", "beverages"
-  final double price;            // in ₹
+  final String section; // menu category — "Tandoor", "Chinese", etc.
+  final String
+      kitchenSection; // routing — "tandoor", "curry", "south", "chinese", "beverages"
+  final double price; // in ₹
   final bool isVeg;
   final bool available;
   final String? note;
+  final List<MenuOptionGroup> optionGroups;
   const MenuItem({
     required this.id,
     required this.name,
@@ -81,22 +139,27 @@ class MenuItem {
     required this.isVeg,
     this.available = true,
     this.note,
+    this.optionGroups = const [],
   });
 }
 
 class Modifier {
-  final String id;               // option_id from server
-  final String groupId;          // option_group_id from server
+  final String id; // option_id from server
+  final String groupId; // option_group_id from server
   final String label;
-  final double extraPrice;       // in ₹, can be 0
-  const Modifier({required this.id, this.groupId = '', required this.label, this.extraPrice = 0});
+  final double extraPrice; // in ₹, can be 0
+  const Modifier(
+      {required this.id,
+      this.groupId = '',
+      required this.label,
+      this.extraPrice = 0});
 }
 
 /// Structured option selection matching Desktop's `SelectedOptionPayload`.
 class SelectedOption {
-  final String groupName;        // option group display name
-  final String optionName;       // option display name
-  final double priceModifier;    // price delta (can be negative)
+  final String groupName; // option group display name
+  final String optionName; // option display name
+  final double priceModifier; // price delta (can be negative)
   const SelectedOption({
     required this.groupName,
     required this.optionName,
@@ -105,21 +168,21 @@ class SelectedOption {
 
   /// Serialize to match Desktop's `SelectedOptionPayload` exactly.
   Map<String, dynamic> toJson() => {
-    'group_name': groupName,
-    'option_name': optionName,
-    'price_modifier': priceModifier,
-  };
+        'group_name': groupName,
+        'option_name': optionName,
+        'price_modifier': priceModifier,
+      };
 }
 
 class CartLine {
   static int _nextUid = 0;
 
-  final int uid;                 // stable identity for Dismissible keys
+  final int uid; // stable identity for Dismissible keys
   final MenuItem item;
   final int qty;
-  final List<String> mods;               // display labels for UI
-  final List<SelectedOption> selectedOptions;  // structured for server payload
-  final double modsExtra;        // total extra cost from selected mods
+  final List<String> mods; // display labels for UI
+  final List<SelectedOption> selectedOptions; // structured for server payload
+  final double modsExtra; // total extra cost from selected mods
   final String itemNote;
 
   CartLine({
@@ -190,7 +253,8 @@ class RestaurantInfo {
 class ConnectionStatus {
   final bool online;
   final String label;
-  final int? secondsRemaining;   // null when online; counts down 120s when reconnecting
+  final int?
+      secondsRemaining; // null when online; counts down 120s when reconnecting
   const ConnectionStatus({
     required this.online,
     required this.label,
@@ -210,12 +274,12 @@ class OperatorStats {
 }
 
 class HistoryOrder {
-  final String id;             // Display ID — KOT number e.g. "K-4127"
-  final String orderId;        // Server UUID — used in all socket emits
+  final String id; // Display ID — KOT number e.g. "K-4127"
+  final String orderId; // Server UUID — used in all socket emits
   final String tableId;
-  final String time;           // HH:MM
+  final String time; // HH:MM
   final int itemCount;
-  final double total;          // in ₹
+  final double total; // in ₹
   final OrderStatus status;
   final List<HistoryOrderLine> lines;
   final String? notes;
@@ -259,29 +323,29 @@ class ActiveOperator {
 // `item_option_groups` / `item_options` per menu item.
 
 const spiceLevels = <Modifier>[
-  Modifier(id: 'sp_mild',   label: 'Mild'),
-  Modifier(id: 'sp_med',    label: 'Medium'),
-  Modifier(id: 'sp_spicy',  label: 'Spicy'),
-  Modifier(id: 'sp_extra',  label: 'Extra Spicy'),
+  Modifier(id: 'sp_mild', label: 'Mild'),
+  Modifier(id: 'sp_med', label: 'Medium'),
+  Modifier(id: 'sp_spicy', label: 'Spicy'),
+  Modifier(id: 'sp_extra', label: 'Extra Spicy'),
 ];
 
 const addOns = <Modifier>[
-  Modifier(id: 'ad_cheese',  label: 'Extra Cheese',          extraPrice: 60),
-  Modifier(id: 'ad_butter',  label: 'Extra Butter',          extraPrice: 30),
-  Modifier(id: 'ad_onion',   label: 'No Onion'),
-  Modifier(id: 'ad_garlic',  label: 'No Garlic'),
-  Modifier(id: 'ad_jain',    label: 'Jain (no onion/garlic)'),
-  Modifier(id: 'ad_half',    label: 'Half Portion',          extraPrice: -50),
+  Modifier(id: 'ad_cheese', label: 'Extra Cheese', extraPrice: 60),
+  Modifier(id: 'ad_butter', label: 'Extra Butter', extraPrice: 30),
+  Modifier(id: 'ad_onion', label: 'No Onion'),
+  Modifier(id: 'ad_garlic', label: 'No Garlic'),
+  Modifier(id: 'ad_jain', label: 'Jain (no onion/garlic)'),
+  Modifier(id: 'ad_half', label: 'Half Portion', extraPrice: -50),
 ];
 
 // ─────────────── Providers ───────────────
 
 final tablesProvider = StateProvider<List<RestaurantTable>>((_) => []);
-final menuProvider   = StateProvider<List<MenuItem>>((_) => []);
+final menuProvider = StateProvider<List<MenuItem>>((_) => []);
 
 // Fast-add items — pinned (admin-set) + auto (trending, server-computed).
 final fastAddPinnedProvider = StateProvider<List<MenuItem>>((_) => []);
-final fastAddAutoProvider   = StateProvider<List<MenuItem>>((_) => []);
+final fastAddAutoProvider = StateProvider<List<MenuItem>>((_) => []);
 
 final selectedTableIdProvider = StateProvider<String?>((_) => null);
 
@@ -289,7 +353,8 @@ final selectedTableIdProvider = StateProvider<String?>((_) => null);
 final orderNotesProvider = StateProvider<String>((_) => '');
 
 // Recent items — last 8 items added to any cart (for quick re-add).
-final recentItemsProvider = StateNotifierProvider<RecentItemsNotifier, List<MenuItem>>(
+final recentItemsProvider =
+    StateNotifierProvider<RecentItemsNotifier, List<MenuItem>>(
   (_) => RecentItemsNotifier(),
 );
 
@@ -299,7 +364,8 @@ class RecentItemsNotifier extends StateNotifier<List<MenuItem>> {
 
   void track(MenuItem item) {
     final updated = [item, ...state.where((m) => m.id != item.id)];
-    state = updated.length > _maxRecent ? updated.sublist(0, _maxRecent) : updated;
+    state =
+        updated.length > _maxRecent ? updated.sublist(0, _maxRecent) : updated;
   }
 }
 
@@ -311,8 +377,8 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
   CartNotifier() : super(const []);
 
   void add(MenuItem item) {
-    final i = state.indexWhere((l) =>
-      l.item.id == item.id && l.mods.isEmpty && l.itemNote.isEmpty);
+    final i = state.indexWhere(
+        (l) => l.item.id == item.id && l.mods.isEmpty && l.itemNote.isEmpty);
     if (i >= 0) {
       final next = [...state];
       next[i] = next[i].copyWith(qty: next[i].qty + 1);
@@ -410,7 +476,8 @@ final discountsProvider = StateProvider<List<Map<String, dynamic>>>((_) => []);
 
 final flagsProvider = StateProvider<FeatureFlags>((_) => const FeatureFlags());
 final rawMenuDataProvider = StateProvider<Map<String, dynamic>>((_) => {});
-final activeOrdersProvider = StateProvider<List<Map<String, dynamic>>>((_) => []);
+final activeOrdersProvider =
+    StateProvider<List<Map<String, dynamic>>>((_) => []);
 final socketServiceProvider = Provider<SocketService>((_) => SocketService());
 final syncServiceProvider = Provider<SyncService>(
   (ref) => SyncService(ref.read(socketServiceProvider), ref),
@@ -419,6 +486,8 @@ final syncServiceProvider = Provider<SyncService>(
 // ─────────────── Auth ───────────────
 
 final isAuthenticatedProvider = StateProvider<bool>((_) => false);
+final pinVerifiedAtProvider = StateProvider<DateTime?>((_) => null);
+final forceDisconnectedProvider = StateProvider<bool>((_) => false);
 
 // ─────────────── KOT numbering ───────────────
 

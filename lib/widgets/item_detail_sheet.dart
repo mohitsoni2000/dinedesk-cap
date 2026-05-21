@@ -34,32 +34,48 @@ class ItemDetailSheet extends ConsumerStatefulWidget {
 
 class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
   int _qty = 1;
-  String? _spiceId;
-  final Set<String> _addOnIds = {};
+  final Map<String, String> _singleSelections = {};
+  final Set<String> _multiSelections = {};
   String _note = '';
 
-  /// Whether this item's kitchen section supports spice levels.
-  bool get _showSpice =>
-      widget.item.kitchenSection != 'beverages';
+  bool get _hasServerOptions => widget.item.optionGroups.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
-    _spiceId = _showSpice ? 'sp_med' : null;
+    for (final group in widget.item.optionGroups) {
+      if ((group.isRequired || group.minSelect > 0) &&
+          group.options.isNotEmpty) {
+        _singleSelections[group.id] = group.options.first.id;
+      }
+    }
   }
 
-  double get _addOnExtra {
-    double total = 0;
-    for (final id in _addOnIds) {
-      final m = addOns.firstWhere((x) => x.id == id);
-      total += m.extraPrice;
+  double get _serverOptionExtra => _selectedServerOptions.fold(
+        0,
+        (total, option) => total + option.priceModifier,
+      );
+
+  List<SelectedOption> get _selectedServerOptions {
+    final selected = <SelectedOption>[];
+    for (final group in widget.item.optionGroups) {
+      for (final option in group.options) {
+        final isSelected = _singleSelections[group.id] == option.id ||
+            _multiSelections.contains(option.id);
+        if (!isSelected) continue;
+        selected.add(SelectedOption(
+          groupName: group.name,
+          optionName: option.name,
+          priceModifier: option.priceModifier,
+        ));
+      }
     }
-    return total;
+    return selected;
   }
 
   @override
   Widget build(BuildContext context) {
-    final unit = widget.item.price + _addOnExtra;
+    final unit = widget.item.price + _serverOptionExtra;
     final total = unit * _qty;
 
     return DraggableScrollableSheet(
@@ -76,7 +92,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
           children: [
             const SizedBox(height: 8),
             Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
                 color: AppColors.ink30,
                 borderRadius: BorderRadius.circular(2),
@@ -89,96 +106,97 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                 children: [
                   Text(widget.item.section.toUpperCase(),
-                    style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
+                      style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 6),
                   Row(
                     children: [
                       _VegBadge(isVeg: widget.item.isVeg),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(widget.item.name, style: AppTypography.displayMd),
+                        child: Text(widget.item.name,
+                            style: AppTypography.displayMd),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   Text(formatRupeesCompact(widget.item.price),
-                    style: AppTypography.title),
+                      style: AppTypography.title),
                   const SizedBox(height: 24),
 
                   // Qty.
                   Row(
                     children: [
                       Text('QUANTITY',
-                        style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
+                          style:
+                              AppTypography.micro.copyWith(letterSpacing: 1.2)),
                       const Spacer(),
-                      _StepBtn(icon: Icons.remove, onTap: () {
-                        if (_qty > 1) setState(() => _qty--);
-                      }),
+                      _StepBtn(
+                          icon: Icons.remove,
+                          onTap: () {
+                            if (_qty > 1) setState(() => _qty--);
+                          }),
                       const SizedBox(width: 16),
-                      SizedBox(width: 32, child: Center(
-                        child: Text('$_qty', style: AppTypography.headline),
-                      )),
+                      SizedBox(
+                          width: 32,
+                          child: Center(
+                            child: Text('$_qty', style: AppTypography.headline),
+                          )),
                       const SizedBox(width: 16),
-                      _StepBtn(icon: Icons.add, onTap: () => setState(() => _qty++)),
+                      _StepBtn(
+                          icon: Icons.add, onTap: () => setState(() => _qty++)),
                     ],
                   ),
                   const SizedBox(height: 20),
                   const Divider(height: 1, color: AppColors.ink10),
                   const SizedBox(height: 20),
 
-                  // Spice level — single-select (hidden for beverages/desserts).
-                  if (_showSpice) ...[
-                    Text('SPICE LEVEL',
-                      style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        for (int i = 0; i < spiceLevels.length; i++) ...[
-                          Expanded(
-                            child: _SegmentChip(
-                              label: spiceLevels[i].label,
-                              selected: _spiceId == spiceLevels[i].id,
+                  if (_hasServerOptions) ...[
+                    for (final group in widget.item.optionGroups) ...[
+                      Text(
+                        group.name.toUpperCase(),
+                        style: AppTypography.micro.copyWith(letterSpacing: 1.4),
+                      ),
+                      const SizedBox(height: 12),
+                      Column(
+                        children: [
+                          for (final option in group.options)
+                            _OptionTile(
+                              label: option.name,
+                              priceModifier: option.priceModifier,
+                              selected:
+                                  _singleSelections[group.id] == option.id ||
+                                      _multiSelections.contains(option.id),
+                              multiSelect: group.maxSelect > 1,
                               onTap: () {
                                 HapticFeedback.selectionClick();
-                                setState(() => _spiceId = spiceLevels[i].id);
+                                setState(() {
+                                  if (group.maxSelect > 1) {
+                                    if (_multiSelections.contains(option.id)) {
+                                      _multiSelections.remove(option.id);
+                                    } else {
+                                      final selectedInGroup = group.options
+                                          .where((o) =>
+                                              _multiSelections.contains(o.id))
+                                          .length;
+                                      if (selectedInGroup < group.maxSelect) {
+                                        _multiSelections.add(option.id);
+                                      }
+                                    }
+                                  } else {
+                                    _singleSelections[group.id] = option.id;
+                                  }
+                                });
                               },
                             ),
-                          ),
-                          if (i < spiceLevels.length - 1) const SizedBox(width: 6),
                         ],
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-
-                  // Add-ons — multi-select with price.
-                  Text('ADD-ONS',
-                    style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
-                  const SizedBox(height: 12),
-                  Column(
-                    children: [
-                      for (final m in addOns)
-                        _AddOnTile(
-                          modifier: m,
-                          selected: _addOnIds.contains(m.id),
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            setState(() {
-                              if (_addOnIds.contains(m.id)) {
-                                _addOnIds.remove(m.id);
-                              } else {
-                                _addOnIds.add(m.id);
-                              }
-                            });
-                          },
-                        ),
+                      ),
+                      const SizedBox(height: 20),
                     ],
-                  ),
-                  const SizedBox(height: 20),
+                  ],
 
                   // Note.
                   Text('SPECIAL NOTE',
-                    style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
+                      style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 8),
                   Container(
                     decoration: BoxDecoration(
@@ -186,7 +204,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                       borderRadius: const BorderRadius.all(AppRadii.sm),
                       border: Border.all(color: AppColors.ink10),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     child: TextField(
                       decoration: const InputDecoration(
                         border: InputBorder.none,
@@ -203,8 +222,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
 
             // Footer CTA.
             Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16,
-                16 + MediaQuery.of(context).viewPadding.bottom),
+              padding: EdgeInsets.fromLTRB(
+                  16, 8, 16, 16 + MediaQuery.of(context).viewPadding.bottom),
               child: Row(
                 children: [
                   Column(
@@ -212,7 +231,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                     children: [
                       const Text('TOTAL', style: AppTypography.micro),
                       const SizedBox(height: 2),
-                      Text(formatRupeesCompact(total), style: AppTypography.headline),
+                      Text(formatRupeesCompact(total),
+                          style: AppTypography.headline),
                     ],
                   ),
                   const SizedBox(width: 16),
@@ -226,33 +246,19 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                         final modLabels = <String>[];
                         final selectedOpts = <SelectedOption>[];
 
-                        if (_spiceId != null) {
-                          final spice = spiceLevels.firstWhere((x) => x.id == _spiceId);
-                          modLabels.add(spice.label);
-                          selectedOpts.add(SelectedOption(
-                            groupName: 'Spice Level',
-                            optionName: spice.label,
-                            priceModifier: spice.extraPrice,
-                          ));
-                        }
-                        for (final id in _addOnIds) {
-                          final addon = addOns.firstWhere((x) => x.id == id);
-                          modLabels.add(addon.label);
-                          selectedOpts.add(SelectedOption(
-                            groupName: 'Add-ons',
-                            optionName: addon.label,
-                            priceModifier: addon.extraPrice,
-                          ));
+                        for (final option in _selectedServerOptions) {
+                          modLabels.add(option.optionName);
+                          selectedOpts.add(option);
                         }
 
                         ref.read(cartProvider.notifier).addCustom(
-                          item: widget.item,
-                          qty: _qty,
-                          mods: modLabels,
-                          selectedOptions: selectedOpts,
-                          modsExtra: _addOnExtra,
-                          itemNote: _note,
-                        );
+                              item: widget.item,
+                              qty: _qty,
+                              mods: modLabels,
+                              selectedOptions: selectedOpts,
+                              modsExtra: _serverOptionExtra,
+                              itemNote: _note,
+                            );
                         Navigator.of(context).pop();
                       },
                     ),
@@ -274,13 +280,18 @@ class _StepBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () { HapticFeedback.selectionClick(); onTap(); },
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        width: 44, height: 44,
+        width: 44,
+        height: 44,
         child: Center(
           child: Container(
-            width: 40, height: 40,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.7),
               borderRadius: BorderRadius.circular(20),
@@ -294,49 +305,27 @@ class _StepBtn extends StatelessWidget {
   }
 }
 
-class _SegmentChip extends StatelessWidget {
+class _OptionTile extends StatelessWidget {
   final String label;
+  final double priceModifier;
   final bool selected;
+  final bool multiSelect;
   final VoidCallback onTap;
-  const _SegmentChip({
-    required this.label, required this.selected, required this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.ink : Colors.white.withValues(alpha: 0.6),
-          borderRadius: const BorderRadius.all(AppRadii.sm),
-          border: Border.all(color: selected ? AppColors.ink : AppColors.ink10),
-        ),
-        alignment: Alignment.center,
-        child: Text(label,
-          style: AppTypography.caption.copyWith(
-            color: selected ? Colors.white : AppColors.ink,
-            fontWeight: FontWeight.w600,
-          )),
-      ),
-    );
-  }
-}
-
-class _AddOnTile extends StatelessWidget {
-  final Modifier modifier;
-  final bool selected;
-  final VoidCallback onTap;
-  const _AddOnTile({
-    required this.modifier, required this.selected, required this.onTap});
+  const _OptionTile({
+    required this.label,
+    required this.priceModifier,
+    required this.selected,
+    required this.multiSelect,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final showPrice = modifier.extraPrice != 0;
-    final priceLabel = modifier.extraPrice > 0
-        ? '+${formatRupeesCompact(modifier.extraPrice)}'
-        : modifier.extraPrice < 0
-            ? '−${formatRupeesCompact(modifier.extraPrice.abs())}'
+    final showPrice = priceModifier != 0;
+    final priceLabel = priceModifier > 0
+        ? '+${formatRupeesCompact(priceModifier)}'
+        : priceModifier < 0
+            ? '−${formatRupeesCompact(priceModifier.abs())}'
             : '';
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -353,16 +342,19 @@ class _AddOnTile extends StatelessWidget {
             border: Border.all(
               color: selected
                   ? AppColors.terra500.withValues(alpha: 0.5)
-                  : AppColors.ink10),
+                  : AppColors.ink10,
+            ),
           ),
           child: Row(
             children: [
               AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                width: 18, height: 18,
+                width: 18,
+                height: 18,
                 decoration: BoxDecoration(
                   color: selected ? AppColors.terra500 : Colors.transparent,
-                  borderRadius: BorderRadius.circular(4),
+                  shape: multiSelect ? BoxShape.rectangle : BoxShape.circle,
+                  borderRadius: multiSelect ? BorderRadius.circular(4) : null,
                   border: Border.all(
                     color: selected ? AppColors.terra500 : AppColors.ink30,
                     width: 1.5,
@@ -374,19 +366,19 @@ class _AddOnTile extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(modifier.label,
-                  style: AppTypography.bodyMd.copyWith(
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                  )),
+                child: Text(label,
+                    style: AppTypography.bodyMd.copyWith(
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    )),
               ),
               if (showPrice)
                 Text(priceLabel,
-                  style: AppTypography.caption.copyWith(
-                    color: modifier.extraPrice > 0
-                        ? AppColors.terra600
-                        : AppColors.success,
-                    fontWeight: FontWeight.w600,
-                  )),
+                    style: AppTypography.caption.copyWith(
+                      color: priceModifier > 0
+                          ? AppColors.terra600
+                          : AppColors.success,
+                      fontWeight: FontWeight.w600,
+                    )),
             ],
           ),
         ),
@@ -402,14 +394,16 @@ class _VegBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = isVeg ? AppColors.success : AppColors.danger;
     return Container(
-      width: 18, height: 18,
+      width: 18,
+      height: 18,
       decoration: BoxDecoration(
         border: Border.all(color: color, width: 1.5),
         borderRadius: BorderRadius.circular(3),
       ),
       child: Center(
         child: Container(
-          width: 8, height: 8,
+          width: 8,
+          height: 8,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
       ),

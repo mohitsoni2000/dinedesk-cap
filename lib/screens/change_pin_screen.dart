@@ -23,17 +23,17 @@ class ChangePinScreen extends ConsumerStatefulWidget {
 class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
   _Step _step = _Step.current;
   String _input = '';
-  String _currentPin = '';  // saved from step 1 for the change request
+  String _currentPin = ''; // saved from step 1 for the change request
   String _newPin = '';
   String? _error;
   bool _done = false;
   bool _verifying = false;
 
   String get _heading => switch (_step) {
-    _Step.current => 'Enter current PIN',
-    _Step.fresh   => 'Choose new PIN',
-    _Step.confirm => 'Confirm new PIN',
-  };
+        _Step.current => 'Enter current PIN',
+        _Step.fresh => 'Choose new PIN',
+        _Step.confirm => 'Confirm new PIN',
+      };
 
   void _advance() {
     if (_done || _verifying) return;
@@ -47,11 +47,12 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
         final socketService = ref.read(socketServiceProvider);
         setState(() => _verifying = true);
         // Use operator:verify — the only PIN check event the server supports.
-        socketService.emit('operator:verify', {'pin': _input}, onAck: (response) {
+        socketService.emit('operator:verify', {'pin': _input},
+            onAck: (response) {
           if (!mounted) return;
           if (response['kind'] == 'success') {
             setState(() {
-              _currentPin = _input;  // save for the change request
+              _currentPin = _input; // save for the change request
               _step = _Step.fresh;
               _input = '';
               _verifying = false;
@@ -93,7 +94,8 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
             if (response['kind'] == 'error') {
               setState(() {
                 _verifying = false;
-                _error = response['message']?.toString() ?? 'Failed to update PIN';
+                _error =
+                    response['message']?.toString() ?? 'Failed to update PIN';
                 _step = _Step.fresh;
                 _input = '';
               });
@@ -120,25 +122,33 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.32),
       builder: (_) => LiquidGlassSurface(
-        blur: 30, thickness: 14,
+        blur: 30,
+        thickness: 14,
         borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4,
-            decoration: BoxDecoration(color: AppColors.ink30, borderRadius: BorderRadius.circular(2))),
+          Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: AppColors.ink30,
+                  borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 16),
           Container(
-            width: 56, height: 56,
+            width: 56,
+            height: 56,
             decoration: BoxDecoration(
               color: AppColors.success.withValues(alpha: 0.14),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.check_rounded, color: AppColors.success, size: 32),
+            child: const Icon(Icons.check_rounded,
+                color: AppColors.success, size: 32),
           ),
           const SizedBox(height: 12),
           const Text('PIN updated', style: AppTypography.title),
           const SizedBox(height: 4),
-          const Text('Use your new PIN next sign-in.', style: AppTypography.caption),
+          const Text('Use your new PIN next sign-in.',
+              style: AppTypography.caption),
           const SizedBox(height: 16),
           LiquidPrimaryButton(
             label: 'Done',
@@ -157,70 +167,78 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
   Widget build(BuildContext context) {
     return LiquidMeshBackground(
       child: Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Column(
-          children: [
-            LiquidAppBar(
-              title: 'Change PIN',
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.pop(),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(_heading, style: AppTypography.title),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(4, (i) {
-                        final filled = i < _input.length;
-                        return Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 6),
-                          width: 18, height: 18,
-                          decoration: BoxDecoration(
-                            color: filled ? AppColors.ink : Colors.transparent,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppColors.ink30, width: 1.5),
-                          ),
-                        );
-                      }),
-                    ),
-                    if (_verifying) ...[
-                      const SizedBox(height: 12),
-                      const SizedBox(
-                        width: 20, height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ] else if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(_error!,
-                        style: AppTypography.caption.copyWith(color: AppColors.danger)),
-                    ],
-                  ],
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          child: Column(
+            children: [
+              LiquidAppBar(
+                title: 'Change PIN',
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => context.pop(),
                 ),
               ),
-            ),
-            NumericKeyboard(
-              value: _input,
-              onChanged: (v) {
-                if (_verifying) return;
-                if (v.length > 4) return;
-                setState(() { _input = v; _error = null; });
-                if (v.length == 4) _advance();
-              },
-              onSubmit: _advance,
-              submitLabel: 'Continue',
-            ),
-          ],
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(_heading, style: AppTypography.title),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(4, (i) {
+                          final filled = i < _input.length;
+                          return Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 6),
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color:
+                                  filled ? AppColors.ink : Colors.transparent,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: AppColors.ink30, width: 1.5),
+                            ),
+                          );
+                        }),
+                      ),
+                      if (_verifying) ...[
+                        const SizedBox(height: 12),
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ] else if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(_error!,
+                            style: AppTypography.caption
+                                .copyWith(color: AppColors.danger)),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              NumericKeyboard(
+                value: _input,
+                onChanged: (v) {
+                  if (_verifying) return;
+                  if (v.length > 4) return;
+                  setState(() {
+                    _input = v;
+                    _error = null;
+                  });
+                  if (v.length == 4) _advance();
+                },
+                onSubmit: _advance,
+                submitLabel: 'Continue',
+              ),
+            ],
+          ),
         ),
       ),
-    ),
     );
   }
 }

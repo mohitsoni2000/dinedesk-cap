@@ -5,11 +5,11 @@
 // Server responds with operator profile + initial sync data.
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
+import '../motion/motion.dart';
 import '../services/session_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_glass_surface.dart';
@@ -34,6 +34,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       _error = null;
       if (_pin.length < 4) {
         _pin.add(key);
+        ref.read(feedbackServiceProvider).fire(const FeedbackLight());
       }
     });
   }
@@ -52,7 +53,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       _submitting = true;
       _error = null;
     });
-    HapticFeedback.mediumImpact();
+    ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
 
     final pin = _pin.join();
     debugPrint('[Auth] Submitting PIN (${'*' * pin.length})...');
@@ -64,11 +65,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       onVerified: (response) {
         if (!mounted) return;
         debugPrint('[Auth] ✓ PIN verified — applying initial sync');
+        ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
         // Apply initial sync data from the verify response.
         final syncRaw = response['sync'];
-        final syncData = (syncRaw is Map)
-            ? Map<String, dynamic>.from(syncRaw)
-            : response;
+        final syncData =
+            (syncRaw is Map) ? Map<String, dynamic>.from(syncRaw) : response;
         syncService.applyInitialSync(syncData);
         syncService.unregisterListeners();
         syncService.registerListeners();
@@ -101,6 +102,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       onRejected: (error) {
         if (!mounted) return;
         debugPrint('[Auth] ✗ PIN rejected: $error');
+        ref.read(feedbackServiceProvider).fire(const FeedbackError());
         setState(() {
           _submitting = false;
           _error = error;
@@ -146,134 +148,143 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
     return LiquidMeshBackground(
       child: Scaffold(
-      backgroundColor: Colors.transparent,
-      resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              sliver: SliverFillRemaining(
-                hasScrollBody: false,
-                child: Column(
-                  children: [
-                    // Restaurant header — confirms successful pairing.
-                    LiquidGlassSurface(
-                      borderRadius: const BorderRadius.all(AppRadii.md),
-                      padding: const EdgeInsets.all(14),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: AppColors.success.withValues(alpha: 0.16),
-                              shape: BoxShape.circle,
+        backgroundColor: Colors.transparent,
+        resizeToAvoidBottomInset: true,
+        body: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                sliver: SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Column(
+                    children: [
+                      // Restaurant header — confirms successful pairing.
+                      LiquidGlassSurface(
+                        borderRadius: const BorderRadius.all(AppRadii.md),
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color:
+                                    AppColors.success.withValues(alpha: 0.16),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.check_rounded,
+                                  color: AppColors.success, size: 20),
                             ),
-                            child: const Icon(Icons.check_rounded,
-                                color: AppColors.success, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Paired · $restaurantName',
+                                      style: AppTypography.bodyMd.copyWith(
+                                          fontWeight: FontWeight.w600),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis),
+                                  Text(deviceLabel,
+                                      style: AppTypography.caption,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Spacer(),
+                      const Text('Welcome back',
+                          style: AppTypography.displayMd),
+                      const SizedBox(height: 4),
+                      const Text('Sign in to start your shift',
+                          style: AppTypography.caption),
+                      const SizedBox(height: 28),
+
+                      // PIN dots — operator identified by JWT token, only PIN needed.
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(4, (i) {
+                          final filled = i < _pin.length;
+                          return SpringBuilder(
+                            to: filled ? 1.0 : 0.0,
+                            spring: RestroSprings.snappy,
+                            builder: (BuildContext _, double t, Widget? __) {
+                              return Container(
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 6),
+                                width: 14,
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Color.lerp(Colors.transparent,
+                                      AppColors.terra500, t),
+                                  border: Border.all(
+                                    color: Color.lerp(AppColors.ink30,
+                                            AppColors.terra500, t) ??
+                                        AppColors.ink30,
+                                    width: 1.5,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        }),
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Enter 4-digit PIN',
+                          style:
+                              AppTypography.micro.copyWith(letterSpacing: 1.4)),
+
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(_error!,
+                            style: AppTypography.caption
+                                .copyWith(color: AppColors.danger)),
+                      ],
+
+                      const Spacer(),
+                      PinPad(
+                        onKeyPress: _press,
+                        onSubmit: _maybeSubmit,
+                        onDelete: _delete,
+                      ),
+                      const SizedBox(height: 14),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          TextButton.icon(
+                            onPressed: _cancelPairing,
+                            icon: const Icon(Icons.close, size: 16),
+                            label: const Text('Cancel pairing'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.ink70,
+                              textStyle: AppTypography.caption,
+                            ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Paired · $restaurantName',
-                                    style: AppTypography.bodyMd
-                                        .copyWith(fontWeight: FontWeight.w600),
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                                Text(deviceLabel,
-                                    style: AppTypography.caption,
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                              ],
+                          TextButton.icon(
+                            onPressed: () => HelpSheet.show(context),
+                            icon: const Icon(Icons.help_outline, size: 16),
+                            label: const Text('Help'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.ink70,
+                              textStyle: AppTypography.caption,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    const Spacer(),
-                    const Text('Welcome back', style: AppTypography.displayMd),
-                    const SizedBox(height: 4),
-                    const Text('Sign in to start your shift',
-                        style: AppTypography.caption),
-                    const SizedBox(height: 28),
-
-                    // PIN dots — operator identified by JWT token, only PIN needed.
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(4, (i) {
-                        final filled = i < _pin.length;
-                        return AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          margin: const EdgeInsets.symmetric(horizontal: 6),
-                          width: 14,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: filled
-                                ? AppColors.terra500
-                                : Colors.transparent,
-                            border: Border.all(
-                              color:
-                                  filled ? AppColors.terra500 : AppColors.ink30,
-                              width: 1.5,
-                            ),
-                          ),
-                        );
-                      }),
-                    ),
-                    const SizedBox(height: 8),
-                    Text('Enter 4-digit PIN',
-                        style:
-                            AppTypography.micro.copyWith(letterSpacing: 1.4)),
-
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(_error!,
-                          style: AppTypography.caption
-                              .copyWith(color: AppColors.danger)),
                     ],
-
-                    const Spacer(),
-                    PinPad(
-                      onKeyPress: _press,
-                      onSubmit: _maybeSubmit,
-                      onDelete: _delete,
-                    ),
-                    const SizedBox(height: 14),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        TextButton.icon(
-                          onPressed: _cancelPairing,
-                          icon: const Icon(Icons.close, size: 16),
-                          label: const Text('Cancel pairing'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.ink70,
-                            textStyle: AppTypography.caption,
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => HelpSheet.show(context),
-                          icon: const Icon(Icons.help_outline, size: 16),
-                          label: const Text('Help'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.ink70,
-                            textStyle: AppTypography.caption,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
     );
   }
 }
-

@@ -49,8 +49,7 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
     'quick_settle': 'Quick Settle',
   };
 
-  String get _actionLabel =>
-      _actionLabels[widget.action] ?? widget.action;
+  String get _actionLabel => _actionLabels[widget.action] ?? widget.action;
 
   void _press(String key) {
     if (_submitting) return;

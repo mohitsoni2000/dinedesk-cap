@@ -39,9 +39,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
         backgroundColor: AppColors.paper,
         title: const Text('Discard draft?', style: AppTypography.title),
         content: Text(
-          '${cart.length} unsent ${cart.length == 1 ? "item" : "items"} will be lost. '
-          'Send to kitchen first or tap "Save & exit" to keep the draft.',
-          style: AppTypography.bodyMd),
+            '${cart.length} unsent ${cart.length == 1 ? "item" : "items"} will be lost. '
+            'Send to kitchen first or tap "Save & exit" to keep the draft.',
+            style: AppTypography.bodyMd),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -50,7 +50,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Discard',
-              style: TextStyle(color: AppColors.danger)),
+                style: TextStyle(color: AppColors.danger)),
           ),
         ],
       ),
@@ -79,9 +79,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     // Resolve display name from serverId.
     final tables = ref.watch(tablesProvider);
     final tableDisplay = tables
-        .where((t) => t.serverId == widget.tableId)
-        .map((t) => t.id)
-        .firstOrNull ?? widget.tableId;
+            .where((t) => t.serverId == widget.tableId)
+            .map((t) => t.id)
+            .firstOrNull ??
+        widget.tableId;
 
     return PopScope(
       canPop: false,
@@ -96,426 +97,477 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
       },
       child: LiquidMeshBackground(
         child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: Column(
-            children: [
-              LiquidAppBar(
-                title: 'Table $tableDisplay',
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () async {
-                    final ok = await _confirmDiscard();
-                    if (!context.mounted) return;
-                    if (ok) {
-                      ref.read(cartProvider.notifier).clear();
-                      context.pop();
-                    }
-                  },
-                ),
-                actions: [
-                  Hero(
-                    tag: HeroTags.tableCard(widget.tableId),
-                    flightShuttleBuilder: (_, __, ___, ____, _____) =>
-                        const SizedBox.shrink(),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: AppColors.tableMineBg,
-                          borderRadius: const BorderRadius.all(AppRadii.xs),
-                          border: Border.all(
-                            color: AppColors.terra400.withValues(alpha: 0.4)),
-                        ),
-                        child: Text(widget.tableId,
-                          style: AppTypography.caption.copyWith(
-                            fontWeight: FontWeight.w700)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: Icon(_searchOpen ? Icons.close : Icons.search,
-                      color: AppColors.ink70),
-                    onPressed: () => setState(() {
-                      _searchOpen = !_searchOpen;
-                      if (!_searchOpen) _query = '';
-                    }),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.receipt_long, color: AppColors.ink70),
-                    tooltip: 'KOT History',
-                    onPressed: () => KotHistorySheet.show(context, widget.tableId),
-                  ),
-                  // Packages — feature-flagged.
-                  Builder(builder: (_) {
-                    final flags = ref.watch(flagsProvider);
-                    if (!flags.packages) return const SizedBox.shrink();
-                    return IconButton(
-                      icon: const Icon(Icons.inventory_2_outlined, color: AppColors.ink70),
-                      tooltip: 'Packages',
-                      onPressed: () => PackageSheet.show(context),
-                    );
-                  }),
-                  IconButton(
-                    icon: const Icon(Icons.bookmark_border, color: AppColors.ink70),
-                    tooltip: 'Save & exit',
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Draft saved — resume from Tables'),
-                        backgroundColor: AppColors.ink,
-                      ));
-                      context.pop();
+          backgroundColor: Colors.transparent,
+          body: SafeArea(
+            child: Column(
+              children: [
+                LiquidAppBar(
+                  title: 'Table $tableDisplay',
+                  leading: IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () async {
+                      final ok = await _confirmDiscard();
+                      if (!context.mounted) return;
+                      if (ok) {
+                        ref.read(cartProvider.notifier).clear();
+                        context.pop();
+                      }
                     },
                   ),
-                ],
-              ),
-              if (_searchOpen)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      borderRadius: const BorderRadius.all(AppRadii.sm),
-                      border: Border.all(color: AppColors.ink10),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: TextField(
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Search menu…',
-                        icon: Icon(Icons.search, color: AppColors.ink50, size: 18),
+                  actions: [
+                    Hero(
+                      tag: HeroTags.tableCard(widget.tableId),
+                      flightShuttleBuilder: (_, __, ___, ____, _____) =>
+                          const SizedBox.shrink(),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.tableMineBg,
+                            borderRadius: const BorderRadius.all(AppRadii.xs),
+                            border: Border.all(
+                                color:
+                                    AppColors.terra400.withValues(alpha: 0.4)),
+                          ),
+                          child: Text(widget.tableId,
+                              style: AppTypography.caption
+                                  .copyWith(fontWeight: FontWeight.w700)),
+                        ),
                       ),
-                      onChanged: (v) => setState(() => _query = v),
-                    ),
-                  ),
-                ),
-              // Section chips.
-              SizedBox(
-                height: 44,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  children: [
-                    _SectionChip(
-                      label: 'All',
-                      selected: _activeSection == null,
-                      onTap: () {
-                        ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
-                        setState(() => _activeSection = null);
-                      },
                     ),
                     const SizedBox(width: 8),
-                    for (final s in allSections) ...[
+                    IconButton(
+                      icon: Icon(_searchOpen ? Icons.close : Icons.search,
+                          color: AppColors.ink70),
+                      onPressed: () => setState(() {
+                        _searchOpen = !_searchOpen;
+                        if (!_searchOpen) _query = '';
+                      }),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.receipt_long,
+                          color: AppColors.ink70),
+                      tooltip: 'KOT History',
+                      onPressed: () =>
+                          KotHistorySheet.show(context, widget.tableId),
+                    ),
+                    // Packages — feature-flagged.
+                    Builder(builder: (_) {
+                      final flags = ref.watch(flagsProvider);
+                      if (!flags.packages) return const SizedBox.shrink();
+                      return IconButton(
+                        icon: const Icon(Icons.inventory_2_outlined,
+                            color: AppColors.ink70),
+                        tooltip: 'Packages',
+                        onPressed: () => PackageSheet.show(context),
+                      );
+                    }),
+                    IconButton(
+                      icon: const Icon(Icons.bookmark_border,
+                          color: AppColors.ink70),
+                      tooltip: 'Save & exit',
+                      onPressed: () {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                          content: Text('Draft saved — resume from Tables'),
+                          backgroundColor: AppColors.ink,
+                        ));
+                        context.pop();
+                      },
+                    ),
+                  ],
+                ),
+                if (_searchOpen)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        borderRadius: const BorderRadius.all(AppRadii.sm),
+                        border: Border.all(color: AppColors.ink10),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: TextField(
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          hintText: 'Search menu…',
+                          icon: Icon(Icons.search,
+                              color: AppColors.ink50, size: 18),
+                        ),
+                        onChanged: (v) => setState(() => _query = v),
+                      ),
+                    ),
+                  ),
+                // Section chips.
+                SizedBox(
+                  height: 44,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    children: [
                       _SectionChip(
-                        label: s,
-                        selected: _activeSection == s,
+                        label: 'All',
+                        selected: _activeSection == null,
                         onTap: () {
-                          ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
-                          setState(() => _activeSection = s);
+                          ref
+                              .read(feedbackServiceProvider)
+                              .fire(const FeedbackSelection());
+                          setState(() => _activeSection = null);
                         },
                       ),
                       const SizedBox(width: 8),
+                      for (final s in allSections) ...[
+                        _SectionChip(
+                          label: s,
+                          selected: _activeSection == s,
+                          onTap: () {
+                            ref
+                                .read(feedbackServiceProvider)
+                                .fire(const FeedbackSelection());
+                            setState(() => _activeSection = s);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              // Fast-add bar — pinned + auto trending items from server.
-              Builder(builder: (context) {
-                final pinned = ref.watch(fastAddPinnedProvider);
-                final auto = ref.watch(fastAddAutoProvider);
-                // Merge: pinned first, then auto (exclude duplicates)
-                final pinnedIds = pinned.map((m) => m.id).toSet();
-                final merged = [
-                  ...pinned,
-                  ...auto.where((m) => !pinnedIds.contains(m.id)),
-                ];
-                if (merged.isEmpty) return const SizedBox.shrink();
-                return SizedBox(
-                  height: 44,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        alignment: Alignment.center,
-                        child: Text('⚡ FAST ADD',
-                          style: AppTypography.micro.copyWith(
-                            color: AppColors.ink50, letterSpacing: 1.0)),
-                      ),
-                      for (final item in merged)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: GestureDetector(
-                            onTap: () {
-                              ref.read(feedbackServiceProvider).fire(const FeedbackLight());
-                              ref.read(cartProvider.notifier).add(item);
-                              ref.read(recentItemsProvider.notifier).track(item);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: pinnedIds.contains(item.id)
-                                    ? AppColors.terra50
-                                    : Colors.white.withValues(alpha: 0.6),
-                                borderRadius: const BorderRadius.all(AppRadii.pill),
-                                border: Border.all(
+                // Fast-add bar — pinned + auto trending items from server.
+                Builder(builder: (context) {
+                  final pinned = ref.watch(fastAddPinnedProvider);
+                  final auto = ref.watch(fastAddAutoProvider);
+                  // Merge: pinned first, then auto (exclude duplicates)
+                  final pinnedIds = pinned.map((m) => m.id).toSet();
+                  final merged = [
+                    ...pinned,
+                    ...auto.where((m) => !pinnedIds.contains(m.id)),
+                  ];
+                  if (merged.isEmpty) return const SizedBox.shrink();
+                  return SizedBox(
+                    height: 44,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 6),
+                          alignment: Alignment.center,
+                          child: Text('⚡ FAST ADD',
+                              style: AppTypography.micro.copyWith(
+                                  color: AppColors.ink50, letterSpacing: 1.0)),
+                        ),
+                        for (final item in merged)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: GestureDetector(
+                              onTap: () {
+                                ref
+                                    .read(feedbackServiceProvider)
+                                    .fire(const FeedbackLight());
+                                ref.read(cartProvider.notifier).add(item);
+                                ref
+                                    .read(recentItemsProvider.notifier)
+                                    .track(item);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
                                   color: pinnedIds.contains(item.id)
-                                      ? AppColors.terra200
-                                      : AppColors.ink10,
-                                  style: pinnedIds.contains(item.id)
-                                      ? BorderStyle.solid
-                                      : BorderStyle.none,
+                                      ? AppColors.terra50
+                                      : Colors.white.withValues(alpha: 0.6),
+                                  borderRadius:
+                                      const BorderRadius.all(AppRadii.pill),
+                                  border: Border.all(
+                                    color: pinnedIds.contains(item.id)
+                                        ? AppColors.terra200
+                                        : AppColors.ink10,
+                                    style: pinnedIds.contains(item.id)
+                                        ? BorderStyle.solid
+                                        : BorderStyle.none,
+                                  ),
                                 ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (!pinnedIds.contains(item.id))
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (!pinnedIds.contains(item.id))
+                                      Container(
+                                        width: 6,
+                                        height: 6,
+                                        margin: const EdgeInsets.only(right: 4),
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFFFF6B35),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
                                     Container(
-                                      width: 6, height: 6,
-                                      margin: const EdgeInsets.only(right: 4),
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFFFF6B35),
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        color: item.isVeg
+                                            ? AppColors.success
+                                            : AppColors.danger,
                                         shape: BoxShape.circle,
                                       ),
                                     ),
-                                  Container(
-                                    width: 8, height: 8,
-                                    decoration: BoxDecoration(
-                                      color: item.isVeg
-                                          ? AppColors.success
-                                          : AppColors.danger,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(item.name,
-                                    style: AppTypography.caption.copyWith(
-                                      fontWeight: FontWeight.w600)),
-                                ],
+                                    const SizedBox(width: 6),
+                                    Text(item.name,
+                                        style: AppTypography.caption.copyWith(
+                                            fontWeight: FontWeight.w600)),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
+                      ],
+                    ),
+                  );
+                }),
+                // Recent items bar — last 8 items for quick re-add.
+                Builder(builder: (context) {
+                  final recent = ref.watch(recentItemsProvider);
+                  if (recent.isEmpty) return const SizedBox.shrink();
+                  return SizedBox(
+                    height: 44,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 6),
+                          alignment: Alignment.center,
+                          child: Text('RECENT',
+                              style: AppTypography.micro.copyWith(
+                                  color: AppColors.ink50, letterSpacing: 1.0)),
                         ),
-                    ],
-                  ),
-                );
-              }),
-              // Recent items bar — last 8 items for quick re-add.
-              Builder(builder: (context) {
-                final recent = ref.watch(recentItemsProvider);
-                if (recent.isEmpty) return const SizedBox.shrink();
-                return SizedBox(
-                  height: 44,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        alignment: Alignment.center,
-                        child: Text('RECENT',
-                          style: AppTypography.micro.copyWith(
-                            color: AppColors.ink50, letterSpacing: 1.0)),
-                      ),
-                      for (final item in recent)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: GestureDetector(
-                            onTap: () {
-                              ref.read(feedbackServiceProvider).fire(const FeedbackLight());
-                              ref.read(cartProvider.notifier).add(item);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: AppColors.terra50,
-                                borderRadius: const BorderRadius.all(AppRadii.pill),
-                                border: Border.all(
-                                  color: AppColors.terra200),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 8, height: 8,
-                                    decoration: BoxDecoration(
-                                      color: item.isVeg
-                                          ? AppColors.success
-                                          : AppColors.danger,
-                                      shape: BoxShape.circle,
+                        for (final item in recent)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: GestureDetector(
+                              onTap: () {
+                                ref
+                                    .read(feedbackServiceProvider)
+                                    .fire(const FeedbackLight());
+                                ref.read(cartProvider.notifier).add(item);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.terra50,
+                                  borderRadius:
+                                      const BorderRadius.all(AppRadii.pill),
+                                  border: Border.all(color: AppColors.terra200),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        color: item.isVeg
+                                            ? AppColors.success
+                                            : AppColors.danger,
+                                        shape: BoxShape.circle,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(item.name,
-                                    style: AppTypography.caption.copyWith(
-                                      fontWeight: FontWeight.w600)),
-                                ],
+                                    const SizedBox(width: 6),
+                                    Text(item.name,
+                                        style: AppTypography.caption.copyWith(
+                                            fontWeight: FontWeight.w600)),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                    ],
-                  ),
-                );
-              }),
-              Expanded(
-                child: sections.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
+                      ],
+                    ),
+                  );
+                }),
+                Expanded(
+                  child: sections.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.restaurant_menu,
+                                    color: AppColors.ink30, size: 48),
+                                SizedBox(height: 12),
+                                Text('No items match',
+                                    style: AppTypography.title),
+                                SizedBox(height: 4),
+                                Text('Try a different search',
+                                    style: AppTypography.caption),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ListView(
+                          padding: const EdgeInsets.all(AppSpacing.lg),
                           children: [
-                            Icon(Icons.restaurant_menu,
-                              color: AppColors.ink30, size: 48),
-                            SizedBox(height: 12),
-                            Text('No items match',
-                              style: AppTypography.title),
-                            SizedBox(height: 4),
-                            Text('Try a different search',
-                              style: AppTypography.caption),
+                            for (final entry in sections.entries) ...[
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
+                                child: Text(
+                                  entry.key.toUpperCase(),
+                                  style: AppTypography.micro
+                                      .copyWith(letterSpacing: 1.2),
+                                ),
+                              ),
+                              AppCard(
+                                padding: EdgeInsets.zero,
+                                child: Column(
+                                  children: [
+                                    for (int i = 0;
+                                        i < entry.value.length;
+                                        i++) ...[
+                                      _ItemRow(
+                                        item: entry.value[i],
+                                        onAdd: () {
+                                          ref
+                                              .read(feedbackServiceProvider)
+                                              .fire(const FeedbackLight());
+                                          ref
+                                              .read(cartProvider.notifier)
+                                              .add(entry.value[i]);
+                                          ref
+                                              .read(
+                                                  recentItemsProvider.notifier)
+                                              .track(entry.value[i]);
+                                        },
+                                        onTap: () => ItemDetailSheet.show(
+                                            context, entry.value[i]),
+                                      ),
+                                      if (i < entry.value.length - 1)
+                                        const Divider(
+                                            height: 1, color: AppColors.ink10),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 80),
                           ],
                         ),
+                ),
+                // Auto-KOT hint — shows when cart reaches threshold.
+                Builder(builder: (_) {
+                  final flags = ref.watch(flagsProvider);
+                  final itemCount = cart.fold<int>(0, (s, l) => s + l.qty);
+                  if (!flags.autoKot ||
+                      itemCount < flags.autoKotThreshold ||
+                      cart.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.amber.withValues(alpha: 0.12),
+                        borderRadius: const BorderRadius.all(AppRadii.sm),
+                        border: Border.all(
+                            color: AppColors.amber.withValues(alpha: 0.3)),
                       ),
-                    )
-                  : ListView(
-                      padding: const EdgeInsets.all(AppSpacing.lg),
-                      children: [
-                        for (final entry in sections.entries) ...[
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Text(entry.key.toUpperCase(),
-                              style: AppTypography.micro.copyWith(letterSpacing: 1.2),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.auto_awesome,
+                              color: AppColors.amber, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '$itemCount items ready — send KOT now?',
+                              style: AppTypography.caption.copyWith(
+                                  color: AppColors.ink,
+                                  fontWeight: FontWeight.w600),
                             ),
                           ),
-                          AppCard(
-                            padding: EdgeInsets.zero,
-                            child: Column(
-                              children: [
-                                for (int i = 0; i < entry.value.length; i++) ...[
-                                  _ItemRow(
-                                    item: entry.value[i],
-                                    onAdd: () {
-                                      ref.read(feedbackServiceProvider).fire(const FeedbackLight());
-                                      ref.read(cartProvider.notifier)
-                                        .add(entry.value[i]);
-                                      ref.read(recentItemsProvider.notifier)
-                                        .track(entry.value[i]);
-                                    },
-                                    onTap: () => ItemDetailSheet.show(
-                                        context, entry.value[i]),
-                                  ),
-                                  if (i < entry.value.length - 1)
-                                    const Divider(height: 1, color: AppColors.ink10),
-                                ],
-                              ],
+                          GestureDetector(
+                            onTap: () =>
+                                context.push('/order/${widget.tableId}/review'),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: const BoxDecoration(
+                                color: AppColors.amber,
+                                borderRadius: BorderRadius.all(AppRadii.pill),
+                              ),
+                              child: Text('Send',
+                                  style: AppTypography.caption.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700)),
                             ),
                           ),
                         ],
-                        const SizedBox(height: 80),
-                      ],
+                      ),
                     ),
-              ),
-              // Auto-KOT hint — shows when cart reaches threshold.
-              Builder(builder: (_) {
-                final flags = ref.watch(flagsProvider);
-                final itemCount = cart.fold<int>(0, (s, l) => s + l.qty);
-                if (!flags.autoKot || itemCount < flags.autoKotThreshold || cart.isEmpty) {
-                  return const SizedBox.shrink();
-                }
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.amber.withValues(alpha: 0.12),
-                      borderRadius: const BorderRadius.all(AppRadii.sm),
-                      border: Border.all(color: AppColors.amber.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.auto_awesome, color: AppColors.amber, size: 16),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '$itemCount items ready — send KOT now?',
-                            style: AppTypography.caption.copyWith(
-                              color: AppColors.ink, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => context.push('/order/${widget.tableId}/review'),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: const BoxDecoration(
-                              color: AppColors.amber,
-                              borderRadius: BorderRadius.all(AppRadii.pill),
-                            ),
-                            child: Text('Send',
-                              style: AppTypography.caption.copyWith(
-                                color: Colors.white, fontWeight: FontWeight.w700)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-              if (cart.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: PredictiveScale(
-                    enabled: false, // Behind flag — enable when ready
-                    maxScaleBoost: 0.015,
-                    child: Hero(
-                      tag: HeroTags.cartBar,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: GestureDetector(
-                          onTap: () => context.push('/order/${widget.tableId}/review'),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [AppColors.terra400, AppColors.terra600],
+                  );
+                }),
+                if (cart.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: PredictiveScale(
+                      enabled: false, // Behind flag — enable when ready
+                      maxScaleBoost: 0.015,
+                      child: Hero(
+                        tag: HeroTags.cartBar,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: GestureDetector(
+                            onTap: () =>
+                                context.push('/order/${widget.tableId}/review'),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    AppColors.terra400,
+                                    AppColors.terra600
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.all(AppRadii.md),
+                                boxShadow: AppShadows.terraGlow,
                               ),
-                              borderRadius: BorderRadius.all(AppRadii.md),
-                              boxShadow: AppShadows.terraGlow,
-                            ),
-                            child: Row(
-                              children: [
-                                Text('Review · ${cart.length} ${cart.length == 1 ? "item" : "items"}',
-                                  style: AppTypography.bodyMd.copyWith(
-                                    color: Colors.white, fontWeight: FontWeight.w600),
-                                ),
-                                const Spacer(),
-                                KineticRupeeCounter(
-                                  amount: cartTotal,
-                                  fontSize: 18,
-                                  color: Colors.white,
-                                ),
-                                const SizedBox(width: 8),
-                                const Icon(Icons.arrow_forward, color: Colors.white),
-                              ],
+                              child: Row(
+                                children: [
+                                  Text(
+                                    'Review · ${cart.length} ${cart.length == 1 ? "item" : "items"}',
+                                    style: AppTypography.bodyMd.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                  const Spacer(),
+                                  KineticRupeeCounter(
+                                    amount: cartTotal,
+                                    fontSize: 18,
+                                    color: Colors.white,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Icon(Icons.arrow_forward,
+                                      color: Colors.white),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-      ),  // LiquidMeshBackground
+      ), // LiquidMeshBackground
     );
   }
 }
@@ -524,8 +576,8 @@ class _SectionChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _SectionChip({
-    required this.label, required this.selected, required this.onTap});
+  const _SectionChip(
+      {required this.label, required this.selected, required this.onTap});
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -537,20 +589,22 @@ class _SectionChip extends StatelessWidget {
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: Color.lerp(Colors.white.withValues(alpha: 0.6), AppColors.ink, t),
+              color: Color.lerp(
+                  Colors.white.withValues(alpha: 0.6), AppColors.ink, t),
               borderRadius: const BorderRadius.all(AppRadii.pill),
               border: Border.all(
-                color: Color.lerp(AppColors.ink10, AppColors.ink, t) ?? AppColors.ink10),
+                  color: Color.lerp(AppColors.ink10, AppColors.ink, t) ??
+                      AppColors.ink10),
             ),
             child: child,
           );
         },
         child: Center(
           child: Text(label,
-            style: AppTypography.caption.copyWith(
-              color: selected ? Colors.white : AppColors.ink,
-              fontWeight: FontWeight.w600,
-            )),
+              style: AppTypography.caption.copyWith(
+                color: selected ? Colors.white : AppColors.ink,
+                fontWeight: FontWeight.w600,
+              )),
         ),
       ),
     );
@@ -561,7 +615,8 @@ class _ItemRow extends StatelessWidget {
   final MenuItem item;
   final VoidCallback onAdd;
   final VoidCallback onTap;
-  const _ItemRow({required this.item, required this.onAdd, required this.onTap});
+  const _ItemRow(
+      {required this.item, required this.onAdd, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -590,23 +645,23 @@ class _ItemRow extends StatelessWidget {
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                                horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: AppColors.warn.withValues(alpha: 0.16),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text('86',
-                              style: AppTypography.micro.copyWith(
-                                color: AppColors.warn,
-                                letterSpacing: 0.6,
-                              )),
+                                style: AppTypography.micro.copyWith(
+                                  color: AppColors.warn,
+                                  letterSpacing: 0.6,
+                                )),
                           ),
                         ],
                       ],
                     ),
                     const SizedBox(height: 2),
                     Text(formatRupeesCompact(item.price),
-                      style: AppTypography.caption),
+                        style: AppTypography.caption),
                   ],
                 ),
               ),
@@ -615,15 +670,18 @@ class _ItemRow extends StatelessWidget {
                   onTap: onAdd,
                   behavior: HitTestBehavior.opaque,
                   child: SizedBox(
-                    width: 48, height: 48,
+                    width: 48,
+                    height: 48,
                     child: Center(
                       child: Container(
-                        width: 32, height: 32,
+                        width: 32,
+                        height: 32,
                         decoration: BoxDecoration(
                           color: AppColors.ink,
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        child: const Icon(Icons.add, color: Colors.white, size: 18),
+                        child: const Icon(Icons.add,
+                            color: Colors.white, size: 18),
                       ),
                     ),
                   ),
@@ -644,14 +702,16 @@ class _VegMark extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = isVeg ? AppColors.success : AppColors.danger;
     return Container(
-      width: 14, height: 14,
+      width: 14,
+      height: 14,
       decoration: BoxDecoration(
         border: Border.all(color: color, width: 1.5),
         borderRadius: BorderRadius.circular(2),
       ),
       child: Center(
         child: Container(
-          width: 6, height: 6,
+          width: 6,
+          height: 6,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
       ),

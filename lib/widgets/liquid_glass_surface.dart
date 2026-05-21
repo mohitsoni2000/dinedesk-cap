@@ -44,10 +44,14 @@ class LiquidGlassSurface extends StatelessWidget {
   Color _tint() {
     if (tint != null) return tint!;
     switch (variant) {
-      case LiquidGlassVariant.regular: return Colors.white.withValues(alpha: 0.22);
-      case LiquidGlassVariant.strong:  return Colors.white.withValues(alpha: 0.40);
-      case LiquidGlassVariant.dark:    return Colors.black.withValues(alpha: 0.28);
-      case LiquidGlassVariant.terra:   return AppColors.terra400.withValues(alpha: 0.32);
+      case LiquidGlassVariant.regular:
+        return Colors.white.withValues(alpha: 0.22);
+      case LiquidGlassVariant.strong:
+        return Colors.white.withValues(alpha: 0.40);
+      case LiquidGlassVariant.dark:
+        return Colors.black.withValues(alpha: 0.28);
+      case LiquidGlassVariant.terra:
+        return AppColors.terra400.withValues(alpha: 0.32);
     }
   }
 

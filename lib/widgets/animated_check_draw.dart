@@ -28,7 +28,10 @@ class _AnimatedCheckDrawState extends State<AnimatedCheckDraw>
       AnimationController(vsync: this, duration: widget.duration)..forward();
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +84,8 @@ class _CheckPainter extends CustomPainter {
     // Inner specular sweep
     final sheen = Paint()
       ..shader = LinearGradient(
-        begin: Alignment.topLeft, end: Alignment.bottomRight,
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
         colors: [
           Colors.white.withValues(alpha: 0.45),
           Colors.white.withValues(alpha: 0),

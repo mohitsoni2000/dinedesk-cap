@@ -31,6 +31,7 @@ import 'widgets/root_shell.dart';
 final routerProvider = Provider<GoRouter>((ref) {
   // Only watch auth state — connection changes handled by ConnectionBanner widget.
   final authed = ref.watch(isAuthenticatedProvider);
+  final forceDisconnected = ref.watch(forceDisconnectedProvider);
 
   return GoRouter(
     initialLocation: '/splash',
@@ -38,45 +39,99 @@ final routerProvider = Provider<GoRouter>((ref) {
       final loc = state.matchedLocation;
       const authFlow = ['/splash', '/scan', '/connecting', '/auth'];
       final onAuthFlow = authFlow.any((p) => loc.startsWith(p));
-      final onDisconnect = loc == '/disconnected' || loc == '/force-disconnected';
+      final onDisconnect =
+          loc == '/disconnected' || loc == '/force-disconnected';
+      if (forceDisconnected && loc != '/force-disconnected') {
+        return '/force-disconnected';
+      }
       if (!authed && !onAuthFlow && !onDisconnect) return '/auth';
       if (authed && onAuthFlow) return '/tables';
       return null;
     },
     errorBuilder: (context, state) => const Scaffold(
-    backgroundColor: Colors.black87,
-    body: Center(
-      child: Text('Page not found',
-        style: TextStyle(color: Colors.white70, fontSize: 18)),
-    ),
-  ),
-  routes: [
-    GoRoute(path: '/splash',     pageBuilder: (_, s) => liquidPage(key: s.pageKey, child: const SplashScreen())),
-    GoRoute(path: '/scan',       pageBuilder: (_, s) => liquidPage(key: s.pageKey, child: const QrScanScreen())),
-    GoRoute(path: '/connecting', pageBuilder: (_, s) => liquidPage(key: s.pageKey, child: const ConnectingScreen())),
-    GoRoute(path: '/auth',       pageBuilder: (_, s) => liquidPage(key: s.pageKey, child: const AuthScreen())),
-    ShellRoute(
-      builder: (_, __, child) => LiquidMeshBackground(
-        child: ConnectionBanner(child: RootShell(child: child)),
+      backgroundColor: Colors.black87,
+      body: Center(
+        child: Text('Page not found',
+            style: TextStyle(color: Colors.white70, fontSize: 18)),
       ),
-      routes: [
-        GoRoute(path: '/tables',  pageBuilder: (_, s) => liquidPage(key: s.pageKey, child: const TablesScreen())),
-        GoRoute(path: '/history', pageBuilder: (_, s) => liquidPage(key: s.pageKey, child: const HistoryScreen())),
-        GoRoute(path: '/profile', pageBuilder: (_, s) => liquidPage(key: s.pageKey, child: const ProfileScreen())),
-        GoRoute(path: '/settings',pageBuilder: (_, s) => liquidPage(key: s.pageKey, child: const SettingsScreen())),
-      ],
     ),
-    GoRoute(path: '/order/:tableId', pageBuilder: (_, s) =>
-      liquidPage(key: s.pageKey, child: OrderBuilderScreen(tableId: s.pathParameters['tableId']!))),
-    GoRoute(path: '/order/:tableId/review', pageBuilder: (_, s) =>
-      liquidPage(key: s.pageKey, child: OrderReviewScreen(tableId: s.pathParameters['tableId']!))),
-    GoRoute(path: '/order/:tableId/success', pageBuilder: (_, s) =>
-      liquidPage(key: s.pageKey, fromBottom: true, child: OrderSuccessScreen(tableId: s.pathParameters['tableId']!))),
-    GoRoute(path: '/history/:orderId', pageBuilder: (_, s) =>
-      liquidPage(key: s.pageKey, child: OrderDetailScreen(orderId: s.pathParameters['orderId']!))),
-    GoRoute(path: '/change-pin',         pageBuilder: (_, s) => liquidPage(key: s.pageKey, fromBottom: true, child: const ChangePinScreen())),
-    GoRoute(path: '/disconnected',       pageBuilder: (_, s) => liquidPage(key: s.pageKey, child: const DisconnectedScreen())),
-    GoRoute(path: '/force-disconnected', pageBuilder: (_, s) => liquidPage(key: s.pageKey, child: const ForceDisconnectedScreen())),
-  ],
+    routes: [
+      GoRoute(
+          path: '/splash',
+          pageBuilder: (_, s) =>
+              liquidPage(key: s.pageKey, child: const SplashScreen())),
+      GoRoute(
+          path: '/scan',
+          pageBuilder: (_, s) =>
+              liquidPage(key: s.pageKey, child: const QrScanScreen())),
+      GoRoute(
+          path: '/connecting',
+          pageBuilder: (_, s) =>
+              liquidPage(key: s.pageKey, child: const ConnectingScreen())),
+      GoRoute(
+          path: '/auth',
+          pageBuilder: (_, s) =>
+              liquidPage(key: s.pageKey, child: const AuthScreen())),
+      ShellRoute(
+        builder: (_, __, child) => LiquidMeshBackground(
+          child: ConnectionBanner(child: RootShell(child: child)),
+        ),
+        routes: [
+          GoRoute(
+              path: '/tables',
+              pageBuilder: (_, s) =>
+                  liquidPage(key: s.pageKey, child: const TablesScreen())),
+          GoRoute(
+              path: '/history',
+              pageBuilder: (_, s) =>
+                  liquidPage(key: s.pageKey, child: const HistoryScreen())),
+          GoRoute(
+              path: '/profile',
+              pageBuilder: (_, s) =>
+                  liquidPage(key: s.pageKey, child: const ProfileScreen())),
+          GoRoute(
+              path: '/settings',
+              pageBuilder: (_, s) =>
+                  liquidPage(key: s.pageKey, child: const SettingsScreen())),
+        ],
+      ),
+      GoRoute(
+          path: '/order/:tableId',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              child:
+                  OrderBuilderScreen(tableId: s.pathParameters['tableId']!))),
+      GoRoute(
+          path: '/order/:tableId/review',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              child: OrderReviewScreen(tableId: s.pathParameters['tableId']!))),
+      GoRoute(
+          path: '/order/:tableId/success',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              fromBottom: true,
+              child:
+                  OrderSuccessScreen(tableId: s.pathParameters['tableId']!))),
+      GoRoute(
+          path: '/history/:orderId',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              child: OrderDetailScreen(orderId: s.pathParameters['orderId']!))),
+      GoRoute(
+          path: '/change-pin',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              fromBottom: true,
+              child: const ChangePinScreen())),
+      GoRoute(
+          path: '/disconnected',
+          pageBuilder: (_, s) =>
+              liquidPage(key: s.pageKey, child: const DisconnectedScreen())),
+      GoRoute(
+          path: '/force-disconnected',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey, child: const ForceDisconnectedScreen())),
+    ],
   );
 });

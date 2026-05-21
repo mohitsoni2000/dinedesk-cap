@@ -27,11 +27,21 @@ dependencies:
   # Currency formatting (₹), date filters
   intl: ^0.19.0
 
+  # Audio playback for multi-sensory feedback
+  audioplayers: ^6.1.0
+
+  # Animations (Material motion / OpenContainer)
+  animations: ^2.0.11
+
+  # Rive state-machine animations
+  rive: ^0.13.20
+
   # Utility
   collection: ^1.18.0
   socket_io_client: ^3.0.2
   shared_preferences: ^2.2.3
   connectivity_plus: ^6.0.5
+  sensors_plus: ^6.1.0
 
 dev_dependencies:
   flutter_test:
@@ -40,6 +50,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/audio/
+    - assets/rive/
   fonts:
     - family: Inter
       fonts:
@@ -51,6 +64,9 @@ flutter:
           weight: 600
         - asset: assets/fonts/Inter-Bold.ttf
           weight: 700
+    - family: Fraunces
+      fonts:
+        - asset: assets/fonts/Fraunces-VariableFont.ttf
     - family: Cormorant
       fonts:
         - asset: assets/fonts/CormorantGaramond.ttf

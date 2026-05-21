@@ -37,8 +37,8 @@ class SettingsScreen extends ConsumerWidget {
                       ListTile(
                         leading: const Icon(Icons.notifications_outlined,
                             color: AppColors.ink70),
-                        title:
-                            const Text('Notifications', style: AppTypography.bodyMd),
+                        title: const Text('Notifications',
+                            style: AppTypography.bodyMd),
                         subtitle: const Text('Sounds, vibrations, banners',
                             style: AppTypography.caption),
                         trailing: const Icon(Icons.chevron_right,
@@ -49,7 +49,8 @@ class SettingsScreen extends ConsumerWidget {
                       ListTile(
                         leading: const Icon(Icons.palette_outlined,
                             color: AppColors.ink70),
-                        title: const Text('Appearance', style: AppTypography.bodyMd),
+                        title: const Text('Appearance',
+                            style: AppTypography.bodyMd),
                         subtitle: const Text('Theme, text size',
                             style: AppTypography.caption),
                         trailing: const Icon(Icons.chevron_right,
@@ -75,7 +76,8 @@ class SettingsScreen extends ConsumerWidget {
                   if (kDebugMode) ...[
                     // Debug helpers — for testing connection states during development.
                     Text('DEBUG',
-                        style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
+                        style:
+                            AppTypography.micro.copyWith(letterSpacing: 1.4)),
                     const SizedBox(height: 8),
                     AppCard(
                       padding: EdgeInsets.zero,
@@ -100,7 +102,8 @@ class SettingsScreen extends ConsumerWidget {
                                     secondsRemaining: 120)
                                 : ConnectionStatus(
                                     online: true,
-                                    label: 'Connected · ${restaurant?.name ?? 'Restaurant'}');
+                                    label:
+                                        'Connected · ${restaurant?.name ?? 'Restaurant'}');
                           },
                         ),
                         const Divider(height: 1, color: AppColors.ink10),
@@ -123,7 +126,8 @@ class SettingsScreen extends ConsumerWidget {
                           title: Text('Force-disconnect screen',
                               style: AppTypography.bodyMd
                                   .copyWith(color: AppColors.danger)),
-                          subtitle: const Text('Preview the kicked-device blocker',
+                          subtitle: const Text(
+                              'Preview the kicked-device blocker',
                               style: AppTypography.caption),
                           trailing: const Icon(Icons.chevron_right,
                               color: AppColors.ink30),

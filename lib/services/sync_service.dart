@@ -55,15 +55,8 @@ class SyncService {
       final env = BroadcastEnvelope(_toMap(data));
       final orderMap = env.orderMap;
       if (orderMap != null) {
-        _ref.read(activeOrdersProvider.notifier).state = [
-          ..._ref.read(activeOrdersProvider),
-          orderMap,
-        ];
         final parsed = ServerOrder.fromMap(orderMap);
-        _ref.read(historyProvider.notifier).state = [
-          _serverOrderToHistory(parsed),
-          ..._ref.read(historyProvider),
-        ];
+        applyOrderAck({'order': orderMap}, includeHistory: true);
         final stats = _ref.read(operatorStatsProvider);
         _ref.read(operatorStatsProvider.notifier).state = OperatorStats(
           ordersToday: stats.ordersToday + 1,
@@ -96,11 +89,18 @@ class SyncService {
           for (final h in _ref.read(historyProvider))
             if (h.orderId == id)
               HistoryOrder(
-                id: h.id, orderId: h.orderId, tableId: h.tableId,
-                time: h.time, itemCount: h.itemCount, total: h.total,
-                status: OrderStatus.cancelled, lines: h.lines, notes: h.notes,
+                id: h.id,
+                orderId: h.orderId,
+                tableId: h.tableId,
+                time: h.time,
+                itemCount: h.itemCount,
+                total: h.total,
+                status: OrderStatus.cancelled,
+                lines: h.lines,
+                notes: h.notes,
               )
-            else h,
+            else
+              h,
         ];
       }
       _applyTablesFromEnvelope(env);
@@ -116,7 +116,10 @@ class SyncService {
     _socket.on('bill:generated', (data) {
       final env = BroadcastEnvelope(_toMap(data));
       final orderMap = env.orderMap;
-      if (orderMap != null) _replaceActiveOrder(orderMap);
+      if (orderMap != null) {
+        applyOrderAck({'order': orderMap},
+            includeHistory: true, markTableBilled: true);
+      }
     });
 
     _socket.on('bill:paid', (data) {
@@ -132,11 +135,18 @@ class SyncService {
           for (final h in _ref.read(historyProvider))
             if (h.orderId == id)
               HistoryOrder(
-                id: h.id, orderId: h.orderId, tableId: h.tableId,
-                time: h.time, itemCount: h.itemCount, total: h.total,
-                status: OrderStatus.paid, lines: h.lines, notes: h.notes,
+                id: h.id,
+                orderId: h.orderId,
+                tableId: h.tableId,
+                time: h.time,
+                itemCount: h.itemCount,
+                total: h.total,
+                status: OrderStatus.paid,
+                lines: h.lines,
+                notes: h.notes,
               )
-            else h,
+            else
+              h,
         ];
       }
       _applyTablesFromEnvelope(env);
@@ -151,9 +161,8 @@ class SyncService {
     _socket.on('flags:updated', (data) {
       final envelope = _toMap(data);
       final flagsRaw = envelope['flags'];
-      final flagsMap = (flagsRaw is Map)
-          ? Map<String, dynamic>.from(flagsRaw)
-          : envelope;
+      final flagsMap =
+          (flagsRaw is Map) ? Map<String, dynamic>.from(flagsRaw) : envelope;
       _ref.read(flagsProvider.notifier).state = FeatureFlags.fromMap(flagsMap);
     });
 
@@ -189,6 +198,7 @@ class SyncService {
 
     _socket.on('force:disconnect', (_) {
       unregisterListeners();
+      _ref.read(forceDisconnectedProvider.notifier).state = true;
       _ref.read(isAuthenticatedProvider.notifier).state = false;
       _ref.read(connectionProvider.notifier).state =
           const ConnectionStatus(online: false, label: 'Disconnected by admin');
@@ -205,7 +215,8 @@ class SyncService {
     // Restaurant info.
     final restaurantRaw = data['restaurant_info'] ?? data['restaurant'];
     if (restaurantRaw is Map) {
-      final info = ServerRestaurantInfo.fromMap(Map<String, dynamic>.from(restaurantRaw));
+      final info = ServerRestaurantInfo.fromMap(
+          Map<String, dynamic>.from(restaurantRaw));
       _ref.read(restaurantProvider.notifier).state = RestaurantInfo(
         name: info.name,
         address: info.address,
@@ -234,7 +245,8 @@ class SyncService {
         }
       }
     }
-    debugPrint('$_tag   Floors: ${_floorMap.length} → ${_floorMap.values.toList()}');
+    debugPrint(
+        '$_tag   Floors: ${_floorMap.length} → ${_floorMap.values.toList()}');
 
     // Tables.
     final tablesList = data['tables'];
@@ -287,7 +299,9 @@ class SyncService {
           final m = Map<String, dynamic>.from(raw);
           rawOrders.add(m);
           final so = ServerOrder.fromMap(m);
-          historyEntries.add(_serverOrderToHistory(so));
+          if (so.itemCount > 0) {
+            historyEntries.add(_serverOrderToHistory(so));
+          }
         }
       }
       _ref.read(activeOrdersProvider.notifier).state = rawOrders;
@@ -314,16 +328,44 @@ class SyncService {
     debugPrint('$_tag ── Initial sync complete ──');
   }
 
+  void applyOrderAck(
+    Map<String, dynamic> response, {
+    bool includeHistory = false,
+    bool markTableBilled = false,
+  }) {
+    final orderRaw = response['order'];
+    if (orderRaw is! Map) return;
+    final orderMap = Map<String, dynamic>.from(orderRaw);
+    final order = ServerOrder.fromMap(orderMap);
+    if (order.id.isEmpty) return;
+
+    _replaceActiveOrder(orderMap);
+    _updateTableForOrder(order, markBilled: markTableBilled);
+
+    if (includeHistory && order.itemCount > 0) {
+      _upsertHistory(_serverOrderToHistory(order));
+    }
+  }
+
   // ─── Unregister ───────────────────────────────────────────────────────────
 
   void unregisterListeners() {
     _stateSubscription?.cancel();
     _stateSubscription = null;
     for (final event in [
-      'table:updated', 'order:created', 'order:updated', 'order:cancelled',
-      'kot:sent', 'bill:generated', 'bill:paid', 'discount:applied',
-      'flags:updated', 'menu:updated', 'force:disconnect',
-      'operator:online', 'operator:offline',
+      'table:updated',
+      'order:created',
+      'order:updated',
+      'order:cancelled',
+      'kot:sent',
+      'bill:generated',
+      'bill:paid',
+      'discount:applied',
+      'flags:updated',
+      'menu:updated',
+      'force:disconnect',
+      'operator:online',
+      'operator:offline',
     ]) {
       _socket.off(event);
     }
@@ -344,6 +386,11 @@ class SyncService {
       state: tableState,
       bill: st.orderTotal > 0 ? st.orderTotal : null,
       note: st.reservationCustomer,
+      activeOrderId: st.activeOrderId,
+      activeBillCount: st.activeBillCount,
+      orderItemCount: st.orderItemCount,
+      oldestKotMinutes: st.oldestKotMinutes,
+      kotCount: st.kotCount,
     );
   }
 
@@ -352,7 +399,10 @@ class SyncService {
     final tables = _ref.read(tablesProvider);
     String tableDisplay = so.tableId;
     for (final t in tables) {
-      if (t.serverId == so.tableId) { tableDisplay = t.id; break; }
+      if (t.serverId == so.tableId) {
+        tableDisplay = t.id;
+        break;
+      }
     }
 
     String displayId = so.id;
@@ -393,10 +443,52 @@ class SyncService {
   void _replaceActiveOrder(Map<String, dynamic> orderMap) {
     final orderId = orderMap['id']?.toString();
     if (orderId == null) return;
-    _ref.read(activeOrdersProvider.notifier).state = [
-      for (final o in _ref.read(activeOrdersProvider))
-        if (o['id']?.toString() == orderId) orderMap else o,
+    final current = _ref.read(activeOrdersProvider);
+    var replaced = false;
+    final next = [
+      for (final o in current)
+        if (o['id']?.toString() == orderId) ...[
+          orderMap,
+        ] else ...[
+          o,
+        ],
     ];
+    replaced = current.any((o) => o['id']?.toString() == orderId);
+    _ref.read(activeOrdersProvider.notifier).state = [
+      if (!replaced) orderMap,
+      ...next,
+    ];
+  }
+
+  void _upsertHistory(HistoryOrder entry) {
+    final current = _ref.read(historyProvider);
+    final existingIndex = current.indexWhere((h) => h.orderId == entry.orderId);
+    if (existingIndex < 0) {
+      _ref.read(historyProvider.notifier).state = [entry, ...current];
+      return;
+    }
+    final next = [...current];
+    next[existingIndex] = entry;
+    _ref.read(historyProvider.notifier).state = next;
+  }
+
+  void _updateTableForOrder(ServerOrder order, {bool markBilled = false}) {
+    if (order.tableId.isEmpty) return;
+    final tables = [..._ref.read(tablesProvider)];
+    final idx = tables.indexWhere((t) => t.serverId == order.tableId);
+    if (idx < 0) return;
+    final current = tables[idx];
+    tables[idx] = current.copyWith(
+      state: current.state == TableState.free ? TableState.mine : current.state,
+      activeOrderId: order.id,
+      activeBillCount: markBilled
+          ? (current.activeBillCount > 0 ? current.activeBillCount : 1)
+          : current.activeBillCount,
+      orderItemCount:
+          order.itemCount > 0 ? order.itemCount : current.orderItemCount,
+      bill: order.total > 0 ? order.total : current.bill,
+    );
+    _ref.read(tablesProvider.notifier).state = tables;
   }
 
   void _applyTablesFromEnvelope(BroadcastEnvelope env) {
@@ -417,7 +509,7 @@ class SyncService {
       case 'reserved':
         return TableState.reserved;
       case 'occupied':
-        return TableState.other;
+        return TableState.mine;
       default:
         return TableState.free;
     }
@@ -454,12 +546,23 @@ class SyncService {
     final items = <MenuItem>[];
     final rawItems = data['items'];
     final rawCategories = data['categories'];
+    final optionGroupsByItem = _parseOptionGroupsByItem(data);
+    final categoryById = _categoryMap(rawCategories);
 
     if (rawItems is List) {
       for (final entry in rawItems) {
         if (entry is Map) {
-          final si = ServerMenuItem.fromMap(Map<String, dynamic>.from(entry));
-          items.add(_serverMenuItemToLocal(si));
+          final m = Map<String, dynamic>.from(entry);
+          final categoryId = m['category_id']?.toString();
+          if (categoryId != null && categoryById.containsKey(categoryId)) {
+            final category = categoryById[categoryId]!;
+            m['category_name'] = category.name;
+            m['category_type'] ??= category.type;
+          }
+          final si = ServerMenuItem.fromMap(m);
+          items.add(_serverMenuItemToLocal(
+            si.copyWith(optionGroups: optionGroupsByItem[si.id] ?? const []),
+          ));
         }
       }
     } else if (rawCategories is List) {
@@ -476,7 +579,10 @@ class SyncService {
                 m['category_name'] = catName;
                 m['category_type'] = catType;
                 final si = ServerMenuItem.fromMap(m);
-                items.add(_serverMenuItemToLocal(si));
+                items.add(_serverMenuItemToLocal(
+                  si.copyWith(
+                      optionGroups: optionGroupsByItem[si.id] ?? const []),
+                ));
               }
             }
           }
@@ -484,6 +590,23 @@ class SyncService {
       }
     }
     return items;
+  }
+
+  Map<String, ({String name, String type})> _categoryMap(
+      dynamic rawCategories) {
+    final map = <String, ({String name, String type})>{};
+    if (rawCategories is! List) return map;
+    for (final raw in rawCategories) {
+      if (raw is! Map) continue;
+      final category = Map<String, dynamic>.from(raw);
+      final id = category['id']?.toString();
+      if (id == null || id.isEmpty) continue;
+      map[id] = (
+        name: category['name']?.toString() ?? 'Other',
+        type: category['type']?.toString() ?? 'food',
+      );
+    }
+    return map;
   }
 
   MenuItem _serverMenuItemToLocal(ServerMenuItem si) {
@@ -496,7 +619,57 @@ class SyncService {
       isVeg: si.isVeg,
       available: si.isAvailable,
       note: si.note,
+      optionGroups: si.optionGroups
+          .map((g) => MenuOptionGroup(
+                id: g.id,
+                itemId: g.itemId,
+                name: g.name,
+                isRequired: g.isRequired,
+                minSelect: g.minSelect,
+                maxSelect: g.maxSelect,
+                options: g.options
+                    .map((o) => MenuOption(
+                          id: o.id,
+                          groupId: o.groupId,
+                          name: o.name,
+                          priceModifier: o.priceModifier,
+                        ))
+                    .toList(),
+              ))
+          .toList(),
     );
+  }
+
+  Map<String, List<ServerMenuOptionGroup>> _parseOptionGroupsByItem(
+    Map<String, dynamic> data,
+  ) {
+    final rawGroups = data['item_option_groups'] ?? data['option_groups'];
+    final rawOptions = data['item_options'] ?? data['options'];
+    final optionsByGroup = <String, List<ServerMenuOption>>{};
+
+    if (rawOptions is List) {
+      for (final raw in rawOptions) {
+        if (raw is! Map) continue;
+        final option = ServerMenuOption.fromMap(Map<String, dynamic>.from(raw));
+        if (option.groupId.isEmpty) continue;
+        optionsByGroup.putIfAbsent(option.groupId, () => []).add(option);
+      }
+    }
+
+    final groupsByItem = <String, List<ServerMenuOptionGroup>>{};
+    if (rawGroups is List) {
+      for (final raw in rawGroups) {
+        if (raw is! Map) continue;
+        final group = ServerMenuOptionGroup.fromMap(
+          Map<String, dynamic>.from(raw),
+        );
+        if (group.itemId.isEmpty) continue;
+        groupsByItem.putIfAbsent(group.itemId, () => []).add(
+              group.copyWith(options: optionsByGroup[group.id] ?? const []),
+            );
+      }
+    }
+    return groupsByItem;
   }
 
   // ─── Fast-add parsing ──────────────────────────────────────────────────────
@@ -508,14 +681,14 @@ class SyncService {
       _ref.read(fastAddPinnedProvider.notifier).state = pinned
           .whereType<Map>()
           .map((m) => _serverMenuItemToLocal(
-                ServerMenuItem.fromMap(Map<String, dynamic>.from(m))))
+              ServerMenuItem.fromMap(Map<String, dynamic>.from(m))))
           .toList();
     }
     if (auto is List) {
       _ref.read(fastAddAutoProvider.notifier).state = auto
           .whereType<Map>()
           .map((m) => _serverMenuItemToLocal(
-                ServerMenuItem.fromMap(Map<String, dynamic>.from(m))))
+              ServerMenuItem.fromMap(Map<String, dynamic>.from(m))))
           .toList();
     }
   }

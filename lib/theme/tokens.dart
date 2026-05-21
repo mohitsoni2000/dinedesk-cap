@@ -9,7 +9,7 @@ class AppColors {
   AppColors._();
 
   // Brand — terra (the warm orange across the entire system)
-  static const terra50  = Color(0xFFFFF1EA);
+  static const terra50 = Color(0xFFFFF1EA);
   static const terra100 = Color(0xFFFFD6BE);
   static const terra200 = Color(0xFFFFB793);
   static const terra300 = Color(0xFFF59474);
@@ -19,7 +19,7 @@ class AppColors {
   static const terra700 = Color(0xFFB23E15);
 
   // Ink (warm near-black) and paper (warm cream)
-  static const ink   = Color(0xFF140E08);
+  static const ink = Color(0xFF140E08);
   static const ink70 = Color(0xB3140E08);
   static const ink50 = Color(0x80140E08);
   static const ink30 = Color(0x4D140E08);
@@ -27,25 +27,25 @@ class AppColors {
   static const ink05 = Color(0x0D140E08);
   static const amber = Color(0xFFF59E0B);
 
-  static const paper       = Color(0xFFFFFCF8);
-  static const paperWarm   = Color(0xFFF9E8D2);
+  static const paper = Color(0xFFFFFCF8);
+  static const paperWarm = Color(0xFFF9E8D2);
   static const paperDeeper = Color(0xFFF2DBC0);
 
   // Semantic
   static const success = Color(0xFF22C55E);
-  static const warn    = Color(0xFFF59E0B);
-  static const danger  = Color(0xFFDC2626);
-  static const info    = Color(0xFF3B82F6);
-  static const violet  = Color(0xFFA855F7);
-  static const teal    = Color(0xFF14B8A6);
+  static const warn = Color(0xFFF59E0B);
+  static const danger = Color(0xFFDC2626);
+  static const info = Color(0xFF3B82F6);
+  static const violet = Color(0xFFA855F7);
+  static const teal = Color(0xFF14B8A6);
 
   // Table state colors
-  static const tableMineBg     = Color(0xFFFFE8DC);
+  static const tableMineBg = Color(0xFFFFE8DC);
   static const tableMineBorder = Color(0x73ED6E47);
-  static const tableOtherBg    = Color(0xFFDCEAFE);
-  static const tableDirtyBg    = Color(0xFFFDF0DC);
+  static const tableOtherBg = Color(0xFFDCEAFE);
+  static const tableDirtyBg = Color(0xFFFDF0DC);
   static const tableReservedBg = Color(0xFFF0E8FB);
-  static const tableFreeBg     = Color(0xFFE8F5EC);
+  static const tableFreeBg = Color(0xFFE8F5EC);
 }
 
 class AppRadii {

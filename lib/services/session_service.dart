@@ -7,7 +7,8 @@ class PairingInfo {
   final String host;
   final int port;
   final String token;
-  const PairingInfo({required this.host, required this.port, required this.token});
+  const PairingInfo(
+      {required this.host, required this.port, required this.token});
 }
 
 class SessionService {

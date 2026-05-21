@@ -66,7 +66,10 @@ class NumericKeyboard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: GestureDetector(
-                onTap: () { HapticFeedback.mediumImpact(); onSubmit!(); },
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  onSubmit!();
+                },
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -81,7 +84,8 @@ class NumericKeyboard extends StatelessWidget {
                     child: Text(
                       submitLabel,
                       style: AppTypography.bodyMd.copyWith(
-                        color: Colors.white, fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -108,7 +112,8 @@ class NumericKeyboard extends StatelessWidget {
               ? const Icon(Icons.backspace_outlined, color: AppColors.ink)
               : Text(
                   k,
-                  style: AppTypography.headline.copyWith(fontWeight: FontWeight.w500),
+                  style: AppTypography.headline
+                      .copyWith(fontWeight: FontWeight.w500),
                 ),
         ),
       ),

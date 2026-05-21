@@ -6,10 +6,11 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../motion/motion.dart';
 import '../services/session_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_glass_surface.dart';
@@ -18,13 +19,13 @@ import '../widgets/help_sheet.dart';
 
 enum _ScanError { invalid, expired, used }
 
-class QrScanScreen extends StatefulWidget {
+class QrScanScreen extends ConsumerStatefulWidget {
   const QrScanScreen({super.key});
   @override
-  State<QrScanScreen> createState() => _QrScanScreenState();
+  ConsumerState<QrScanScreen> createState() => _QrScanScreenState();
 }
 
-class _QrScanScreenState extends State<QrScanScreen> {
+class _QrScanScreenState extends ConsumerState<QrScanScreen> {
   final MobileScannerController _controller = MobileScannerController(
     detectionSpeed: DetectionSpeed.noDuplicates,
     facing: CameraFacing.back,
@@ -72,16 +73,19 @@ class _QrScanScreenState extends State<QrScanScreen> {
       _processing = true;
       _error = null;
     });
-    HapticFeedback.mediumImpact();
+    ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
 
     // Save pairing info then navigate.
-    SessionService().savePairing(PairingInfo(host: host, port: port, token: token)).then((_) {
+    SessionService()
+        .savePairing(PairingInfo(host: host, port: port, token: token))
+        .then((_) {
       if (!mounted) return;
       context.go('/connecting');
     });
   }
 
   void _showError(_ScanError err) {
+    ref.read(feedbackServiceProvider).fire(const FeedbackError());
     setState(() => _error = err);
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) setState(() => _error = null);
@@ -95,12 +99,14 @@ class _QrScanScreenState extends State<QrScanScreen> {
       _processing = true;
       _error = null;
     });
-    HapticFeedback.mediumImpact();
+    ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
 
     // Save test pairing info for local development.
-    SessionService().savePairing(
+    SessionService()
+        .savePairing(
       const PairingInfo(host: 'localhost', port: 8080, token: 'demo-token'),
-    ).then((_) {
+    )
+        .then((_) {
       if (!mounted) return;
       context.go('/connecting');
     });
@@ -157,8 +163,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
           const IgnorePointer(
             child: Opacity(
               opacity: 0.18,
-              child: LiquidMeshBackground(
-                  dark: true, child: SizedBox.shrink()),
+              child: LiquidMeshBackground(dark: true, child: SizedBox.shrink()),
             ),
           ),
 
@@ -168,6 +173,32 @@ class _QrScanScreenState extends State<QrScanScreen> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Row(
                 children: [
+                  Hero(
+                    tag: HeroTags.appLogo,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [AppColors.terra400, AppColors.terra600],
+                        ),
+                        borderRadius: BorderRadius.all(Radius.circular(8)),
+                        boxShadow: AppShadows.terraGlow,
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'R',
+                          style: TextStyle(
+                            fontFamily: AppTypography.cormorant,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -191,7 +222,8 @@ class _QrScanScreenState extends State<QrScanScreen> {
                   ),
                   if (kDebugMode) ...[
                     const SizedBox(width: 8),
-                    _GlassIcon(icon: Icons.touch_app_outlined, onTap: _demoScan),
+                    _GlassIcon(
+                        icon: Icons.touch_app_outlined, onTap: _demoScan),
                   ],
                 ],
               ),

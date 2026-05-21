@@ -49,6 +49,13 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Restro needs camera access to scan the QR code on the admin desktop for device pairing.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Restro connects to the admin desktop on your local network for live restaurant operations.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

@@ -47,6 +47,10 @@ class ServerTable {
   final String? activeOrderId;
   final String? reservationCustomer;
   final String? zone;
+  final int activeBillCount;
+  final int orderItemCount;
+  final int oldestKotMinutes;
+  final int kotCount;
 
   const ServerTable({
     required this.id,
@@ -58,6 +62,10 @@ class ServerTable {
     this.activeOrderId,
     this.reservationCustomer,
     this.zone,
+    this.activeBillCount = 0,
+    this.orderItemCount = 0,
+    this.oldestKotMinutes = 0,
+    this.kotCount = 0,
   });
 
   factory ServerTable.fromMap(Map<String, dynamic> m) {
@@ -71,6 +79,10 @@ class ServerTable {
       activeOrderId: m['active_order_id']?.toString(),
       reservationCustomer: m['reservation_customer']?.toString(),
       zone: m['zone']?.toString(),
+      activeBillCount: _toInt(m['active_bill_count']),
+      orderItemCount: _toInt(m['order_item_count']),
+      oldestKotMinutes: _toInt(m['oldest_kot_minutes']),
+      kotCount: _toInt(m['kot_count']),
     );
   }
 }
@@ -129,7 +141,8 @@ class ServerOrder {
     final liquorSub = _toDouble(m['liquor_subtotal']);
     final bevSub = _toDouble(m['beverages_subtotal']);
     final rawTotal = _toDouble(m['total']);
-    final computedTotal = rawTotal > 0 ? rawTotal : (foodSub + liquorSub + bevSub);
+    final computedTotal =
+        rawTotal > 0 ? rawTotal : (foodSub + liquorSub + bevSub);
 
     final rawItems = m['items'];
     final List<ServerOrderItem> items = (rawItems is List)
@@ -216,6 +229,7 @@ class ServerMenuItem {
   final bool isVeg;
   final bool isAvailable;
   final String? note;
+  final List<ServerMenuOptionGroup> optionGroups;
 
   const ServerMenuItem({
     required this.id,
@@ -226,6 +240,7 @@ class ServerMenuItem {
     required this.isVeg,
     required this.isAvailable,
     this.note,
+    this.optionGroups = const [],
   });
 
   factory ServerMenuItem.fromMap(Map<String, dynamic> m) {
@@ -241,6 +256,89 @@ class ServerMenuItem {
       isVeg: _toBool(m['is_veg']),
       isAvailable: _toBool(m['is_available'] ?? m['available'], true),
       note: m['note']?.toString(),
+      optionGroups: const [],
+    );
+  }
+
+  ServerMenuItem copyWith({
+    List<ServerMenuOptionGroup>? optionGroups,
+  }) =>
+      ServerMenuItem(
+        id: id,
+        name: name,
+        categoryName: categoryName,
+        categoryType: categoryType,
+        basePrice: basePrice,
+        isVeg: isVeg,
+        isAvailable: isAvailable,
+        note: note,
+        optionGroups: optionGroups ?? this.optionGroups,
+      );
+}
+
+class ServerMenuOptionGroup {
+  final String id;
+  final String itemId;
+  final String name;
+  final bool isRequired;
+  final int minSelect;
+  final int maxSelect;
+  final List<ServerMenuOption> options;
+
+  const ServerMenuOptionGroup({
+    required this.id,
+    required this.itemId,
+    required this.name,
+    required this.isRequired,
+    required this.minSelect,
+    required this.maxSelect,
+    this.options = const [],
+  });
+
+  factory ServerMenuOptionGroup.fromMap(Map<String, dynamic> m) {
+    return ServerMenuOptionGroup(
+      id: _toStr(m['id']),
+      itemId: _toStr(m['item_id']),
+      name: _toStr(m['name'], 'Options'),
+      isRequired: _toBool(m['is_required']),
+      minSelect: _toInt(m['min_select']),
+      maxSelect: _toInt(m['max_select'], 1),
+    );
+  }
+
+  ServerMenuOptionGroup copyWith({
+    List<ServerMenuOption>? options,
+  }) =>
+      ServerMenuOptionGroup(
+        id: id,
+        itemId: itemId,
+        name: name,
+        isRequired: isRequired,
+        minSelect: minSelect,
+        maxSelect: maxSelect,
+        options: options ?? this.options,
+      );
+}
+
+class ServerMenuOption {
+  final String id;
+  final String groupId;
+  final String name;
+  final double priceModifier;
+
+  const ServerMenuOption({
+    required this.id,
+    required this.groupId,
+    required this.name,
+    required this.priceModifier,
+  });
+
+  factory ServerMenuOption.fromMap(Map<String, dynamic> m) {
+    return ServerMenuOption(
+      id: _toStr(m['id']),
+      groupId: _toStr(m['group_id']),
+      name: _toStr(m['name']),
+      priceModifier: _toDouble(m['price_modifier']),
     );
   }
 }
@@ -306,7 +404,10 @@ class BroadcastEnvelope {
   List<Map<String, dynamic>> get tablesList {
     final t = raw['tables'];
     if (t is List) {
-      return t.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+      return t
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
     }
     return const [];
   }

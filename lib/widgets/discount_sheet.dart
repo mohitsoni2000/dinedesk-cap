@@ -74,7 +74,9 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       final v = _customValue;
       if (v == null || v <= 0) return false;
       if (_customType == _DiscountType.percent && v > 100) return false;
-      if (_customType == _DiscountType.flat && v > widget.orderTotal) return false;
+      if (_customType == _DiscountType.flat && v > widget.orderTotal) {
+        return false;
+      }
       return true;
     }
     return _selectedPresetId != null;
@@ -162,14 +164,15 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
         thickness: 14,
         borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
         padding: EdgeInsets.fromLTRB(
-          20, 12, 20, 28 + MediaQuery.of(context).viewPadding.bottom),
+            20, 12, 20, 28 + MediaQuery.of(context).viewPadding.bottom),
         child: ListView(
           controller: scrollCtrl,
           children: [
             // Drag handle
             Center(
               child: Container(
-                width: 40, height: 4,
+                width: 40,
+                height: 4,
                 decoration: BoxDecoration(
                   color: AppColors.ink30,
                   borderRadius: BorderRadius.circular(2),
@@ -182,12 +185,12 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
             Row(
               children: [
                 const Icon(Icons.discount_outlined,
-                  color: AppColors.terra500, size: 22),
+                    color: AppColors.terra500, size: 22),
                 const SizedBox(width: 10),
                 const Text('Apply Discount', style: AppTypography.title),
                 const Spacer(),
                 Text('Order: ${formatRupeesCompact(widget.orderTotal)}',
-                  style: AppTypography.caption),
+                    style: AppTypography.caption),
               ],
             ),
             const SizedBox(height: 20),
@@ -224,7 +227,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
             // Preset discounts section
             if (!_showCustom && hasPresets) ...[
               Text('AVAILABLE DISCOUNTS',
-                style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
+                  style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
@@ -250,7 +253,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
             // Custom discount section
             if (_showCustom || !hasPresets) ...[
               Text('DISCOUNT TYPE',
-                style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
+                  style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 10),
               Row(
                 children: [
@@ -283,7 +286,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
 
               // Value input
               Text('VALUE',
-                style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
+                  style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -294,8 +297,8 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                 ),
                 child: TextField(
                   controller: _valueController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                   style: AppTypography.headline,
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
@@ -305,15 +308,13 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                         : 'e.g. 100',
                     hintStyle: AppTypography.caption,
                     isDense: true,
-                    prefixText: _customType == _DiscountType.flat
-                        ? '\u20B9 '
-                        : null,
+                    prefixText:
+                        _customType == _DiscountType.flat ? '\u20B9 ' : null,
                     prefixStyle: AppTypography.headline,
-                    suffixText: _customType == _DiscountType.percent
-                        ? '%'
-                        : null,
-                    suffixStyle: AppTypography.headline.copyWith(
-                      color: AppColors.ink50),
+                    suffixText:
+                        _customType == _DiscountType.percent ? '%' : null,
+                    suffixStyle:
+                        AppTypography.headline.copyWith(color: AppColors.ink50),
                   ),
                 ),
               ),
@@ -339,8 +340,8 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                 const SizedBox(height: 4),
                 Text(
                   'Percentage cannot exceed 100%',
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.danger),
+                  style:
+                      AppTypography.caption.copyWith(color: AppColors.danger),
                 ),
               ],
 
@@ -351,8 +352,8 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                 const SizedBox(height: 4),
                 Text(
                   'Amount exceeds order total',
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.danger),
+                  style:
+                      AppTypography.caption.copyWith(color: AppColors.danger),
                 ),
               ],
 
@@ -360,7 +361,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
 
               // Optional label
               Text('LABEL (OPTIONAL)',
-                style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
+                  style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -443,18 +444,18 @@ class _TabChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected ? AppColors.ink : Colors.white.withValues(alpha: 0.6),
           borderRadius: const BorderRadius.all(AppRadii.sm),
-          border: Border.all(
-            color: selected ? AppColors.ink : AppColors.ink10),
+          border: Border.all(color: selected ? AppColors.ink : AppColors.ink10),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16,
-              color: selected ? Colors.white : AppColors.ink70),
+            Icon(icon,
+                size: 16, color: selected ? Colors.white : AppColors.ink70),
             const SizedBox(width: 6),
             Flexible(
-              child: Text(label,
+              child: Text(
+                label,
                 style: AppTypography.bodyMd.copyWith(
                   color: selected ? Colors.white : AppColors.ink,
                   fontWeight: FontWeight.w600,
@@ -503,15 +504,15 @@ class _PresetChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(name,
-              style: AppTypography.bodyMd.copyWith(
-                fontWeight: FontWeight.w600,
-                color: selected ? AppColors.terra600 : AppColors.ink,
-              )),
+                style: AppTypography.bodyMd.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: selected ? AppColors.terra600 : AppColors.ink,
+                )),
             const SizedBox(height: 2),
             Text(value,
-              style: AppTypography.caption.copyWith(
-                color: selected ? AppColors.terra500 : AppColors.ink70,
-              )),
+                style: AppTypography.caption.copyWith(
+                  color: selected ? AppColors.terra500 : AppColors.ink70,
+                )),
           ],
         ),
       ),

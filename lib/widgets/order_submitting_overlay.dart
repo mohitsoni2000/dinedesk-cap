@@ -60,44 +60,49 @@ class _OverlayState extends State<_Overlay>
   )..repeat();
 
   @override
-  void dispose() { _spin.dispose(); super.dispose(); }
+  void dispose() {
+    _spin.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
       child: Center(
-      child: LiquidGlassSurface(
-        blur: 32, thickness: 14,
-        borderRadius: const BorderRadius.all(AppRadii.lg),
-        padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RotationTransition(
-              turns: _spin,
-              child: Container(
-                width: 56, height: 56,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.terra400, AppColors.terra600],
+        child: LiquidGlassSurface(
+          blur: 32,
+          thickness: 14,
+          borderRadius: const BorderRadius.all(AppRadii.lg),
+          padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RotationTransition(
+                turns: _spin,
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [AppColors.terra400, AppColors.terra600],
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: AppShadows.terraGlow,
                   ),
-                  shape: BoxShape.circle,
-                  boxShadow: AppShadows.terraGlow,
+                  child: const Icon(Icons.restaurant_menu,
+                      color: Colors.white, size: 26),
                 ),
-                child: const Icon(Icons.restaurant_menu,
-                  color: Colors.white, size: 26),
               ),
-            ),
-            const SizedBox(height: 20),
-            const Text('Sending to kitchen\u2026', style: AppTypography.title),
-            const SizedBox(height: 6),
-            const Text('Printing KOTs',
-              style: AppTypography.caption),
-          ],
+              const SizedBox(height: 20),
+              const Text('Sending to kitchen\u2026',
+                  style: AppTypography.title),
+              const SizedBox(height: 6),
+              const Text('Printing KOTs', style: AppTypography.caption),
+            ],
+          ),
         ),
       ),
-    ),
     );
   }
 }

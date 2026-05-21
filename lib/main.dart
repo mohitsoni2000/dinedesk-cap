@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'motion/motion.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
 
-void main() => runApp(const ProviderScope(child: RestroApp()));
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final container = ProviderContainer();
+  final feedback = container.read(feedbackServiceProvider);
+  await feedback.init();
+  runApp(UncontrolledProviderScope(
+    container: container,
+    child: const RestroApp(),
+  ));
+}
 
 class RestroApp extends ConsumerWidget {
   const RestroApp({super.key});

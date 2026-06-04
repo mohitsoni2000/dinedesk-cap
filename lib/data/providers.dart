@@ -372,6 +372,7 @@ const addOns = <Modifier>[
 
 final tablesProvider = StateProvider<List<RestaurantTable>>((_) => []);
 final menuProvider = StateProvider<List<MenuItem>>((_) => []);
+final menuLoadingProvider = StateProvider<bool>((_) => false);
 
 // Fast-add items — pinned (admin-set) + auto (trending, server-computed).
 final fastAddPinnedProvider = StateProvider<List<MenuItem>>((_) => []);

@@ -193,8 +193,10 @@ class SyncService {
 
     _socket.on('menu:updated', (data) {
       final map = _toMap(data);
+      _ref.read(menuLoadingProvider.notifier).state = true;
       _ref.read(menuProvider.notifier).state = _parseMenuItems(map);
       _ref.read(rawMenuDataProvider.notifier).state = map;
+      _ref.read(menuLoadingProvider.notifier).state = false;
     });
 
     _socket.on('fast-add:updated', (data) {
@@ -337,8 +339,10 @@ class SyncService {
     final menuRaw = data['menu'];
     if (menuRaw is Map) {
       final menuMap = Map<String, dynamic>.from(menuRaw);
+      _ref.read(menuLoadingProvider.notifier).state = true;
       _ref.read(menuProvider.notifier).state = _parseMenuItems(menuMap);
       _ref.read(rawMenuDataProvider.notifier).state = menuMap;
+      _ref.read(menuLoadingProvider.notifier).state = false;
       debugPrint('$_tag   Menu items: ${_ref.read(menuProvider).length}');
     }
 

@@ -21,16 +21,21 @@ class OrderSuccessScreen extends ConsumerStatefulWidget {
 class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
   bool _showText = false;
   Timer? _autoNav;
+  String? _tableDisplayName;
 
   @override
   void initState() {
     super.initState();
     ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final tables = ref.read(tablesProvider);
+      final display = tables.where((t) => t.serverId == widget.tableId).map((t) => t.id).firstOrNull;
+      if (mounted) setState(() => _tableDisplayName = display);
+    });
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) setState(() => _showText = true);
     });
-    // Auto-return to tables after 3.5s.
-    _autoNav = Timer(const Duration(milliseconds: 3500), () {
+    _autoNav = Timer(const Duration(milliseconds: 8000), () {
       if (mounted) context.go('/tables');
     });
   }
@@ -78,7 +83,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Table ${widget.tableId} · KOT ',
+                          Text('Table ${_tableDisplayName ?? widget.tableId} · KOT ',
                               style: AppTypography.caption),
                           KineticKotNumber(
                             number:

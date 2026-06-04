@@ -212,69 +212,95 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       onPressed: () =>
                           KotHistorySheet.show(context, widget.tableId),
                     ),
+                    // More actions — collapsed into menu to reduce header clutter.
+                    // Shift, Link, and Packages are less frequent, so they belong in a menu.
                     Builder(builder: (_) {
                       final tables = ref.watch(tablesProvider);
                       final table = tables
                           .where((t) => t.serverId == widget.tableId)
                           .firstOrNull;
-                      if (table == null) return const SizedBox.shrink();
-                      if (table.state != TableState.mine &&
-                          table.state != TableState.other) {
-                        return const SizedBox.shrink();
-                      }
-                      return IconButton(
-                        icon: const Icon(Icons.swap_horiz,
-                            color: AppColors.ink70),
-                        tooltip: 'Shift Table',
-                        onPressed: () =>
-                            TableShiftSheet.show(context, table),
-                      );
-                    }),
-                    Builder(builder: (_) {
-                      final tables = ref.watch(tablesProvider);
-                      final table = tables
-                          .where((t) => t.serverId == widget.tableId)
-                          .firstOrNull;
-                      if (table == null) return const SizedBox.shrink();
-                      if (table.state != TableState.mine &&
-                          table.state != TableState.other) {
-                        return const SizedBox.shrink();
-                      }
+                      final isTableAction =
+                          table != null &&
+                          (table.state == TableState.mine ||
+                              table.state == TableState.other);
                       final linkGroups = ref.watch(linkGroupsProvider);
                       final isLinked = linkGroups.values
                           .any((ids) => ids.contains(widget.tableId));
-                      return IconButton(
-                        icon: Icon(
-                          isLinked ? Icons.link_off : Icons.link,
-                          color: isLinked ? AppColors.info : AppColors.ink70,
-                        ),
-                        tooltip: isLinked ? 'Unlink Table' : 'Link Table',
-                        onPressed: () =>
-                            TableLinkSheet.show(context, table),
-                      );
-                    }),
-                    // Packages — feature-flagged.
-                    Builder(builder: (_) {
                       final flags = ref.watch(flagsProvider);
-                      if (!flags.packages) return const SizedBox.shrink();
-                      return IconButton(
-                        icon: const Icon(Icons.inventory_2_outlined,
-                            color: AppColors.ink70),
-                        tooltip: 'Packages',
-                        onPressed: () => PackageSheet.show(context),
+                      if (!isTableAction && !flags.packages) {
+                        return const SizedBox.shrink();
+                      }
+                      return PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, color: AppColors.ink70),
+                        tooltip: 'More',
+                        onSelected: (action) {
+                          switch (action) {
+                            case 'shift':
+                              if (table != null) {
+                                TableShiftSheet.show(context, table);
+                              }
+                              break;
+                            case 'link':
+                              if (table != null) {
+                                TableLinkSheet.show(context, table);
+                              }
+                              break;
+                            case 'packages':
+                              PackageSheet.show(context);
+                              break;
+                          }
+                        },
+                        itemBuilder: (ctx) => [
+                          if (isTableAction)
+                            PopupMenuItem(
+                              value: 'shift',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.swap_horiz,
+                                      size: 18, color: AppColors.ink70),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    isLinked ? 'Unlink Table' : 'Shift Table',
+                                    style: AppTypography.bodyMd,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if (isTableAction && !isLinked)
+                            PopupMenuItem(
+                              value: 'link',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.link,
+                                      size: 18, color: AppColors.ink70),
+                                  const SizedBox(width: 8),
+                                  Text('Link Table', style: AppTypography.bodyMd),
+                                ],
+                              ),
+                            ),
+                          if (flags.packages)
+                            PopupMenuItem(
+                              value: 'packages',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.inventory_2_outlined,
+                                      size: 18, color: AppColors.ink70),
+                                  const SizedBox(width: 8),
+                                  Text('Packages', style: AppTypography.bodyMd),
+                                ],
+                              ),
+                            ),
+                        ],
                       );
                     }),
                     IconButton(
                       icon: const Icon(Icons.bookmark_border,
                           color: AppColors.ink70),
                       tooltip: 'Save & exit',
-                      onPressed: () {
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(const SnackBar(
-                          content: Text('Draft saved — resume from Tables'),
-                          backgroundColor: AppColors.ink,
-                        ));
-                        _leaveOrder();
+                      onPressed: () async {
+                        final ok = await _confirmDiscard();
+                        if (!context.mounted) return;
+                        if (ok) _leaveOrder();
                       },
                     ),
                   ],
@@ -299,40 +325,40 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       ),
                     ),
                   ),
-                // Section chips.
-                SizedBox(
-                  height: 44,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    children: [
-                      _SectionChip(
-                        label: 'All',
-                        selected: _activeSection == null,
-                        onTap: () {
-                          ref
-                              .read(feedbackServiceProvider)
-                              .fire(const FeedbackSelection());
-                          setState(() => _activeSection = null);
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      for (final s in allSections) ...[
+                // Section chips — min 48px touch target per accessibility guidelines.
+                  SizedBox(
+                    height: 48,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                      children: [
                         _SectionChip(
-                          label: s,
-                          selected: _activeSection == s,
+                          label: 'All',
+                          selected: _activeSection == null,
                           onTap: () {
                             ref
                                 .read(feedbackServiceProvider)
                                 .fire(const FeedbackSelection());
-                            setState(() => _activeSection = s);
+                            setState(() => _activeSection = null);
                           },
                         ),
                         const SizedBox(width: 8),
+                        for (final s in allSections) ...[
+                          _SectionChip(
+                            label: s,
+                            selected: _activeSection == s,
+                            onTap: () {
+                              ref
+                                  .read(feedbackServiceProvider)
+                                  .fire(const FeedbackSelection());
+                              setState(() => _activeSection = s);
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
                 // Fast-add bar — pinned + auto trending items from server.
                 if (runningOrder != null && runningOrder.itemCount > 0)
                   _RunningOrderCard(order: runningOrder),
@@ -491,25 +517,44 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                   );
                 }),
                 Expanded(
-                  child: sections.isEmpty
-                      ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(32),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.restaurant_menu,
-                                    color: AppColors.ink30, size: 48),
-                                SizedBox(height: 12),
-                                Text('No items match',
-                                    style: AppTypography.title),
-                                SizedBox(height: 4),
-                                Text('Try a different search',
-                                    style: AppTypography.caption),
-                              ],
+                  child: Builder(builder: (_) {
+                    final isLoading = ref.watch(menuLoadingProvider);
+                    if (isLoading) {
+                      // Fix #2: Show skeleton loader while menu is loading.
+                      return ListView(
+                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        children: [
+                          _SkeletonRow(),
+                          const SizedBox(height: 24),
+                          _SkeletonRow(),
+                          const SizedBox(height: 24),
+                          _SkeletonRow(),
+                          const SizedBox(height: 24),
+                          _SkeletonRow(),
+                          const SizedBox(height: 24),
+                          _SkeletonRow(),
+                        ],
+                      );
+                    }
+                    return sections.isEmpty
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(32),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.restaurant_menu,
+                                      color: AppColors.ink30, size: 48),
+                                  SizedBox(height: 12),
+                                  Text('No items match',
+                                      style: AppTypography.title),
+                                  SizedBox(height: 4),
+                                  Text('Try a different search',
+                                      style: AppTypography.caption),
+                                ],
+                              ),
                             ),
-                          ),
-                        )
+                          )
                       : ListView(
                           padding: const EdgeInsets.all(AppSpacing.lg),
                           children: [
@@ -557,7 +602,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             ],
                             const SizedBox(height: 80),
                           ],
-                        ),
+                        );
+                  }),
                 ),
                 // Auto-KOT hint — shows when cart reaches threshold.
                 Builder(builder: (_) {
@@ -897,6 +943,105 @@ class _VegMark extends StatelessWidget {
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
       ),
+    );
+  }
+}
+
+/// Shimmer skeleton row for menu loading state.
+class _SkeletonRow extends StatefulWidget {
+  @override
+  State<_SkeletonRow> createState() => _SkeletonRowState();
+}
+
+class _SkeletonRowState extends State<_SkeletonRow>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+    _anim = Tween<double>(begin: -1.0, end: 2.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) {
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            gradient: LinearGradient(
+              begin: Alignment(-1.0 + _anim.value, 0),
+              end: Alignment(_anim.value, 0),
+              colors: const [
+                AppColors.ink05,
+                AppColors.ink10,
+                AppColors.ink05,
+              ],
+            ),
+          ),
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: [
+              Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: AppColors.ink10,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 14,
+                      width: 120,
+                      decoration: BoxDecoration(
+                        color: AppColors.ink10,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      height: 10,
+                      width: 60,
+                      decoration: BoxDecoration(
+                        color: AppColors.ink05,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppColors.ink10,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

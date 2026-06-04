@@ -44,8 +44,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
   @override
   void dispose() {
-    // Reset notes if leaving without submitting (C2 fix).
-    if (!_submitted) {
+    // Fix #8: Don't clear notes on back navigation — they should persist
+    // when user goes back to add more items. Only clear on successful submit.
+    if (_submitted) {
       ref.read(orderNotesProvider.notifier).state = '';
     }
     _notes.dispose();
@@ -412,6 +413,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                               style: AppTypography.caption,
                             ),
                             const SizedBox(height: 20),
+                            // Fix #5: Add Items CTA on empty cart.
+                            LiquidPrimaryButton(
+                              label: 'Add Items',
+                              fullWidth: true,
+                              leadingIcon: Icons.add,
+                              onPressed: () => context.pop(),
+                            ),
+                            const SizedBox(height: 12),
                             // Repeat Last Order — re-add items from previous order on this table.
                             Builder(
                               builder: (_) {
@@ -916,13 +925,26 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      // Primary action: Send to Kitchen.
-                      LiquidPrimaryButton(
-                        label: 'Send to Kitchen',
-                        fullWidth: true,
-                        leadingIcon: Icons.restaurant_menu,
-                        onPressed: _submit,
+                      const SizedBox(height: 12),
+                      // Fix #4: Make "Send to Kitchen" visually dominant.
+                      // Full-width with glow, separated from secondary actions.
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.all(AppRadii.md),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.terra400.withValues(alpha: 0.35),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: LiquidPrimaryButton(
+                          label: 'Send to Kitchen',
+                          fullWidth: true,
+                          leadingIcon: Icons.restaurant_menu,
+                          onPressed: _submit,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       // Secondary actions row.

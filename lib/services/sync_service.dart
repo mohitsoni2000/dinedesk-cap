@@ -29,6 +29,13 @@ class SyncService {
           online: true,
           label: 'Connected · ${restaurant?.name ?? "Restaurant"}',
         );
+
+        // R1 fix: on reconnect, re-join broadcast rooms and get fresh state.
+        // Only trigger when already authenticated (i.e., not the initial connect).
+        if (state == SocketState.connected &&
+            _ref.read(isAuthenticatedProvider)) {
+          _requestResync();
+        }
       } else if (state == SocketState.disconnected) {
         _ref.read(connectionProvider.notifier).state = const ConnectionStatus(
           online: false,
@@ -72,6 +79,9 @@ class SyncService {
       final orderMap = env.orderMap;
       if (orderMap != null) {
         _replaceActiveOrder(orderMap);
+        // D2/H2 fix: also update historyProvider so totals/items stay in sync.
+        final order = ServerOrder.fromMap(orderMap);
+        if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
       }
       _applyTablesFromEnvelope(env);
     });
@@ -93,6 +103,7 @@ class SyncService {
                 orderId: h.orderId,
                 tableId: h.tableId,
                 time: h.time,
+                date: h.date,
                 itemCount: h.itemCount,
                 total: h.total,
                 status: OrderStatus.cancelled,
@@ -139,6 +150,7 @@ class SyncService {
                 orderId: h.orderId,
                 tableId: h.tableId,
                 time: h.time,
+                date: h.date,
                 itemCount: h.itemCount,
                 total: h.total,
                 status: OrderStatus.paid,
@@ -148,6 +160,13 @@ class SyncService {
             else
               h,
         ];
+        // Increment tablesServed stat for this operator session.
+        final stats = _ref.read(operatorStatsProvider);
+        _ref.read(operatorStatsProvider.notifier).state = OperatorStats(
+          ordersToday: stats.ordersToday,
+          tablesServed: stats.tablesServed + 1,
+          itemsSold: stats.itemsSold,
+        );
       }
       _applyTablesFromEnvelope(env);
     });
@@ -155,7 +174,13 @@ class SyncService {
     _socket.on('discount:applied', (data) {
       final env = BroadcastEnvelope(_toMap(data));
       final orderMap = env.orderMap;
-      if (orderMap != null) _replaceActiveOrder(orderMap);
+      if (orderMap != null) {
+        _replaceActiveOrder(orderMap);
+        // D2/H2 fix: discount changes the total — update history so the
+        // order detail screen shows the discounted amount immediately.
+        final order = ServerOrder.fromMap(orderMap);
+        if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+      }
     });
 
     _socket.on('flags:updated', (data) {
@@ -175,6 +200,40 @@ class SyncService {
     _socket.on('fast-add:updated', (data) {
       final map = _toMap(data);
       _applyFastAddData(map);
+    });
+
+    // Table shift — server broadcasts full updated table list.
+    _socket.on('table:shifted', (data) {
+      _applyTablesFromEnvelope(BroadcastEnvelope(_toMap(data)));
+    });
+
+    // Table merge — server broadcasts updated tables + merged order.
+    _socket.on('table:merged', (data) {
+      final env = BroadcastEnvelope(_toMap(data));
+      final orderMap = env.orderMap;
+      if (orderMap != null) {
+        _replaceActiveOrder(orderMap);
+        final order = ServerOrder.fromMap(orderMap);
+        if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+      }
+      _applyTablesFromEnvelope(env);
+    });
+
+    // Table link groups updated (after link/unlink).
+    _socket.on('table:links:updated', (data) {
+      final map = _toMap(data);
+      final groupsRaw = map['groups'];
+      final newGroups = <String, List<String>>{};
+      if (groupsRaw is Map) {
+        for (final entry in groupsRaw.entries) {
+          final key = entry.key.toString();
+          final val = entry.value;
+          if (val is List) {
+            newGroups[key] = val.map((e) => e.toString()).toList();
+          }
+        }
+      }
+      _ref.read(linkGroupsProvider.notifier).state = newGroups;
     });
 
     _socket.on('operator:online', (data) {
@@ -347,6 +406,27 @@ class SyncService {
     }
   }
 
+  // ─── Reconnect re-sync ───────────────────────────────────────────────────
+
+  /// R1 fix: after socket reconnect, re-join broadcast rooms and refresh all
+  /// state via `operator:resync`. Falls back to forcing re-login if the server
+  /// session has expired (PIN timeout).
+  void _requestResync() {
+    _socket.emitAck('operator:resync', {}).then((res) {
+      if (res['kind'] == 'success') {
+        final syncRaw = res['sync'];
+        if (syncRaw is Map) {
+          applyInitialSync(Map<String, dynamic>.from(syncRaw));
+        }
+      } else {
+        // Server session expired — force the user to re-verify PIN.
+        _ref.read(isAuthenticatedProvider.notifier).state = false;
+      }
+    }).catchError((_) {
+      // Network error during resync — do nothing; next reconnect will retry.
+    });
+  }
+
   // ─── Unregister ───────────────────────────────────────────────────────────
 
   void unregisterListeners() {
@@ -366,6 +446,10 @@ class SyncService {
       'force:disconnect',
       'operator:online',
       'operator:offline',
+      'fast-add:updated',
+      'table:shifted',
+      'table:merged',
+      'table:links:updated',
     ]) {
       _socket.off(event);
     }
@@ -376,7 +460,8 @@ class SyncService {
   RestaurantTable _serverTableToLocal(ServerTable st) {
     final floorName = _floorMap[st.floorId] ?? st.floorId;
     final currentOperatorId = _ref.read(operatorProvider)?.username;
-    final tableState = _mapTableStatus(st.status, currentOperatorId);
+    final tableState =
+        _mapTableStatus(st.status, currentOperatorId, st.operatorId);
 
     return RestaurantTable(
       id: st.name,
@@ -384,6 +469,7 @@ class SyncService {
       seats: st.capacity,
       floor: floorName,
       state: tableState,
+      waiterName: st.waiterName,
       bill: st.orderTotal > 0 ? st.orderTotal : null,
       note: st.reservationCustomer,
       activeOrderId: st.activeOrderId,
@@ -420,6 +506,7 @@ class SyncService {
       orderId: so.id,
       tableId: tableDisplay,
       time: _formatTime(so.createdAt),
+      date: _formatDate(so.createdAt),
       itemCount: so.itemCount,
       total: so.total,
       status: _mapOrderStatus(so.status),
@@ -430,6 +517,8 @@ class SyncService {
 
   HistoryOrderLine _serverItemToLine(ServerOrderItem item) {
     return HistoryOrderLine(
+      orderItemId: item.id,
+      itemId: item.itemId,
       name: item.itemName,
       qty: item.quantity,
       price: item.unitPrice > 0 ? item.unitPrice : item.totalPrice,
@@ -501,7 +590,8 @@ class SyncService {
     _ref.read(tablesProvider.notifier).state = tables;
   }
 
-  TableState _mapTableStatus(String status, String? currentOperatorId) {
+  TableState _mapTableStatus(
+      String status, String? currentOperatorId, String? tableOperatorId) {
     switch (status.toLowerCase()) {
       case 'dirty':
       case 'cleaning':
@@ -509,6 +599,13 @@ class SyncService {
       case 'reserved':
         return TableState.reserved;
       case 'occupied':
+        // Distinguish between tables owned by this operator vs others.
+        if (currentOperatorId != null &&
+            tableOperatorId != null &&
+            tableOperatorId.isNotEmpty &&
+            tableOperatorId != currentOperatorId) {
+          return TableState.other;
+        }
         return TableState.mine;
       default:
         return TableState.free;
@@ -533,8 +630,20 @@ class SyncService {
   String _formatTime(String isoDate) {
     if (isoDate.isEmpty) return '';
     try {
-      final dt = DateTime.parse(isoDate);
+      final dt = DateTime.parse(isoDate).toLocal();
       return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _formatDate(String isoDate) {
+    if (isoDate.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(isoDate).toLocal();
+      return '${dt.year}-'
+          '${dt.month.toString().padLeft(2, '0')}-'
+          '${dt.day.toString().padLeft(2, '0')}';
     } catch (_) {
       return '';
     }
@@ -635,6 +744,13 @@ class SyncService {
                           priceModifier: o.priceModifier,
                         ))
                     .toList(),
+              ))
+          .toList(),
+      variations: si.variations
+          .map((v) => MenuItemVariation(
+                id: v.id,
+                name: v.name,
+                price: v.price,
               ))
           .toList(),
     );

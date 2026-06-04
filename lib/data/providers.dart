@@ -119,6 +119,18 @@ class MenuOptionGroup {
   });
 }
 
+class MenuItemVariation {
+  final String id;
+  final String name;
+  final double price;
+
+  const MenuItemVariation({
+    required this.id,
+    required this.name,
+    required this.price,
+  });
+}
+
 class MenuItem {
   final String id;
   final String name;
@@ -130,6 +142,7 @@ class MenuItem {
   final bool available;
   final String? note;
   final List<MenuOptionGroup> optionGroups;
+  final List<MenuItemVariation> variations;
   const MenuItem({
     required this.id,
     required this.name,
@@ -140,6 +153,7 @@ class MenuItem {
     this.available = true,
     this.note,
     this.optionGroups = const [],
+    this.variations = const [],
   });
 }
 
@@ -278,6 +292,7 @@ class HistoryOrder {
   final String orderId; // Server UUID — used in all socket emits
   final String tableId;
   final String time; // HH:MM
+  final String date; // YYYY-MM-DD — used for date-scope filtering
   final int itemCount;
   final double total; // in ₹
   final OrderStatus status;
@@ -288,6 +303,7 @@ class HistoryOrder {
     required this.orderId,
     required this.tableId,
     required this.time,
+    required this.date,
     required this.itemCount,
     required this.total,
     required this.status,
@@ -297,12 +313,16 @@ class HistoryOrder {
 }
 
 class HistoryOrderLine {
+  final String orderItemId; // Server order_item id — needed for KOT edit
+  final String itemId;      // Menu item id — needed for Repeat Last Order
   final String name;
   final int qty;
   final double price;
   final List<String> mods;
   final String kitchenSection;
   const HistoryOrderLine({
+    required this.orderItemId,
+    required this.itemId,
     required this.name,
     required this.qty,
     required this.price,
@@ -495,3 +515,9 @@ int _kotCounter = 0;
 String generateKotId() => 'K-${++_kotCounter}';
 
 final lastKotIdProvider = StateProvider<String>((_) => '');
+
+// ─────────────── Table link groups ───────────────
+// Map of groupId → list of table serverIds belonging to that group.
+// Updated by sync_service on 'table:links:updated' broadcasts.
+final linkGroupsProvider =
+    StateProvider<Map<String, List<String>>>((_) => {});

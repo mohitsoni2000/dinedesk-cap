@@ -26,6 +26,10 @@ class FeatureFlags {
   final bool autoKot;
   final int autoKotThreshold;
   final bool predictiveMotion;
+  final bool itemVariations;
+  final bool waiterAssignment;
+  final bool manualEntry;
+  final bool kotEdit;
 
   const FeatureFlags({
     this.discounts = true,
@@ -55,6 +59,10 @@ class FeatureFlags {
     this.autoKot = false,
     this.autoKotThreshold = 5,
     this.predictiveMotion = false,
+    this.itemVariations = false,
+    this.waiterAssignment = false,
+    this.manualEntry = false,
+    this.kotEdit = false,
   });
 
   factory FeatureFlags.fromMap(Map<String, dynamic> map) {
@@ -96,6 +104,10 @@ class FeatureFlags {
       autoKot: flag('flag_auto_kot'),
       autoKotThreshold: int.tryParse('${map['auto_kot_threshold']}') ?? 5,
       predictiveMotion: flag('flag_predictive_motion'),
+      itemVariations: flag('item_variations'),
+      waiterAssignment: flag('waiter_assignment'),
+      manualEntry: flag('manual_entry'),
+      kotEdit: flag('kot_edit'),
     );
   }
 }

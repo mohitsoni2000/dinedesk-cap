@@ -242,6 +242,7 @@ class ServerMenuItem {
   final bool isAvailable;
   final String? note;
   final List<ServerMenuOptionGroup> optionGroups;
+  final List<ServerItemVariation> variations;
 
   const ServerMenuItem({
     required this.id,
@@ -253,6 +254,7 @@ class ServerMenuItem {
     required this.isAvailable,
     this.note,
     this.optionGroups = const [],
+    this.variations = const [],
   });
 
   factory ServerMenuItem.fromMap(Map<String, dynamic> m) {
@@ -269,11 +271,13 @@ class ServerMenuItem {
       isAvailable: _toBool(m['is_available'] ?? m['available'], true),
       note: m['note']?.toString(),
       optionGroups: const [],
+      variations: const [],
     );
   }
 
   ServerMenuItem copyWith({
     List<ServerMenuOptionGroup>? optionGroups,
+    List<ServerItemVariation>? variations,
   }) =>
       ServerMenuItem(
         id: id,
@@ -285,6 +289,7 @@ class ServerMenuItem {
         isAvailable: isAvailable,
         note: note,
         optionGroups: optionGroups ?? this.optionGroups,
+        variations: variations ?? this.variations,
       );
 }
 
@@ -351,6 +356,34 @@ class ServerMenuOption {
       groupId: _toStr(m['group_id']),
       name: _toStr(m['name']),
       priceModifier: _toDouble(m['price_modifier']),
+    );
+  }
+}
+
+// ─────────────── Server Item Variation ───────────────
+
+class ServerItemVariation {
+  final String id;
+  final String itemId;
+  final String name;
+  final double price;
+  final int sortOrder;
+
+  const ServerItemVariation({
+    required this.id,
+    required this.itemId,
+    required this.name,
+    required this.price,
+    required this.sortOrder,
+  });
+
+  factory ServerItemVariation.fromMap(Map<String, dynamic> m) {
+    return ServerItemVariation(
+      id: _toStr(m['id']),
+      itemId: _toStr(m['item_id']),
+      name: _toStr(m['name']),
+      price: _toDouble(m['price']),
+      sortOrder: _toInt(m['sort_order']),
     );
   }
 }

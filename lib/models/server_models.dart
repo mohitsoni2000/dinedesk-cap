@@ -51,6 +51,8 @@ class ServerTable {
   final int orderItemCount;
   final int oldestKotMinutes;
   final int kotCount;
+  final String? operatorId; // operator who owns this table's active order
+  final String? waiterName; // display name of the waiter serving this table
 
   const ServerTable({
     required this.id,
@@ -66,6 +68,8 @@ class ServerTable {
     this.orderItemCount = 0,
     this.oldestKotMinutes = 0,
     this.kotCount = 0,
+    this.operatorId,
+    this.waiterName,
   });
 
   factory ServerTable.fromMap(Map<String, dynamic> m) {
@@ -83,6 +87,8 @@ class ServerTable {
       orderItemCount: _toInt(m['order_item_count']),
       oldestKotMinutes: _toInt(m['oldest_kot_minutes']),
       kotCount: _toInt(m['kot_count']),
+      operatorId: m['operator_id']?.toString(),
+      waiterName: m['waiter_name']?.toString(),
     );
   }
 }
@@ -186,6 +192,8 @@ class ServerOrderItem {
   final String selectedOptions;
   final String? notes;
   final String? kotStatus;
+  final String? variationId;
+  final String? variationName;
 
   const ServerOrderItem({
     required this.id,
@@ -199,6 +207,8 @@ class ServerOrderItem {
     required this.selectedOptions,
     this.notes,
     this.kotStatus,
+    this.variationId,
+    this.variationName,
   });
 
   factory ServerOrderItem.fromMap(Map<String, dynamic> m) {
@@ -214,6 +224,8 @@ class ServerOrderItem {
       selectedOptions: _toStr(m['selected_options']),
       notes: m['notes']?.toString(),
       kotStatus: m['kot_status']?.toString(),
+      variationId: m['variation_id']?.toString(),
+      variationName: m['variation_name']?.toString(),
     );
   }
 }

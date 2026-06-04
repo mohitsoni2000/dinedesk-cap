@@ -183,14 +183,12 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
                       style: AppTypography.caption),
                   const SizedBox(height: 12),
                   // Search bar.
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      borderRadius: const BorderRadius.all(AppRadii.sm),
-                      border: Border.all(color: AppColors.ink10),
-                    ),
+                  LiquidGlassSurface(
+                    borderRadius: const BorderRadius.all(AppRadii.sm),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                    blur: 18,
+                    thickness: 8,
                     child: TextField(
                       controller: _search,
                       textInputAction: TextInputAction.search,
@@ -450,13 +448,11 @@ class _FormField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.55),
-        borderRadius: const BorderRadius.all(AppRadii.sm),
-        border: Border.all(color: AppColors.ink10),
-      ),
+    return LiquidGlassSurface(
+      borderRadius: const BorderRadius.all(AppRadii.sm),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      blur: 18,
+      thickness: 8,
       child: TextField(
         controller: controller,
         keyboardType: keyboardType,

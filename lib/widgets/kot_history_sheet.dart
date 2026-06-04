@@ -42,7 +42,13 @@ class KotHistorySheet extends ConsumerWidget {
 
     final tableOrders = allOrders
         .where((o) => o.tableId == tableDisplay || o.tableId == tableServerId)
-        .toList();
+        .toList()
+      ..sort((a, b) {
+        // Newest first: compare YYYY-MM-DDTHH:MM lexicographically.
+        final aKey = '${a.date}T${a.time}';
+        final bKey = '${b.date}T${b.time}';
+        return bKey.compareTo(aKey);
+      });
 
     return DraggableScrollableSheet(
       initialChildSize: 0.7,

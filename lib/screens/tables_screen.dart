@@ -8,7 +8,8 @@ import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
-// table_merge_sheet disabled — requires server-side support
+import '../widgets/liquid_glass_surface.dart';
+import '../widgets/table_merge_sheet.dart';
 
 class TablesScreen extends ConsumerStatefulWidget {
   const TablesScreen({super.key});
@@ -59,8 +60,31 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
       ref.read(syncServiceProvider).applyOrderAck(response);
     }
 
+    // KOT history seed: when opening an existing order, ensure historyProvider
+    // has an entry for this table so KotHistorySheet shows correctly.
+    if (intent.action == TableOpenAction.openOrder) {
+      final activeOrders = ref.read(activeOrdersProvider);
+      final tableData = ref
+          .read(tablesProvider)
+          .where((tbl) => tbl.serverId == t.serverId)
+          .firstOrNull;
+      final activeOrderId = tableData?.activeOrderId;
+      final orderMap = activeOrders.where((o) {
+        final id = o['id']?.toString();
+        final tableId = o['table_id']?.toString();
+        return (activeOrderId != null && id == activeOrderId) ||
+            tableId == t.serverId;
+      }).firstOrNull;
+      if (orderMap != null) {
+        ref.read(syncServiceProvider).applyOrderAck(
+          {'order': orderMap},
+          includeHistory: true,
+        );
+      }
+    }
+
     if (!mounted || intent.route == null) return;
-    context.push(intent.route!);
+    context.go(intent.route!);
   }
 
   void _showTableError(String message) {
@@ -165,13 +189,11 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
             if (_searchOpen)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.55),
-                    borderRadius: const BorderRadius.all(AppRadii.sm),
-                    border: Border.all(color: AppColors.ink10),
-                  ),
+                child: LiquidGlassSurface(
+                  borderRadius: const BorderRadius.all(AppRadii.sm),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
+                  blur: 20,
+                  thickness: 10,
                   child: TextField(
                     autofocus: true,
                     decoration: const InputDecoration(
@@ -233,8 +255,11 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                         return _TableCard(
                           table: t,
                           onTap: () => _onTableTap(t),
-                          // Table merge disabled — requires server-side support.
-                          onLongPress: null,
+                          onLongPress:
+                              (t.state == TableState.mine ||
+                                      t.state == TableState.other)
+                                  ? () => TableMergeSheet.show(context, t)
+                                  : null,
                         );
                       },
                     ),
@@ -314,49 +339,58 @@ class _FloorTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return LiquidGlassSurface(
+      borderRadius: const BorderRadius.all(AppRadii.sm),
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.5),
-        borderRadius: const BorderRadius.all(AppRadii.sm),
-        border: Border.all(color: AppColors.ink10, width: 0.5),
-      ),
-      child: Row(
-        children: [
-          for (final f in floors)
-            Expanded(
-              child: GestureDetector(
-                onTap: () => onChange(f),
-                child: SpringBuilder(
-                  to: value == f ? 1.0 : 0.0,
-                  spring: RestroSprings.snappy,
-                  builder: (BuildContext _, double t, Widget? child) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Color.lerp(Colors.transparent, AppColors.ink, t),
-                        borderRadius: const BorderRadius.all(AppRadii.xs),
+      blur: 24,
+      thickness: 12,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final f in floors)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: GestureDetector(
+                  onTap: () => onChange(f),
+                  child: SpringBuilder(
+                    to: value == f ? 1.0 : 0.0,
+                    spring: RestroSprings.snappy,
+                    builder: (BuildContext _, double t, Widget? child) {
+                      return Container(
+                        constraints: const BoxConstraints(minWidth: 96),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color:
+                              Color.lerp(Colors.transparent, AppColors.ink, t),
+                          borderRadius: const BorderRadius.all(AppRadii.xs),
+                        ),
+                        alignment: Alignment.center,
+                        child: child,
+                      );
+                    },
+                    child: Text(
+                      f,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.micro.copyWith(
+                        color: value == f ? Colors.white : AppColors.ink70,
                       ),
-                      alignment: Alignment.center,
-                      child: child,
-                    );
-                  },
-                  child: Text(
-                    f,
-                    style: AppTypography.micro.copyWith(
-                      color: value == f ? Colors.white : AppColors.ink70,
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-class _TableCard extends StatelessWidget {
+class _TableCard extends ConsumerWidget {
   final RestaurantTable table;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
@@ -399,7 +433,8 @@ class _TableCard extends StatelessWidget {
       case TableState.mine:
         return 'MINE';
       case TableState.other:
-        return 'OTHER · ${table.waiterName}';
+        final waiter = table.waiterName;
+        return waiter == null || waiter.isEmpty ? 'OTHER' : 'OTHER · $waiter';
       case TableState.dirty:
         return 'DIRTY';
       case TableState.reserved:
@@ -410,7 +445,11 @@ class _TableCard extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final linkGroups = ref.watch(linkGroupsProvider);
+    final isLinked = linkGroups.values
+        .any((ids) => ids.contains(table.serverId));
+
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -460,10 +499,18 @@ class _TableCard extends StatelessWidget {
                 ],
               ),
               const Spacer(),
-              Text(_stateLabel(),
-                  style: AppTypography.micro,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(_stateLabel(),
+                        style: AppTypography.micro,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  if (isLinked)
+                    const Icon(Icons.link, size: 12, color: AppColors.info),
+                ],
+              ),
               if (table.coverCount != null) ...[
                 const SizedBox(height: 2),
                 Text('${table.coverCount} guests',
@@ -475,6 +522,8 @@ class _TableCard extends StatelessWidget {
                   formatRupeesCompact(table.bill!),
                   style:
                       AppTypography.title.copyWith(fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
               if (table.note != null) ...[

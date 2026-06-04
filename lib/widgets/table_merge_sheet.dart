@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
+import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_glass_surface.dart';
@@ -29,21 +30,18 @@ class TableMergeSheet extends ConsumerStatefulWidget {
 }
 
 class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
-  final Set<String> _picked = {};
+  String? _pickedServerId;
+  bool _submitting = false;
 
   @override
   Widget build(BuildContext context) {
     final tables = ref.watch(tablesProvider);
+    // Merge candidates: occupied tables (mine or other) — not free.
     final candidates = tables
         .where((t) =>
-            t.id != widget.origin.id &&
-            (t.state == TableState.free || t.state == TableState.dirty))
+            t.serverId != widget.origin.serverId &&
+            (t.state == TableState.mine || t.state == TableState.other))
         .toList();
-
-    final extraSeats = candidates
-        .where((t) => _picked.contains(t.id))
-        .fold<int>(0, (s, t) => s + t.seats);
-    final newSeats = widget.origin.seats + extraSeats;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.7,
@@ -73,19 +71,20 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                       child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Merge with ${widget.origin.id}',
+                      Text('Merge into ${widget.origin.id}',
                           style: AppTypography.title),
                       const SizedBox(height: 2),
                       Text(
-                        '${widget.origin.seats} seats → $newSeats seats',
+                        'Pick a table to absorb into this one',
                         style: AppTypography.caption,
                       ),
                     ],
                   )),
-                  LiquidPill(
-                    tint: AppColors.amber,
-                    child: Text('${_picked.length} picked'),
-                  ),
+                  if (_pickedServerId != null)
+                    LiquidPill(
+                      tint: AppColors.amber,
+                      child: const Text('1 selected'),
+                    ),
                 ],
               ),
             ),
@@ -109,16 +108,12 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                       itemCount: candidates.length,
                       itemBuilder: (_, i) {
                         final t = candidates[i];
-                        final on = _picked.contains(t.id);
+                        final on = _pickedServerId == t.serverId;
                         return GestureDetector(
                           onTap: () {
                             HapticFeedback.selectionClick();
                             setState(() {
-                              if (on) {
-                                _picked.remove(t.id);
-                              } else {
-                                _picked.add(t.id);
-                              }
+                              _pickedServerId = on ? null : t.serverId;
                             });
                           },
                           child: AnimatedContainer(
@@ -194,40 +189,43 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                 children: [
                   Expanded(
                       child: LiquidSecondaryButton(
-                    label: 'Split back',
-                    leadingIcon: Icons.call_split,
+                    label: 'Cancel',
                     onPressed: () => Navigator.of(context).pop(),
                   )),
                   const SizedBox(width: 8),
                   Expanded(
                       child: LiquidPrimaryButton(
-                    label: 'Merge',
+                    label: _submitting ? 'Merging…' : 'Merge',
                     fullWidth: true,
                     leadingIcon: Icons.merge_type,
-                    onPressed: _picked.isEmpty
+                    onPressed: (_pickedServerId == null || _submitting)
                         ? null
-                        : () {
+                        : () async {
+                            final pinOk = await requirePinIfNeeded(
+                                context, ref, 'table_merge');
+                            if (!pinOk || !mounted) return;
+                            setState(() => _submitting = true);
                             HapticFeedback.heavyImpact();
-                            final list = ref.read(tablesProvider);
-                            ref.read(tablesProvider.notifier).state = [
-                              for (final t in list)
-                                if (t.id == widget.origin.id)
-                                  RestaurantTable(
-                                    id: t.id,
-                                    serverId: t.serverId,
-                                    seats: newSeats,
-                                    floor: t.floor,
-                                    state: TableState.mine,
-                                    waiterName: t.waiterName,
-                                    coverCount: t.coverCount,
-                                    bill: t.bill,
-                                    note: 'Merged with ${_picked.join(", ")}',
-                                  )
-                                else if (_picked.contains(t.id))
-                                  null
-                                else
-                                  t,
-                            ].whereType<RestaurantTable>().toList();
+                            final response = await ref
+                                .read(socketServiceProvider)
+                                .emitAck('table:merge', {
+                              'primary_table_id': widget.origin.serverId,
+                              'absorbed_table_id': _pickedServerId,
+                            });
+                            if (!mounted) return;
+                            setState(() => _submitting = false);
+                            if (response['kind'] == 'error') {
+                              ScaffoldMessenger.of(context)
+                                ..clearSnackBars()
+                                ..showSnackBar(SnackBar(
+                                  backgroundColor: AppColors.danger,
+                                  content: Text(
+                                    response['message']?.toString() ??
+                                        'Merge failed',
+                                  ),
+                                ));
+                              return;
+                            }
                             Navigator.of(context).pop();
                           },
                   )),

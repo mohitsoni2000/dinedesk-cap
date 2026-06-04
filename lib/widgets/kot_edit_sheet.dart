@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
@@ -42,6 +43,7 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
     super.initState();
     _lines = widget.order.lines
         .map((l) => _EditableLine(
+              orderItemId: l.orderItemId,
               name: l.name,
               originalQty: l.qty,
               currentQty: l.qty,
@@ -59,18 +61,34 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
 
   bool get _hasChanges => _lines.any((l) => l.currentQty != l.originalQty);
 
-  void _submit() {
+  Future<void> _submit() async {
     if (!_hasChanges || _submitting) return;
+    final pinOk = await requirePinIfNeeded(context, ref, 'kot_edit');
+    if (!pinOk || !mounted) return;
     setState(() => _submitting = true);
 
     final reason = _reason.text.trim();
 
-    // Build the update payload.
-    // Since we don't have individual order_item_ids from the HistoryOrderLine model,
-    // we emit a simplified update with notes describing the edit.
+    // Build items_remove (qty → 0) and items_modify (qty changed but > 0).
+    final itemsRemove = <String>[];
+    final itemsModify = <Map<String, dynamic>>[];
+    for (final l in _lines) {
+      if (!l.isModified || l.orderItemId.isEmpty) continue;
+      if (l.isRemoved) {
+        itemsRemove.add(l.orderItemId);
+      } else {
+        itemsModify.add({
+          'order_item_id': l.orderItemId,
+          'quantity': l.currentQty,
+        });
+      }
+    }
+
     final socketService = ref.read(socketServiceProvider);
     socketService.emit('order:update', <String, dynamic>{
       'order_id': widget.order.orderId,
+      if (itemsRemove.isNotEmpty) 'items_remove': itemsRemove,
+      if (itemsModify.isNotEmpty) 'items_modify': itemsModify,
       'notes': reason.isNotEmpty
           ? '${widget.order.notes ?? ''}\n[KOT Edit] $reason'.trim()
           : widget.order.notes,
@@ -150,14 +168,12 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
                   Text('REASON FOR EDIT',
                       style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      borderRadius: const BorderRadius.all(AppRadii.sm),
-                      border: Border.all(color: AppColors.ink10),
-                    ),
+                  LiquidGlassSurface(
+                    borderRadius: const BorderRadius.all(AppRadii.sm),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    blur: 18,
+                    thickness: 8,
                     child: TextField(
                       controller: _reason,
                       maxLines: 2,
@@ -189,6 +205,7 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
 }
 
 class _EditableLine {
+  final String orderItemId;
   final String name;
   final int originalQty;
   final int currentQty;
@@ -196,6 +213,7 @@ class _EditableLine {
   final String kitchenSection;
 
   const _EditableLine({
+    required this.orderItemId,
     required this.name,
     required this.originalQty,
     required this.currentQty,
@@ -204,6 +222,7 @@ class _EditableLine {
   });
 
   _EditableLine withQty(int qty) => _EditableLine(
+        orderItemId: orderItemId,
         name: name,
         originalQty: originalQty,
         currentQty: qty,
@@ -247,19 +266,18 @@ class _EditRow extends StatelessWidget {
                 ],
               ),
             ),
-            GestureDetector(
+            LiquidGlassSurface(
+              borderRadius: BorderRadius.circular(18),
+              blur: 14,
+              thickness: 6,
               onTap: () {
                 if (line.currentQty > 0) onQtyChanged(line.currentQty - 1);
               },
-              child: Container(
+              child: const SizedBox(
                 width: 36,
                 height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: AppColors.ink10),
-                ),
-                child: const Icon(Icons.remove, size: 16, color: AppColors.ink),
+                child: Center(
+                    child: Icon(Icons.remove, size: 16, color: AppColors.ink)),
               ),
             ),
             SizedBox(
@@ -272,17 +290,16 @@ class _EditRow extends StatelessWidget {
                               ? AppColors.warn
                               : AppColors.ink)),
                 )),
-            GestureDetector(
+            LiquidGlassSurface(
+              borderRadius: BorderRadius.circular(18),
+              blur: 14,
+              thickness: 6,
               onTap: () => onQtyChanged(line.currentQty + 1),
-              child: Container(
+              child: const SizedBox(
                 width: 36,
                 height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: AppColors.ink10),
-                ),
-                child: const Icon(Icons.add, size: 16, color: AppColors.ink),
+                child: Center(
+                    child: Icon(Icons.add, size: 16, color: AppColors.ink)),
               ),
             ),
           ],

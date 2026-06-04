@@ -29,17 +29,18 @@ class RootShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final loc = GoRouterState.of(context).uri.path;
     final idx = _indexFromLocation(loc);
-    return SafeArea(
-      child: Column(
-        children: [
-          Expanded(child: child),
-          LiquidBottomNav(
+    return Column(
+      children: [
+        Expanded(child: child),
+        SafeArea(
+          top: false,
+          child: LiquidBottomNav(
             currentIndex: idx,
             items: _items,
             onTap: (i) => context.go(_routes[i]),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

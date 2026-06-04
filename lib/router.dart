@@ -99,31 +99,37 @@ final routerProvider = Provider<GoRouter>((ref) {
           path: '/order/:tableId',
           pageBuilder: (_, s) => liquidPage(
               key: s.pageKey,
-              child:
-                  OrderBuilderScreen(tableId: s.pathParameters['tableId']!))),
+              child: ConnectionBanner(
+                  child: OrderBuilderScreen(
+                      tableId: s.pathParameters['tableId']!)))),
       GoRoute(
           path: '/order/:tableId/review',
           pageBuilder: (_, s) => liquidPage(
               key: s.pageKey,
-              child: OrderReviewScreen(tableId: s.pathParameters['tableId']!))),
+              child: ConnectionBanner(
+                  child: OrderReviewScreen(
+                      tableId: s.pathParameters['tableId']!)))),
       GoRoute(
           path: '/order/:tableId/success',
           pageBuilder: (_, s) => liquidPage(
               key: s.pageKey,
               fromBottom: true,
-              child:
-                  OrderSuccessScreen(tableId: s.pathParameters['tableId']!))),
+              child: ConnectionBanner(
+                  child: OrderSuccessScreen(
+                      tableId: s.pathParameters['tableId']!)))),
       GoRoute(
           path: '/history/:orderId',
           pageBuilder: (_, s) => liquidPage(
               key: s.pageKey,
-              child: OrderDetailScreen(orderId: s.pathParameters['orderId']!))),
+              child: ConnectionBanner(
+                  child: OrderDetailScreen(
+                      orderId: s.pathParameters['orderId']!)))),
       GoRoute(
           path: '/change-pin',
           pageBuilder: (_, s) => liquidPage(
               key: s.pageKey,
               fromBottom: true,
-              child: const ChangePinScreen())),
+              child: const ConnectionBanner(child: ChangePinScreen()))),
       GoRoute(
           path: '/disconnected',
           pageBuilder: (_, s) =>

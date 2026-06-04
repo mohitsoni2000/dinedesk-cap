@@ -198,6 +198,8 @@ class CartLine {
   final List<SelectedOption> selectedOptions; // structured for server payload
   final double modsExtra; // total extra cost from selected mods
   final String itemNote;
+  final String? variationId; // selected item variation id (nullable)
+  final String? variationName; // selected item variation name (nullable)
 
   CartLine({
     required this.item,
@@ -206,6 +208,8 @@ class CartLine {
     this.selectedOptions = const [],
     this.modsExtra = 0,
     this.itemNote = '',
+    this.variationId,
+    this.variationName,
   }) : uid = _nextUid++;
 
   CartLine._clone({
@@ -216,6 +220,8 @@ class CartLine {
     required this.selectedOptions,
     required this.modsExtra,
     required this.itemNote,
+    this.variationId,
+    this.variationName,
   });
 
   double get lineTotal => (item.price + modsExtra) * qty;
@@ -226,6 +232,8 @@ class CartLine {
     List<SelectedOption>? selectedOptions,
     double? modsExtra,
     String? itemNote,
+    String? variationId,
+    String? variationName,
   }) =>
       CartLine._clone(
         uid: uid,
@@ -235,6 +243,8 @@ class CartLine {
         selectedOptions: selectedOptions ?? this.selectedOptions,
         modsExtra: modsExtra ?? this.modsExtra,
         itemNote: itemNote ?? this.itemNote,
+        variationId: variationId ?? this.variationId,
+        variationName: variationName ?? this.variationName,
       );
 }
 
@@ -415,6 +425,8 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
     List<SelectedOption> selectedOptions = const [],
     required double modsExtra,
     required String itemNote,
+    String? variationId,
+    String? variationName,
   }) {
     state = [
       ...state,
@@ -425,6 +437,8 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
         selectedOptions: selectedOptions,
         modsExtra: modsExtra,
         itemNote: itemNote,
+        variationId: variationId,
+        variationName: variationName,
       ),
     ];
   }

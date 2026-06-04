@@ -13,6 +13,7 @@ import '../data/currency.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/liquid_chrome.dart';
+import '../widgets/liquid_glass_surface.dart';
 
 enum _DateScope { today, yesterday }
 
@@ -28,8 +29,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
   /// Date-scoped orders (before status filter).
   List<HistoryOrder> _dateScoped(List<HistoryOrder> orders) {
-    if (_dateScope == _DateScope.yesterday) return [];
-    return orders;
+    final now = DateTime.now();
+    final String targetDate;
+    if (_dateScope == _DateScope.yesterday) {
+      final yesterday = now.subtract(const Duration(days: 1));
+      targetDate =
+          '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
+    } else {
+      targetDate =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    }
+    return orders.where((o) => o.date == targetDate).toList();
   }
 
   /// Build status chips with counts from the date-scoped subset.
@@ -81,10 +91,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Widget build(BuildContext context) {
     final orders = ref.watch(historyProvider);
 
+    // H1 fix: sort newest-first so the most recent orders appear at the top.
     final filtered = _dateScoped(orders).where((o) {
       if (_statusFilter != null && o.status != _statusFilter) return false;
       return true;
-    }).toList();
+    }).toList()
+      ..sort((a, b) => b.time.compareTo(a.time));
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -95,13 +107,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             // Date scope segmented control.
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Container(
+              child: LiquidGlassSurface(
+                borderRadius: const BorderRadius.all(AppRadii.sm),
                 padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  borderRadius: const BorderRadius.all(AppRadii.sm),
-                  border: Border.all(color: AppColors.ink10, width: 0.5),
-                ),
+                blur: 24,
+                thickness: 12,
                 child: Row(
                   children: [
                     _DateTab(

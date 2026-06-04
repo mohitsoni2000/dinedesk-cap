@@ -23,6 +23,7 @@ import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_mesh_background.dart';
 import '../widgets/payment_sheet.dart';
 import '../widgets/discount_sheet.dart';
+import '../widgets/coupon_sheet.dart';
 
 class OrderDetailScreen extends ConsumerStatefulWidget {
   final String orderId;
@@ -47,8 +48,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   bool _billGenerated = false;
   bool _paymentCollected = false;
   bool _generatingBill = false;
-  bool _gstWaived = false;
-  bool _scWaived = false;
 
   /// Check if this order has a linked customer by looking at activeOrdersProvider raw data.
   bool _hasLinkedCustomer(HistoryOrder order) {
@@ -156,6 +155,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               orderId: o.orderId,
               tableId: o.tableId,
               time: o.time,
+              date: o.date,
               itemCount: o.itemCount,
               total: o.total,
               status: OrderStatus.cancelled,
@@ -178,6 +178,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
   Future<void> _generateBill(HistoryOrder order) async {
     if (_generatingBill) return;
+    final pinOk = await requirePinIfNeeded(context, ref, 'generate_bill');
+    if (!pinOk || !mounted) return;
     _generatingBill = true;
     setState(() {});
     HapticFeedback.heavyImpact();
@@ -334,6 +336,34 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     }
   }
 
+  Future<void> _openCoupon(HistoryOrder order) async {
+    final result = await CouponSheet.show(context, orderId: order.orderId);
+    if (result != null && mounted) {
+      final orderMap = result['order'];
+      if (orderMap is Map) {
+        setState(() {
+          _discountAmount = (orderMap['discount_amount'] as num?)?.toDouble();
+          _discountLabel = orderMap['discount_label']?.toString() ?? 'Coupon';
+        });
+      }
+      if (_billGenerated) {
+        _billGenerated = false;
+        _bills = [];
+        _billId = null;
+        _generateBill(order);
+      }
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(
+          backgroundColor: AppColors.success,
+          content: Text(
+            'Coupon applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
+            style: AppTypography.bodyMd.copyWith(color: Colors.white),
+          ),
+        ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final orders = ref.watch(historyProvider);
@@ -341,6 +371,20 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final order = orders
         .where((o) => o.id == orderId || o.orderId == orderId)
         .firstOrNull;
+
+    // Auto-detect when another operator generates a bill for this order via
+    // the bill:generated broadcast, which lands in activeOrdersProvider.
+    ref.listen(activeOrdersProvider, (_, activeOrders) {
+      if (_billGenerated || order == null) return;
+      for (final raw in activeOrders) {
+        if (raw['id']?.toString() != order.orderId) continue;
+        final bills = raw['bills'];
+        if (bills is List && bills.isNotEmpty) {
+          setState(() => _billGenerated = true);
+        }
+        break;
+      }
+    });
 
     if (order == null) {
       return Scaffold(
@@ -514,41 +558,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                               const SizedBox(height: 4),
                               Row(
                                 children: [
-                                  Expanded(
-                                    child: Text(
-                                        _gstWaived ? 'GST (waived)' : 'GST',
-                                        style: AppTypography.bodyMd.copyWith(
-                                            decoration: _gstWaived
-                                                ? TextDecoration.lineThrough
-                                                : null,
-                                            color: _gstWaived
-                                                ? AppColors.ink50
-                                                : AppColors.ink)),
-                                  ),
-                                  if (!_paymentCollected)
-                                    GestureDetector(
-                                      onTap: () => setState(
-                                          () => _gstWaived = !_gstWaived),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8),
-                                        child: Text(
-                                            _gstWaived ? 'Restore' : 'Waive',
-                                            style: AppTypography.caption
-                                                .copyWith(
-                                                    color: AppColors.terra600,
-                                                    fontWeight:
-                                                        FontWeight.w600)),
-                                      ),
-                                    ),
-                                  Text(
-                                      _gstWaived
-                                          ? '₹0'
-                                          : formatRupeesCompact(_billGst!),
-                                      style: AppTypography.bodyMd.copyWith(
-                                          color: _gstWaived
-                                              ? AppColors.ink50
-                                              : AppColors.ink)),
+                                  const Expanded(
+                                      child: Text('GST',
+                                          style: AppTypography.bodyMd)),
+                                  Text(formatRupeesCompact(_billGst!),
+                                      style: AppTypography.bodyMd),
                                 ],
                               ),
                             ],
@@ -556,66 +570,26 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                               const SizedBox(height: 4),
                               Row(
                                 children: [
-                                  Expanded(
-                                    child: Text(
-                                        _scWaived
-                                            ? 'Service Charge (waived)'
-                                            : 'Service Charge',
-                                        style: AppTypography.bodyMd.copyWith(
-                                            decoration: _scWaived
-                                                ? TextDecoration.lineThrough
-                                                : null,
-                                            color: _scWaived
-                                                ? AppColors.ink50
-                                                : AppColors.ink)),
-                                  ),
-                                  if (!_paymentCollected)
-                                    GestureDetector(
-                                      onTap: () => setState(
-                                          () => _scWaived = !_scWaived),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8),
-                                        child: Text(
-                                            _scWaived ? 'Restore' : 'Waive',
-                                            style: AppTypography.caption
-                                                .copyWith(
-                                                    color: AppColors.terra600,
-                                                    fontWeight:
-                                                        FontWeight.w600)),
-                                      ),
-                                    ),
+                                  const Expanded(
+                                      child: Text('Service Charge',
+                                          style: AppTypography.bodyMd)),
                                   Text(
-                                      _scWaived
-                                          ? '₹0'
-                                          : formatRupeesCompact(
-                                              _billServiceCharge!),
-                                      style: AppTypography.bodyMd.copyWith(
-                                          color: _scWaived
-                                              ? AppColors.ink50
-                                              : AppColors.ink)),
+                                      formatRupeesCompact(_billServiceCharge!),
+                                      style: AppTypography.bodyMd),
                                 ],
                               ),
                             ],
                             const Divider(height: 16, color: AppColors.ink10),
-                            Builder(builder: (_) {
-                              double adjustedTotal = _billTotal ?? order.total;
-                              if (_gstWaived && _billGst != null) {
-                                adjustedTotal -= _billGst!;
-                              }
-                              if (_scWaived && _billServiceCharge != null) {
-                                adjustedTotal -= _billServiceCharge!;
-                              }
-                              return Row(
-                                children: [
-                                  const Text('Total',
-                                      style: AppTypography.title),
-                                  const Spacer(),
-                                  Text(formatRupeesCompact(adjustedTotal),
-                                      style: AppTypography.headline),
-                                ],
-                              );
-                            }),
+                            Row(
+                              children: [
+                                const Text('Total', style: AppTypography.title),
+                                const Spacer(),
+                                Text(
+                                    formatRupeesCompact(
+                                        _billTotal ?? order.total),
+                                    style: AppTypography.headline),
+                              ],
+                            ),
                             if (_paymentCollected) ...[
                               const SizedBox(height: 8),
                               Container(
@@ -800,7 +774,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                       Row(
                         children: [
                           // Discount button (before bill is generated)
-                          if (!_billGenerated && flags.discounts)
+                          if (!_billGenerated && flags.discounts) ...[
                             Expanded(
                               child: LiquidSecondaryButton(
                                 label: _discountAmount != null
@@ -812,8 +786,18 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                     : () => _openDiscount(order),
                               ),
                             ),
-                          if (!_billGenerated && flags.discounts)
                             const SizedBox(width: 8),
+                            Expanded(
+                              child: LiquidSecondaryButton(
+                                label: 'Coupon',
+                                leadingIcon: Icons.confirmation_number_outlined,
+                                onPressed: _discountAmount != null
+                                    ? null
+                                    : () => _openCoupon(order),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
 
                           // Generate Bill or Collect Payment
                           Expanded(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 // ignore: unused_import
 import 'springs.dart';
+import '../theme/tokens.dart';
 
 @immutable
 class CounterAxisMap {
@@ -92,19 +93,14 @@ class KineticRupeeCounter extends StatelessWidget {
         return Text(
           '₹${fmt.format(rolled.round())}',
           style: TextStyle(
-            fontFamily: 'Fraunces',
+            fontFamily: AppTypography.cormorant,
+            fontWeight: axes.weight >= 500 ? FontWeight.w600 : FontWeight.w500,
             fontSize: fontSize,
             color: color,
             height: 1.0,
-            letterSpacing: -fontSize * 0.025,
+            letterSpacing: 0,
             fontStyle:
                 axes.italicSlant > 0.5 ? FontStyle.italic : FontStyle.normal,
-            fontVariations: <FontVariation>[
-              FontVariation('wght', axes.weight),
-              FontVariation('SOFT', axes.soft),
-              FontVariation('WONK', axes.wonk),
-              FontVariation('opsz', axes.opticalSize),
-            ],
             fontFeatures: const <FontFeature>[
               FontFeature.tabularFigures(),
             ],
@@ -158,20 +154,15 @@ class _KineticKotNumberState extends State<KineticKotNumber>
     return AnimatedBuilder(
       animation: _animation,
       builder: (BuildContext context, Widget? _) {
-        final double t = _animation.value;
         return Text(
           '#${widget.number.toString().padLeft(4, '0')}',
           style: TextStyle(
-            fontFamily: 'Fraunces',
+            fontFamily: AppTypography.cormorant,
             fontSize: widget.fontSize,
+            fontWeight: FontWeight.w600,
             color: const Color(0xFFFFB964),
             fontStyle: FontStyle.italic,
-            fontVariations: <FontVariation>[
-              FontVariation('wght', 300 + 300 * t),
-              FontVariation('SOFT', 100 * t),
-              FontVariation('WONK', t),
-              const FontVariation('opsz', 144),
-            ],
+            letterSpacing: 0,
             fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
           ),
         );

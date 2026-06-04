@@ -228,6 +228,17 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
         billRemaining -= payAmount;
       }
 
+      // P1 fix: floating-point rounding can leave a tiny gap (< ₹1).
+      // Absorb it into the last payment entry so the bill is fully paid.
+      if (billPayments.isNotEmpty && billRemaining > 0.001 && billRemaining < 1.0) {
+        final last = billPayments.last;
+        final lastAmt = (last['amount'] as num).toDouble();
+        billPayments[billPayments.length - 1] = {
+          ...last,
+          'amount': double.parse((lastAmt + billRemaining).toStringAsFixed(2)),
+        };
+      }
+
       if (billPayments.isEmpty) continue;
 
       final completer = Completer<bool>();
@@ -501,14 +512,12 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                           _tenderedController.text = d.toString();
                           setState(() {});
                         },
-                        child: Container(
+                        child: LiquidGlassSurface(
+                          borderRadius: const BorderRadius.all(AppRadii.pill),
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppColors.ink05,
-                            borderRadius: const BorderRadius.all(AppRadii.pill),
-                            border: Border.all(color: AppColors.ink10),
-                          ),
+                          blur: 14,
+                          thickness: 6,
                           child: Text('₹$d',
                               style: AppTypography.caption
                                   .copyWith(fontWeight: FontWeight.w600)),
@@ -540,14 +549,12 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
               for (int i = 0; i < _splits.length; i++)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),
-                  child: Container(
+                  child: LiquidGlassSurface(
+                    borderRadius: const BorderRadius.all(AppRadii.sm),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.paper,
-                      borderRadius: const BorderRadius.all(AppRadii.sm),
-                      border: Border.all(color: AppColors.ink10),
-                    ),
+                    blur: 16,
+                    thickness: 8,
                     child: Row(children: [
                       Icon(_modeIcon(_splits[i].mode),
                           size: 16, color: AppColors.ink70),
@@ -682,13 +689,11 @@ class _InputField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return LiquidGlassSurface(
+      borderRadius: const BorderRadius.all(AppRadii.sm),
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: AppColors.paper,
-        borderRadius: const BorderRadius.all(AppRadii.sm),
-        border: Border.all(color: AppColors.ink10),
-      ),
+      blur: 18,
+      thickness: 8,
       child: TextField(
         controller: controller,
         keyboardType: keyboardType,

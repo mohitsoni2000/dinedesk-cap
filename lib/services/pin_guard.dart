@@ -49,6 +49,10 @@ Future<bool> requirePinIfNeeded(
     case 'quick_settle':
       required = flags.operatorPinQuickSettle;
       break;
+    case 'table_shift':
+    case 'table_merge':
+      required = flags.operatorPinKot;
+      break;
     default:
       return true;
   }

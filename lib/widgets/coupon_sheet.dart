@@ -119,14 +119,12 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
                 controller: scroll,
                 padding: const EdgeInsets.all(16),
                 children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      borderRadius: const BorderRadius.all(AppRadii.sm),
-                      border: Border.all(color: AppColors.ink10),
-                    ),
+                  LiquidGlassSurface(
+                    borderRadius: const BorderRadius.all(AppRadii.sm),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                    blur: 18,
+                    thickness: 8,
                     child: TextField(
                       controller: _code,
                       textCapitalization: TextCapitalization.characters,

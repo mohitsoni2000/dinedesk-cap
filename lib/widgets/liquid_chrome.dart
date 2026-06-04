@@ -206,10 +206,14 @@ class _LiquidPrimaryButtonState extends State<LiquidPrimaryButton> {
                     color: enabled ? Colors.white : AppColors.ink30, size: 20),
                 const SizedBox(width: 8),
               ],
-              Text(widget.label,
-                  style: AppTypography.bodyMd.copyWith(
-                      color: enabled ? Colors.white : AppColors.ink30,
-                      fontWeight: FontWeight.w600)),
+              Flexible(
+                child: Text(widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodyMd.copyWith(
+                        color: enabled ? Colors.white : AppColors.ink30,
+                        fontWeight: FontWeight.w600)),
+              ),
             ],
           ),
         ),
@@ -264,9 +268,13 @@ class _LiquidSecondaryButtonState extends State<LiquidSecondaryButton> {
                 Icon(widget.leadingIcon, color: AppColors.ink, size: 20),
                 const SizedBox(width: 8),
               ],
-              Text(widget.label,
-                  style: AppTypography.bodyMd
-                      .copyWith(fontWeight: FontWeight.w600)),
+              Flexible(
+                child: Text(widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodyMd
+                        .copyWith(fontWeight: FontWeight.w600)),
+              ),
             ],
           ),
         ),

@@ -1,12 +1,18 @@
-// Liquid-glass surface primitive.
+// Liquid-glass surface primitive — iOS 26-accurate settings.
 //
-// Wraps `liquid_glass_renderer`'s LiquidGlass widget with our app defaults
-// (terra-tuned tints, rim-light overlay, sensible blur). Use this for any
-// floating chrome — app bar, bottom nav, FAB, modals, pills, ghost buttons.
+// Key changes from previous version:
+//   • blur 38 (was 20) — real frosted-glass needs heavy blur
+//   • thickness 20 (was 12) — depth for visible refraction
+//   • lightIntensity 0.55 (was 1.2) — overblown highlights killed the effect
+//   • ambientStrength 0.18 (was 0.55) — excessive ambient washed out refraction
+//   • refractiveIndex 1.35 — now has visible lens distortion
+//   • saturation 1.25 — vivid-through-glass look
+//   • glassColor alpha 0.08 (was 0.22) — nearly transparent = truer glass
+//   • specular sweep 0.18 max (was 0.41) — subtle iOS rim-light
 //
-// For solid surfaces (cards, list rows, dense content), use a regular
-// Container with AppColors.paper — per HIG, dense content stays opaque.
+// For solid surfaces (dense content), use AppCard — dense content stays opaque.
 
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 
@@ -19,23 +25,20 @@ class LiquidGlassSurface extends StatelessWidget {
   final BorderRadius borderRadius;
   final LiquidGlassVariant variant;
   final EdgeInsetsGeometry? padding;
-  final double thickness; // controls refraction strength
+  final double thickness;
   final double blur;
   final List<BoxShadow>? shadow;
   final Color? tint;
   final VoidCallback? onTap;
 
-  /// Note: [LiquidRoundedSuperellipse] only supports a uniform radius.
-  /// The glass refraction layer uses [borderRadius.topLeft] for its shape.
-  /// The outer clip and decoration correctly use the full [borderRadius].
   const LiquidGlassSurface({
     super.key,
     required this.child,
     this.borderRadius = const BorderRadius.all(AppRadii.lg),
     this.variant = LiquidGlassVariant.regular,
     this.padding,
-    this.thickness = 12,
-    this.blur = 20,
+    this.thickness = 20, // was 12 — needs 20+ for real refraction depth
+    this.blur = 38,      // was 20 — needs 38+ for iOS frosted look
     this.shadow,
     this.tint,
     this.onTap,
@@ -45,13 +48,13 @@ class LiquidGlassSurface extends StatelessWidget {
     if (tint != null) return tint!;
     switch (variant) {
       case LiquidGlassVariant.regular:
-        return Colors.white.withValues(alpha: 0.22);
+        return Colors.white.withValues(alpha: 0.08); // was 0.22 — too opaque
       case LiquidGlassVariant.strong:
-        return Colors.white.withValues(alpha: 0.40);
+        return Colors.white.withValues(alpha: 0.16); // was 0.40
       case LiquidGlassVariant.dark:
-        return Colors.black.withValues(alpha: 0.28);
+        return Colors.black.withValues(alpha: 0.18); // was 0.28
       case LiquidGlassVariant.terra:
-        return AppColors.terra400.withValues(alpha: 0.32);
+        return AppColors.terra400.withValues(alpha: 0.18); // was 0.32
     }
   }
 
@@ -59,10 +62,13 @@ class LiquidGlassSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final tintColor = _tint();
     final isDark = variant == LiquidGlassVariant.dark;
-    final rimWhite = isDark ? 0.32 : 0.75;
-    final rimAmbient = isDark ? 0.18 : 0.28;
 
-    final effectiveShadow = shadow ?? AppShadows.card;
+    // iOS-accurate specular values — subtle, not "AI glow"
+    final specularPeak = isDark ? 0.10 : 0.18;  // was 0.41 — way too bright
+    final specularMid  = isDark ? 0.04 : 0.08;  // was 0.21
+    final rimAlpha     = isDark ? 0.10 : 0.20;  // hairline border
+
+    final effectiveShadow = shadow ?? AppShadows.glass;
 
     Widget surface = LiquidGlass.withOwnLayer(
       shape: LiquidRoundedSuperellipse(borderRadius: borderRadius.topLeft.x),
@@ -70,32 +76,35 @@ class LiquidGlassSurface extends StatelessWidget {
         thickness: thickness,
         blur: blur,
         glassColor: tintColor,
-        lightAngle: 0.6, // upper-left light source
-        lightIntensity: 1.2,
-        ambientStrength: 0.55,
+        lightAngle: math.pi * 0.58, // ~105° — upper-left light source
+        lightIntensity: 0.55,        // was 1.2 — overblown
+        ambientStrength: 0.18,       // was 0.55 — washed out refraction
+        refractiveIndex: 1.35,       // visible lens effect (was 1.2 default)
+        saturation: 1.25,            // slightly vivid through glass (was 1.5)
+        chromaticAberration: 0.006,  // very subtle colour fringe
       ),
       child: Container(
         padding: padding,
         decoration: BoxDecoration(
           borderRadius: borderRadius,
-          // Rim-light: signature inset white highlight on the bezel
+          // Hairline rim-light — iOS signature thin bright edge
           border: Border.all(
-            color: Colors.white.withValues(alpha: rimAmbient),
+            color: Colors.white.withValues(alpha: rimAlpha),
             width: 0.5,
           ),
         ),
         foregroundDecoration: BoxDecoration(
           borderRadius: borderRadius,
-          // Inner specular sweep — diagonal light catch
+          // Inner specular sweep — diagonal light catch, now subtle
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Colors.white.withValues(alpha: rimWhite * 0.55),
-              Colors.white.withValues(alpha: rimWhite * 0.18),
+              Colors.white.withValues(alpha: specularPeak),
+              Colors.white.withValues(alpha: specularMid),
               Colors.white.withValues(alpha: 0),
             ],
-            stops: const [0.0, 0.18, 0.45],
+            stops: const [0.0, 0.15, 0.40],
           ),
           backgroundBlendMode: BlendMode.overlay,
         ),

@@ -198,14 +198,12 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                   Text('SPECIAL NOTE',
                       style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      borderRadius: const BorderRadius.all(AppRadii.sm),
-                      border: Border.all(color: AppColors.ink10),
-                    ),
+                  LiquidGlassSurface(
+                    borderRadius: const BorderRadius.all(AppRadii.sm),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    blur: 18,
+                    thickness: 8,
                     child: TextField(
                       decoration: const InputDecoration(
                         border: InputBorder.none,

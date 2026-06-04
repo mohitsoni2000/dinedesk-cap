@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/session_service.dart';
 import '../theme/tokens.dart';
@@ -63,8 +64,8 @@ class DisconnectedScreen extends ConsumerWidget {
                             style: AppTypography.displayMd),
                         const SizedBox(height: 8),
                         Text(
-                          'Couldn\'t reconnect in time. Your draft has been cleared — '
-                          'please scan the QR again to resume.',
+                          'Couldn\'t reconnect in time. '
+                          'Please scan the QR again to resume.',
                           textAlign: TextAlign.center,
                           style: AppTypography.bodyMd
                               .copyWith(color: AppColors.ink70),
@@ -93,6 +94,9 @@ class DisconnectedScreen extends ConsumerWidget {
                                 .read(feedbackServiceProvider)
                                 .fire(const FeedbackMedium());
                             SessionService().clearPairing();
+                            ref.read(isAuthenticatedProvider.notifier).state =
+                                false;
+                            ref.read(cartProvider.notifier).clear();
                             context.go('/scan');
                           },
                         ),

@@ -56,22 +56,5 @@ extension FeedbackHaptic on FeedbackKind {
     }
   }
 
-  String? get audioAsset {
-    switch (this) {
-      case FeedbackLight():
-        return 'audio/tap_light.mp3';
-      case FeedbackMedium():
-        return 'audio/tap_medium.mp3';
-      case FeedbackHeavy():
-        return 'audio/tap_heavy.mp3';
-      case FeedbackSuccess():
-        return 'audio/success_chime.mp3';
-      case FeedbackError():
-        return 'audio/error_buzz.mp3';
-      case FeedbackWarning():
-        return 'audio/warning_tone.mp3';
-      case FeedbackSelection():
-        return null;
-    }
-  }
+  String? get audioAsset => null;
 }

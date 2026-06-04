@@ -14,6 +14,7 @@ import '../widgets/customer_sheet.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_mesh_background.dart';
 import '../widgets/order_submitting_overlay.dart';
+import '../widgets/liquid_glass_surface.dart';
 
 class OrderReviewScreen extends ConsumerStatefulWidget {
   final String tableId;
@@ -36,6 +37,10 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   }
 
   bool _submitted = false;
+
+  // OR2 fix: track the order ID for which KOT was already sent successfully.
+  // On retry after bill:generate failure, skip order:create/update + kot:send.
+  String? _kotSentOrderId;
 
   @override
   void dispose() {
@@ -70,6 +75,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     return cart
         .map((l) => <String, dynamic>{
               'item_id': l.item.id,
+              if (l.variationId != null) 'variation_id': l.variationId,
+              if (l.variationName != null) 'variation_name': l.variationName,
               'quantity': l.qty,
               'selected_options':
                   l.selectedOptions.map((o) => o.toJson()).toList(),
@@ -138,34 +145,49 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   Future<bool> _runOrderFlow({
     required bool generateBill,
     required bool collectPayment,
+    String quickSettleMode = 'cash',
   }) async {
     final cart = ref.read(cartProvider);
-    final items = _itemsPayload(cart);
     final socketService = ref.read(socketServiceProvider);
-    final fallbackOrderId = _activeOrderIdForTable();
 
-    final orderResponse = await _createOrUpdateOrder(
-      items: items,
-      notes: _notes.text,
-    );
-    if (orderResponse['kind'] == 'error') return false;
-    ref
-        .read(syncServiceProvider)
-        .applyOrderAck(orderResponse, includeHistory: true);
-    _rememberKotLabel(orderResponse);
+    String? orderId;
 
-    final orderId =
-        _orderIdFromResponse(orderResponse, fallback: fallbackOrderId);
-    if (orderId == null || orderId.isEmpty) return false;
+    // OR2 fix: if KOT was already sent for this order (previous attempt
+    // succeeded up to kot:send but bill:generate failed), skip order:create/
+    // update and kot:send entirely to avoid doubling items in kitchen.
+    if (_kotSentOrderId != null) {
+      orderId = _kotSentOrderId;
+    } else {
+      final items = _itemsPayload(cart);
+      final fallbackOrderId = _activeOrderIdForTable();
 
-    final kotResponse = await socketService.emitAck(
-      'kot:send',
-      <String, dynamic>{'order_id': orderId},
-    );
-    if (kotResponse['kind'] == 'error') return false;
-    ref
-        .read(syncServiceProvider)
-        .applyOrderAck(kotResponse, includeHistory: true);
+      final orderResponse = await _createOrUpdateOrder(
+        items: items,
+        notes: _notes.text,
+      );
+      if (orderResponse['kind'] == 'error') return false;
+      ref
+          .read(syncServiceProvider)
+          .applyOrderAck(orderResponse, includeHistory: true);
+      _rememberKotLabel(orderResponse);
+
+      orderId =
+          _orderIdFromResponse(orderResponse, fallback: fallbackOrderId);
+      if (orderId == null || orderId.isEmpty) return false;
+
+      final kotResponse = await socketService.emitAck(
+        'kot:send',
+        <String, dynamic>{'order_id': orderId},
+      );
+      if (kotResponse['kind'] == 'error') return false;
+      ref
+          .read(syncServiceProvider)
+          .applyOrderAck(kotResponse, includeHistory: true);
+
+      // Mark KOT as sent so retries skip order:create/update + kot:send.
+      _kotSentOrderId = orderId;
+    }
+
     if (!generateBill) return true;
 
     final billResponse = await socketService.emitAck(
@@ -194,7 +216,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       <String, dynamic>{
         'bill_id': billId,
         'payments': [
-          {'payment_mode': 'cash', 'amount': billTotal},
+          {'payment_mode': quickSettleMode, 'amount': billTotal},
         ],
       },
     );
@@ -213,6 +235,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   Future<void> _submitWithFlow({
     required bool generateBill,
     required bool collectPayment,
+    String quickSettleMode = 'cash',
   }) async {
     ref.read(feedbackServiceProvider).fire(const FeedbackHeavy());
     ref.read(orderNotesProvider.notifier).state = _notes.text;
@@ -221,6 +244,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     unawaited(_runOrderFlow(
       generateBill: generateBill,
       collectPayment: collectPayment,
+      quickSettleMode: quickSettleMode,
     ).then((ok) {
       if (!completer.isCompleted) completer.complete(ok);
     }));
@@ -229,6 +253,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     if (!mounted) return;
     if (ok) {
       _submitted = true;
+      _kotSentOrderId = null; // OR2: reset so next order starts fresh
       ref.read(cartProvider.notifier).clear();
       ref.read(orderNotesProvider.notifier).state = '';
       context.go('/order/${widget.tableId}/success');
@@ -248,11 +273,46 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     await _submitWithFlow(generateBill: true, collectPayment: false);
   }
 
-  /// Quick Settle: create → KOT → bill → cash payment, all in one.
+  /// Quick Settle: create → KOT → bill → pay, all in one.
+  /// Shows a payment mode picker before committing.
   Future<void> _quickSettle() async {
     final pinOk = await requirePinIfNeeded(context, ref, 'quick_settle');
     if (!pinOk || !mounted) return;
-    await _submitWithFlow(generateBill: true, collectPayment: true);
+
+    final mode = await _pickQuickSettleMode();
+    if (mode == null || !mounted) return;
+
+    await _submitWithFlow(
+        generateBill: true, collectPayment: true, quickSettleMode: mode);
+  }
+
+  Future<String?> _pickQuickSettleMode() {
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.paper,
+        shape:
+            const RoundedRectangleBorder(borderRadius: BorderRadius.all(AppRadii.lg)),
+        title: const Text('Payment Mode', style: AppTypography.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final entry in const {
+              'cash': (Icons.payments_outlined, 'Cash'),
+              'upi': (Icons.phone_android_outlined, 'UPI'),
+              'card': (Icons.credit_card_outlined, 'Card'),
+            }.entries)
+              ListTile(
+                leading: Icon(entry.value.$1, color: AppColors.ink70),
+                title: Text(entry.value.$2, style: AppTypography.bodyMd),
+                onTap: () => Navigator.of(ctx).pop(entry.key),
+                shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(AppRadii.sm)),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Undo a recently deleted cart line.
@@ -284,6 +344,32 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
             .map((t) => t.id)
             .firstOrNull ??
         widget.tableId;
+
+    // T1 fix: lock order_type toggle once a draft dine-in order exists for
+    // this table — switching types after items are sent would create a
+    // duplicate order on a different order_id.
+    final activeOrders = ref.watch(activeOrdersProvider);
+    final hasExistingOrder = tables.any(
+          (t) =>
+              t.serverId == widget.tableId &&
+              t.activeOrderId != null &&
+              t.activeOrderId!.isNotEmpty,
+        ) ||
+        activeOrders.any(
+          (o) =>
+              o['table_id']?.toString() == widget.tableId &&
+              o['status']?.toString() != 'paid' &&
+              o['status']?.toString() != 'cancelled',
+        );
+
+    // D1 fix: if another operator already generated a bill (activeBillCount > 0
+    // from socket broadcast), disable "KOT + Bill" and "Quick Settle" to
+    // prevent duplicate bill generation.
+    final activeBillCount = tables
+        .where((t) => t.serverId == widget.tableId)
+        .map((t) => t.activeBillCount)
+        .firstOrNull ?? 0;
+    final billAlreadyGenerated = activeBillCount > 0;
 
     return LiquidMeshBackground(
       child: Scaffold(
@@ -347,9 +433,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                   onPressed: () {
                                     final menu = ref.read(menuProvider);
                                     for (final line in lastOrder.lines) {
-                                      // Find the menu item by name match.
+                                      // Match by item ID; fall back to name if ID missing.
                                       final menuItem = menu
-                                          .where((m) => m.name == line.name)
+                                          .where((m) =>
+                                              line.itemId.isNotEmpty
+                                                  ? m.id == line.itemId
+                                                  : m.name == line.name)
                                           .firstOrNull;
                                       if (menuItem != null) {
                                         ref
@@ -727,13 +816,17 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                   child: Column(
                     children: [
                       // Dine-in / Takeaway toggle.
+                      // Locked once a draft order exists — changing type after
+                      // items are sent would create a duplicate order.
                       Row(
                         children: [
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setState(
-                                () => _orderType = _OrderType.dineIn,
-                              ),
+                              onTap: hasExistingOrder
+                                  ? null
+                                  : () => setState(
+                                        () => _orderType = _OrderType.dineIn,
+                                      ),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
                                 padding: const EdgeInsets.symmetric(
@@ -776,9 +869,11 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setState(
-                                () => _orderType = _OrderType.takeaway,
-                              ),
+                              onTap: hasExistingOrder
+                                  ? null
+                                  : () => setState(
+                                        () => _orderType = _OrderType.takeaway,
+                                      ),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
                                 padding: const EdgeInsets.symmetric(
@@ -837,7 +932,11 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                             child: LiquidSecondaryButton(
                               label: 'KOT + Bill',
                               leadingIcon: Icons.receipt_long,
-                              onPressed: _submitKotAndBill,
+                              // D1: disable if bill already generated from
+                              // another device — prevent duplicate billing.
+                              onPressed: billAlreadyGenerated
+                                  ? null
+                                  : _submitKotAndBill,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -845,11 +944,23 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                             child: LiquidSecondaryButton(
                               label: 'Quick Settle',
                               leadingIcon: Icons.payments_outlined,
-                              onPressed: _quickSettle,
+                              onPressed: billAlreadyGenerated
+                                  ? null
+                                  : _quickSettle,
                             ),
                           ),
                         ],
                       ),
+                      if (billAlreadyGenerated) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Bill already generated — go back to collect payment',
+                          style: AppTypography.caption.copyWith(
+                            color: AppColors.ink50,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -994,15 +1105,16 @@ class _StepState extends State<_Step> {
           width: 44,
           height: 44,
           child: Center(
-            child: Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.ink10),
+            child: LiquidGlassSurface(
+              borderRadius: BorderRadius.circular(14),
+              blur: 14,
+              thickness: 6,
+              child: SizedBox(
+                width: 28,
+                height: 28,
+                child: Center(
+                    child: Icon(widget.icon, size: 14, color: AppColors.ink)),
               ),
-              child: Icon(widget.icon, size: 14, color: AppColors.ink),
             ),
           ),
         ),

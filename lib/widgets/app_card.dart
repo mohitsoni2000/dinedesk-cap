@@ -24,20 +24,35 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final box = ClipRRect(
-      borderRadius: borderRadius,
+    final box = Container(
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        boxShadow: shadow ?? AppShadows.card,
+      ),
       child: Container(
-        padding: padding,
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: background,
           borderRadius: borderRadius,
-          border: border ?? Border.all(color: AppColors.ink10, width: 0.5),
-          boxShadow: shadow ?? AppShadows.card,
         ),
-        child: child,
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: borderRadius,
+            border: border ?? Border.all(color: AppColors.ink10, width: 0.5),
+          ),
+          child: child,
+        ),
       ),
     );
     if (onTap == null) return box;
-    return GestureDetector(onTap: onTap, child: box);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: borderRadius,
+        onTap: onTap,
+        child: box,
+      ),
+    );
   }
 }

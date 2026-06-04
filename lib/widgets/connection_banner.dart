@@ -69,7 +69,18 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
   Widget build(BuildContext context) {
     final conn = ref.watch(connectionProvider);
 
-    // React to connection state transitions via ref.listen (not in build).
+    if (!conn.online && _ticker == null && _remaining > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            ref.read(connectionProvider).online ||
+            _ticker != null) {
+          return;
+        }
+        _startTimer();
+      });
+    }
+
+    // React to connection state transitions.
     ref.listen<ConnectionStatus>(connectionProvider, (prev, next) {
       if (prev != null && prev.online && !next.online) {
         _startTimer();

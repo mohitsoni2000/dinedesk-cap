@@ -25,7 +25,8 @@ class QrScanScreen extends ConsumerStatefulWidget {
   ConsumerState<QrScanScreen> createState() => _QrScanScreenState();
 }
 
-class _QrScanScreenState extends ConsumerState<QrScanScreen> {
+class _QrScanScreenState extends ConsumerState<QrScanScreen>
+    with SingleTickerProviderStateMixin {
   final MobileScannerController _controller = MobileScannerController(
     detectionSpeed: DetectionSpeed.noDuplicates,
     facing: CameraFacing.back,
@@ -35,9 +36,24 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
   bool _processing = false;
   _ScanError? _error;
 
+  // Entrance animation
+  late final AnimationController _entranceCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 700),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _entranceCtrl.forward();
+    });
+  }
+
   @override
   void dispose() {
     _controller.dispose();
+    _entranceCtrl.dispose();
     super.dispose();
   }
 
@@ -52,7 +68,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
       return;
     }
 
-    // Parse host, port, token from QR URI.
     final uri = Uri.parse(raw);
     final host = uri.queryParameters['host'];
     final portStr = uri.queryParameters['port'];
@@ -75,7 +90,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
     });
     ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
 
-    // Save pairing info then navigate.
     SessionService()
         .savePairing(PairingInfo(host: host, port: port, token: token))
         .then((_) {
@@ -92,7 +106,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
     });
   }
 
-  // Debug bypass — tap top-right corner to simulate a successful scan without a real QR.
   void _demoScan() {
     if (_processing) return;
     setState(() {
@@ -101,7 +114,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
     });
     ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
 
-    // Save test pairing info for local development.
     SessionService()
         .savePairing(
       const PairingInfo(host: 'localhost', port: 8080, token: 'demo-token'),
@@ -113,7 +125,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
   }
 
   String _errorLabel(_ScanError err) => switch (err) {
-        _ScanError.invalid => 'Not a Restro pairing QR',
+        _ScanError.invalid => 'Not a valid Restro pairing QR',
         _ScanError.expired => 'QR expired — ask for a fresh one',
         _ScanError.used => 'QR already used — get a new one',
       };
@@ -124,7 +136,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
       backgroundColor: AppColors.ink,
       body: Stack(
         children: [
-          // Camera fills the screen.
+          // Camera fills the screen
           Positioned.fill(
             child: MobileScanner(
               controller: _controller,
@@ -138,8 +150,8 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(Icons.no_photography_outlined,
-                          color: Colors.white70, size: 48),
-                      const SizedBox(height: 16),
+                          color: Colors.white54, size: 52),
+                      const SizedBox(height: 20),
                       Text('Camera unavailable',
                           style: AppTypography.title
                               .copyWith(color: Colors.white)),
@@ -148,7 +160,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
                           'Allow camera access in Settings to pair this device.',
                           textAlign: TextAlign.center,
                           style: AppTypography.caption.copyWith(
-                              color: Colors.white.withValues(alpha: 0.7))),
+                              color: Colors.white.withValues(alpha: 0.6))),
                     ],
                   ),
                 ),
@@ -156,115 +168,215 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
             ),
           ),
 
-          // Dimming layer + scan target cutout.
-          const Positioned.fill(child: _ScanTargetOverlay()),
-
-          // Drifting mesh tint behind chrome (subtle).
-          const IgnorePointer(
-            child: Opacity(
-              opacity: 0.18,
-              child: LiquidMeshBackground(dark: true, child: SizedBox.shrink()),
-            ),
-          ),
-
-          // Top chrome — title, torch, debug bypass (kDebugMode only).
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Row(
-                children: [
-                  Hero(
-                    tag: HeroTags.appLogo,
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [AppColors.terra400, AppColors.terra600],
-                        ),
-                        borderRadius: BorderRadius.all(Radius.circular(8)),
-                        boxShadow: AppShadows.terraGlow,
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'R',
-                          style: TextStyle(
-                            fontFamily: AppTypography.cormorant,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
+          // Cinematic vignette over camera
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.center,
+                    radius: 0.85,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.68),
+                    ],
+                    stops: const [0.45, 1.0],
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Pair Device',
-                            style: AppTypography.displayMd
-                                .copyWith(color: Colors.white)),
-                        const SizedBox(height: 4),
-                        Text('Scan the QR shown on the admin desktop',
-                            style: AppTypography.caption.copyWith(
-                                color: Colors.white.withValues(alpha: 0.7))),
-                      ],
-                    ),
-                  ),
-                  _GlassIcon(
-                    icon: _torchOn ? Icons.flash_on : Icons.flash_off,
-                    onTap: () {
-                      _controller.toggleTorch();
-                      setState(() => _torchOn = !_torchOn);
-                    },
-                  ),
-                  if (kDebugMode) ...[
-                    const SizedBox(width: 8),
-                    _GlassIcon(
-                        icon: Icons.touch_app_outlined, onTap: _demoScan),
-                  ],
-                ],
+                ),
               ),
             ),
           ),
 
-          // Bottom chrome — help link + inline error toast.
+          // Animated scan target overlay with scan line
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _entranceCtrl,
+              builder: (_, child) => Opacity(
+                opacity: _entranceCtrl.value,
+                child: child,
+              ),
+              child: _ScanTargetOverlay(
+                processing: _processing,
+                hasError: _error != null,
+              ),
+            ),
+          ),
+
+          // Subtle mesh tint behind chrome
+          const IgnorePointer(
+            child: Opacity(
+              opacity: 0.12,
+              child: LiquidMeshBackground(dark: true, child: SizedBox.shrink()),
+            ),
+          ),
+
+          // Top chrome — logo, title, torch
+          SafeArea(
+            child: AnimatedBuilder(
+              animation: _entranceCtrl,
+              builder: (_, child) => Opacity(
+                opacity: _entranceCtrl.value,
+                child: Transform.translate(
+                  offset: Offset(0, -16 * (1 - _entranceCtrl.value)),
+                  child: child,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Row(
+                  children: [
+                    Hero(
+                      tag: HeroTags.appLogo,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF2A2622),
+                          borderRadius: BorderRadius.all(Radius.circular(10)),
+                          boxShadow: AppShadows.terraGlow,
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Image.asset(
+                            'assets/images/appicon_cream.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Pair Device',
+                            style: TextStyle(
+                              fontFamily: AppTypography.cormorant,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 22,
+                              color: Colors.white,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          Text(
+                            'Scan the QR shown on admin desktop',
+                            style: AppTypography.caption.copyWith(
+                              color: Colors.white.withValues(alpha: 0.55),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _GlassIcon(
+                      icon: _torchOn
+                          ? Icons.flash_on_rounded
+                          : Icons.flash_off_rounded,
+                      active: _torchOn,
+                      onTap: () {
+                        _controller.toggleTorch();
+                        setState(() => _torchOn = !_torchOn);
+                      },
+                    ),
+                    if (kDebugMode) ...[
+                      const SizedBox(width: 8),
+                      _GlassIcon(
+                          icon: Icons.touch_app_outlined, onTap: _demoScan),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Processing overlay — shown while navigating
+          if (_processing)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.35),
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation(AppColors.terra400),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          'Connecting…',
+                          style: AppTypography.caption
+                              .copyWith(color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // Bottom chrome — error toast + help
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_error != null)
-                      _ErrorToast(label: _errorLabel(_error!)),
-                    if (_error != null) const SizedBox(height: 12),
-                    LiquidGlassSurface(
-                      borderRadius: const BorderRadius.all(AppRadii.md),
-                      blur: 24,
-                      thickness: 12,
-                      tint: Colors.white.withValues(alpha: 0.06),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                      onTap: () => HelpSheet.show(context),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.help_outline,
-                              color: Colors.white, size: 18),
-                          const SizedBox(width: 8),
-                          Text('Need help?',
-                              style: AppTypography.bodyMd
-                                  .copyWith(color: Colors.white)),
-                        ],
+              child: AnimatedBuilder(
+                animation: _entranceCtrl,
+                builder: (_, child) => Opacity(
+                  opacity: _entranceCtrl.value,
+                  child: Transform.translate(
+                    offset: Offset(0, 20 * (1 - _entranceCtrl.value)),
+                    child: child,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Error toast
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 250),
+                        child: _error != null
+                            ? Padding(
+                                key: const ValueKey('err'),
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: _ErrorToast(label: _errorLabel(_error!)),
+                              )
+                            : const SizedBox(key: ValueKey('none')),
                       ),
-                    ),
-                  ],
+                      // Help button
+                      LiquidGlassSurface(
+                        borderRadius: const BorderRadius.all(AppRadii.md),
+                        blur: 24,
+                        thickness: 12,
+                        tint: Colors.white.withValues(alpha: 0.06),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 12),
+                        onTap: () => HelpSheet.show(context),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.help_outline_rounded,
+                                color: Colors.white, size: 16),
+                            const SizedBox(width: 8),
+                            Text('Need help pairing?',
+                                style: AppTypography.caption
+                                    .copyWith(color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -275,20 +387,51 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
   }
 }
 
-class _ScanTargetOverlay extends StatelessWidget {
-  const _ScanTargetOverlay();
+// ────────────────────────────────────────────────────────────────────────────
+// Animated scan target with scan line + animated brackets
+
+class _ScanTargetOverlay extends StatefulWidget {
+  final bool processing;
+  final bool hasError;
+  const _ScanTargetOverlay({this.processing = false, this.hasError = false});
+
+  @override
+  State<_ScanTargetOverlay> createState() => _ScanTargetOverlayState();
+}
+
+class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _scanCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _scanCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (_, c) {
       final size = c.maxWidth * 0.66;
+      final centerY = c.maxHeight / 2;
+      final centerX = c.maxWidth / 2;
+      final frameTop = centerY - size / 2;
+
+      final bracketColor = widget.hasError
+          ? AppColors.danger
+          : widget.processing
+              ? AppColors.success
+              : AppColors.terra400;
+
       return Stack(
-        alignment: Alignment.center,
         children: [
-          // Dim everything outside the target.
+          // Dark overlay with cutout
           ColorFiltered(
             colorFilter: ColorFilter.mode(
-              Colors.black.withValues(alpha: 0.55),
+              Colors.black.withValues(alpha: 0.60),
               BlendMode.srcOut,
             ),
             child: Stack(
@@ -305,18 +448,108 @@ class _ScanTargetOverlay extends StatelessWidget {
                     height: size,
                     decoration: BoxDecoration(
                       color: Colors.black,
-                      borderRadius: BorderRadius.circular(28),
+                      borderRadius: BorderRadius.circular(24),
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          // Corner brackets.
-          SizedBox(
-            width: size,
-            height: size,
-            child: CustomPaint(painter: _BracketPainter()),
+
+          // Scan line — animated orange sweep
+          if (!widget.processing && !widget.hasError)
+            AnimatedBuilder(
+              animation: _scanCtrl,
+              builder: (_, __) {
+                final progress = Curves.easeInOut.transform(_scanCtrl.value);
+                final lineY = frameTop + 20 + (size - 40) * progress;
+                return Positioned(
+                  left: centerX - size / 2 + 20,
+                  top: lineY,
+                  child: Container(
+                    width: size - 40,
+                    height: 2,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.transparent,
+                          AppColors.terra400.withValues(alpha: 0.9),
+                          AppColors.terra400,
+                          AppColors.terra400.withValues(alpha: 0.9),
+                          Colors.transparent,
+                        ],
+                        stops: const [0.0, 0.2, 0.5, 0.8, 1.0],
+                      ),
+                      borderRadius: BorderRadius.circular(1),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.terra400.withValues(alpha: 0.6),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+
+          // Success glow when processing
+          if (widget.processing)
+            Center(
+              child: Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: AppColors.success.withValues(alpha: 0.5),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.success.withValues(alpha: 0.25),
+                      blurRadius: 24,
+                      spreadRadius: 4,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Corner brackets with animated color
+          Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: size,
+              height: size,
+              child: CustomPaint(
+                painter: _BracketPainter(color: bracketColor),
+              ),
+            ),
+          ),
+
+          // Center hint text below frame
+          Positioned(
+            left: 0,
+            right: 0,
+            top: frameTop + size + 20,
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: widget.hasError
+                    ? const SizedBox.shrink()
+                    : widget.processing
+                        ? const SizedBox.shrink()
+                        : Text(
+                            'Align QR within the frame',
+                            style: AppTypography.caption.copyWith(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+              ),
+            ),
           ),
         ],
       );
@@ -325,49 +558,88 @@ class _ScanTargetOverlay extends StatelessWidget {
 }
 
 class _BracketPainter extends CustomPainter {
+  final Color color;
+  _BracketPainter({required this.color});
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppColors.terra400
+      ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
+      ..strokeWidth = 3.5
       ..strokeCap = StrokeCap.round;
 
-    const arm = 26.0;
+    const arm = 28.0;
+    const r = 6.0; // inner corner radius
     final w = size.width, h = size.height;
 
     // top-left
-    canvas.drawLine(const Offset(0, arm), const Offset(0, 0), paint);
-    canvas.drawLine(const Offset(0, 0), const Offset(arm, 0), paint);
+    canvas.drawLine(Offset(0, arm), Offset(0, r), paint);
+    canvas.drawArc(
+        Rect.fromLTWH(0, 0, r * 2, r * 2), 3.14159, -1.5708, false, paint);
+    canvas.drawLine(Offset(r, 0), Offset(arm, 0), paint);
+
     // top-right
-    canvas.drawLine(Offset(w - arm, 0), Offset(w, 0), paint);
-    canvas.drawLine(Offset(w, 0), Offset(w, arm), paint);
+    canvas.drawLine(Offset(w - arm, 0), Offset(w - r, 0), paint);
+    canvas.drawArc(
+        Rect.fromLTWH(w - r * 2, 0, r * 2, r * 2), 4.7124, -1.5708, false,
+        paint);
+    canvas.drawLine(Offset(w, r), Offset(w, arm), paint);
+
     // bottom-left
-    canvas.drawLine(Offset(0, h - arm), Offset(0, h), paint);
-    canvas.drawLine(Offset(0, h), Offset(arm, h), paint);
+    canvas.drawLine(Offset(0, h - arm), Offset(0, h - r), paint);
+    canvas.drawArc(
+        Rect.fromLTWH(0, h - r * 2, r * 2, r * 2), 1.5708, 1.5708, false,
+        paint);
+    canvas.drawLine(Offset(r, h), Offset(arm, h), paint);
+
     // bottom-right
-    canvas.drawLine(Offset(w - arm, h), Offset(w, h), paint);
-    canvas.drawLine(Offset(w, h), Offset(w, h - arm), paint);
+    canvas.drawLine(Offset(w - arm, h), Offset(w - r, h), paint);
+    canvas.drawArc(
+        Rect.fromLTWH(w - r * 2, h - r * 2, r * 2, r * 2), 0, 1.5708, false,
+        paint);
+    canvas.drawLine(Offset(w, h - r), Offset(w, h - arm), paint);
   }
 
   @override
-  bool shouldRepaint(_) => false;
+  bool shouldRepaint(covariant _BracketPainter old) => old.color != color;
 }
 
 class _GlassIcon extends StatelessWidget {
   final IconData icon;
+  final bool active;
   final VoidCallback onTap;
-  const _GlassIcon({required this.icon, required this.onTap});
+  const _GlassIcon(
+      {required this.icon, required this.onTap, this.active = false});
+
   @override
   Widget build(BuildContext context) {
-    return LiquidGlassSurface(
-      borderRadius: const BorderRadius.all(AppRadii.sm),
-      blur: 22,
-      thickness: 10,
-      tint: Colors.white.withValues(alpha: 0.08),
-      padding: const EdgeInsets.all(12),
-      onTap: onTap,
-      child: Icon(icon, color: Colors.white, size: 20),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      decoration: BoxDecoration(
+        borderRadius: const BorderRadius.all(AppRadii.sm),
+        boxShadow: active
+            ? [
+                BoxShadow(
+                  color: AppColors.amber.withValues(alpha: 0.35),
+                  blurRadius: 12,
+                  spreadRadius: 2,
+                ),
+              ]
+            : null,
+      ),
+      child: LiquidGlassSurface(
+        borderRadius: const BorderRadius.all(AppRadii.sm),
+        blur: 22,
+        thickness: 10,
+        tint: active
+            ? AppColors.amber.withValues(alpha: 0.22)
+            : Colors.white.withValues(alpha: 0.08),
+        padding: const EdgeInsets.all(11),
+        onTap: onTap,
+        child: Icon(icon,
+            color: active ? AppColors.amber : Colors.white, size: 20),
+      ),
     );
   }
 }
@@ -382,16 +654,17 @@ class _ErrorToast extends StatelessWidget {
       borderRadius: const BorderRadius.all(AppRadii.md),
       blur: 24,
       thickness: 12,
-      tint: AppColors.danger.withValues(alpha: 0.18),
+      tint: AppColors.danger.withValues(alpha: 0.22),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline, color: Colors.white, size: 18),
+          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 16),
           const SizedBox(width: 8),
           Flexible(
             child: Text(label,
-                style: AppTypography.bodyMd.copyWith(color: Colors.white)),
+                style: AppTypography.caption
+                    .copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
           ),
         ],
       ),

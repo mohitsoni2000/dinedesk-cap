@@ -117,8 +117,8 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
         backgroundColor: Colors.transparent,
         body: SafeArea(
           child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
               child: LiquidGlassSurface(
                 borderRadius: const BorderRadius.all(AppRadii.lg),
                 blur: 30,

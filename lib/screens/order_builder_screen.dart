@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../models/server_models.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
@@ -17,6 +18,10 @@ import '../widgets/app_card.dart';
 import '../widgets/item_detail_sheet.dart';
 import '../widgets/kot_history_sheet.dart';
 import '../widgets/package_sheet.dart';
+import '../widgets/liquid_glass_surface.dart';
+import '../widgets/payment_sheet.dart';
+import '../widgets/table_link_sheet.dart';
+import '../widgets/table_shift_sheet.dart';
 
 class OrderBuilderScreen extends ConsumerStatefulWidget {
   final String tableId;
@@ -29,6 +34,65 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   String _query = '';
   bool _searchOpen = false;
   String? _activeSection;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-show payment sheet if the table already has active bills (billed state).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeAutoShowPayment();
+    });
+  }
+
+  void _maybeAutoShowPayment() {
+    final tables = ref.read(tablesProvider);
+    final table =
+        tables.where((t) => t.serverId == widget.tableId).firstOrNull;
+    if (table == null || table.activeBillCount <= 0) return;
+
+    final activeOrders = ref.read(activeOrdersProvider);
+    final activeOrderId = table.activeOrderId;
+    final orderMap = activeOrders.where((o) {
+      final id = o['id']?.toString();
+      final tableId = o['table_id']?.toString();
+      return (activeOrderId != null && id == activeOrderId) ||
+          tableId == widget.tableId;
+    }).firstOrNull;
+    if (orderMap == null) return;
+
+    final billsRaw = orderMap['bills'];
+    if (billsRaw is! List || billsRaw.isEmpty) return;
+
+    final bills = billsRaw
+        .whereType<Map>()
+        .map((b) => BillInfo.fromMap(Map<String, dynamic>.from(b)))
+        .where((b) => b.id.isNotEmpty)
+        .toList();
+    if (bills.isEmpty) return;
+
+    PaymentSheet.show(context, bills: bills);
+  }
+
+  ServerOrder? _runningOrder(List<RestaurantTable> tables) {
+    final table = tables.where((t) => t.serverId == widget.tableId).firstOrNull;
+    final activeOrderId = table?.activeOrderId;
+    final raw = ref.read(activeOrdersProvider).where((order) {
+      final id = order['id']?.toString();
+      final tableId = order['table_id']?.toString();
+      return (activeOrderId != null && id == activeOrderId) ||
+          tableId == widget.tableId;
+    }).firstOrNull;
+    if (raw == null) return null;
+    return ServerOrder.fromMap(Map<String, dynamic>.from(raw));
+  }
+
+  void _leaveOrder() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/tables');
+    }
+  }
 
   Future<bool> _confirmDiscard() async {
     final cart = ref.read(cartProvider);
@@ -78,6 +142,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
     // Resolve display name from serverId.
     final tables = ref.watch(tablesProvider);
+    final runningOrder = _runningOrder(tables);
     final tableDisplay = tables
             .where((t) => t.serverId == widget.tableId)
             .map((t) => t.id)
@@ -92,7 +157,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
         if (!context.mounted) return;
         if (ok) {
           ref.read(cartProvider.notifier).clear();
-          context.pop();
+          _leaveOrder();
         }
       },
       child: LiquidMeshBackground(
@@ -110,31 +175,25 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       if (!context.mounted) return;
                       if (ok) {
                         ref.read(cartProvider.notifier).clear();
-                        context.pop();
+                        _leaveOrder();
                       }
                     },
                   ),
                   actions: [
-                    Hero(
-                      tag: HeroTags.tableCard(widget.tableId),
-                      flightShuttleBuilder: (_, __, ___, ____, _____) =>
-                          const SizedBox.shrink(),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppColors.tableMineBg,
-                            borderRadius: const BorderRadius.all(AppRadii.xs),
-                            border: Border.all(
-                                color:
-                                    AppColors.terra400.withValues(alpha: 0.4)),
-                          ),
-                          child: Text(widget.tableId,
-                              style: AppTypography.caption
-                                  .copyWith(fontWeight: FontWeight.w700)),
+                    Material(
+                      color: Colors.transparent,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AppColors.tableMineBg,
+                          borderRadius: const BorderRadius.all(AppRadii.xs),
+                          border: Border.all(
+                              color: AppColors.terra400.withValues(alpha: 0.4)),
                         ),
+                        child: Text(tableDisplay,
+                            style: AppTypography.caption
+                                .copyWith(fontWeight: FontWeight.w700)),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -153,6 +212,47 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       onPressed: () =>
                           KotHistorySheet.show(context, widget.tableId),
                     ),
+                    Builder(builder: (_) {
+                      final tables = ref.watch(tablesProvider);
+                      final table = tables
+                          .where((t) => t.serverId == widget.tableId)
+                          .firstOrNull;
+                      if (table == null) return const SizedBox.shrink();
+                      if (table.state != TableState.mine &&
+                          table.state != TableState.other) {
+                        return const SizedBox.shrink();
+                      }
+                      return IconButton(
+                        icon: const Icon(Icons.swap_horiz,
+                            color: AppColors.ink70),
+                        tooltip: 'Shift Table',
+                        onPressed: () =>
+                            TableShiftSheet.show(context, table),
+                      );
+                    }),
+                    Builder(builder: (_) {
+                      final tables = ref.watch(tablesProvider);
+                      final table = tables
+                          .where((t) => t.serverId == widget.tableId)
+                          .firstOrNull;
+                      if (table == null) return const SizedBox.shrink();
+                      if (table.state != TableState.mine &&
+                          table.state != TableState.other) {
+                        return const SizedBox.shrink();
+                      }
+                      final linkGroups = ref.watch(linkGroupsProvider);
+                      final isLinked = linkGroups.values
+                          .any((ids) => ids.contains(widget.tableId));
+                      return IconButton(
+                        icon: Icon(
+                          isLinked ? Icons.link_off : Icons.link,
+                          color: isLinked ? AppColors.info : AppColors.ink70,
+                        ),
+                        tooltip: isLinked ? 'Unlink Table' : 'Link Table',
+                        onPressed: () =>
+                            TableLinkSheet.show(context, table),
+                      );
+                    }),
                     // Packages — feature-flagged.
                     Builder(builder: (_) {
                       final flags = ref.watch(flagsProvider);
@@ -174,7 +274,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           content: Text('Draft saved — resume from Tables'),
                           backgroundColor: AppColors.ink,
                         ));
-                        context.pop();
+                        _leaveOrder();
                       },
                     ),
                   ],
@@ -182,13 +282,11 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                 if (_searchOpen)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.55),
-                        borderRadius: const BorderRadius.all(AppRadii.sm),
-                        border: Border.all(color: AppColors.ink10),
-                      ),
+                    child: LiquidGlassSurface(
+                      borderRadius: const BorderRadius.all(AppRadii.sm),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
+                      blur: 20,
+                      thickness: 10,
                       child: TextField(
                         autofocus: true,
                         decoration: const InputDecoration(
@@ -236,6 +334,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                   ),
                 ),
                 // Fast-add bar — pinned + auto trending items from server.
+                if (runningOrder != null && runningOrder.itemCount > 0)
+                  _RunningOrderCard(order: runningOrder),
                 Builder(builder: (context) {
                   final pinned = ref.watch(fastAddPinnedProvider);
                   final auto = ref.watch(fastAddAutoProvider);
@@ -605,6 +705,88 @@ class _SectionChip extends StatelessWidget {
                 color: selected ? Colors.white : AppColors.ink,
                 fontWeight: FontWeight.w600,
               )),
+        ),
+      ),
+    );
+  }
+}
+
+class _RunningOrderCard extends StatelessWidget {
+  final ServerOrder order;
+  const _RunningOrderCard({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: AppCard(
+        background: AppColors.paper.withValues(alpha: 0.92),
+        border: Border.all(color: AppColors.terra200),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.restaurant_menu,
+                    size: 16, color: AppColors.terra600),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Running order',
+                    style: AppTypography.bodyMd
+                        .copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                Text(
+                  formatRupeesCompact(order.total),
+                  style: AppTypography.title,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (order.items.isEmpty)
+              Text(
+                '${order.itemCount} ${order.itemCount == 1 ? "item" : "items"} already sent',
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.ink70,
+                  fontWeight: FontWeight.w600,
+                ),
+              )
+            else ...[
+              for (final item in order.items.take(4))
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      Text('${item.quantity}x',
+                          style: AppTypography.caption
+                              .copyWith(fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          item.itemName,
+                          style: AppTypography.caption,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        formatRupeesCompact(item.totalPrice),
+                        style: AppTypography.caption,
+                      ),
+                    ],
+                  ),
+                ),
+              if (order.items.length > 4) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '+${order.items.length - 4} more items',
+                  style: AppTypography.micro,
+                ),
+              ],
+            ],
+          ],
         ),
       ),
     );

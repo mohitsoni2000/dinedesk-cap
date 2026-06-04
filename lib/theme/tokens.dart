@@ -173,4 +173,13 @@ class AppShadows {
     BoxShadow(color: Color(0x2DE05D38), blurRadius: 6, offset: Offset(0, 2)),
     BoxShadow(color: Color(0x52E05D38), blurRadius: 20, offset: Offset(0, 8)),
   ];
+
+  /// Shadow for glass surfaces — softer, more diffuse than card shadow.
+  /// Glass floats above content, needs a deeper ambient shadow.
+  static const List<BoxShadow> glass = [
+    BoxShadow(color: Color(0x08140E08), blurRadius: 1, offset: Offset(0, 0)),
+    BoxShadow(color: Color(0x0A140E08), blurRadius: 8, offset: Offset(0, 3)),
+    BoxShadow(color: Color(0x12140E08), blurRadius: 28, offset: Offset(0, 14)),
+    BoxShadow(color: Color(0x0A140E08), blurRadius: 56, offset: Offset(0, 28)),
+  ];
 }

@@ -288,13 +288,11 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
               Text('VALUE',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 8),
-              Container(
+              LiquidGlassSurface(
+                borderRadius: const BorderRadius.all(AppRadii.sm),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.paper,
-                  borderRadius: const BorderRadius.all(AppRadii.sm),
-                  border: Border.all(color: AppColors.ink10),
-                ),
+                blur: 18,
+                thickness: 8,
                 child: TextField(
                   controller: _valueController,
                   keyboardType:
@@ -363,13 +361,11 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
               Text('LABEL (OPTIONAL)',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 8),
-              Container(
+              LiquidGlassSurface(
+                borderRadius: const BorderRadius.all(AppRadii.sm),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.paper,
-                  borderRadius: const BorderRadius.all(AppRadii.sm),
-                  border: Border.all(color: AppColors.ink10),
-                ),
+                blur: 18,
+                thickness: 8,
                 child: TextField(
                   controller: _labelController,
                   style: AppTypography.bodyMd,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../motion/motion.dart';
+import 'liquid_chrome.dart';
 
 class SendKotButton extends ConsumerStatefulWidget {
   const SendKotButton({
@@ -49,17 +50,23 @@ class _SendKotButtonState extends ConsumerState<SendKotButton> {
 
   @override
   Widget build(BuildContext context) {
-    return RiveButton(
-      assetPath: 'assets/rive/send_kot_button.riv',
-      stateMachineName: 'Main',
-      phase: _phase,
-      onTap: _onTap,
-      semanticLabel: switch (_phase) {
-        RiveButtonIdle() => 'Send to kitchen',
-        RiveButtonLoading() => 'Sending to kitchen',
-        RiveButtonSuccess() => 'Sent to kitchen',
-        RiveButtonError() => 'Retry send to kitchen',
+    final label = switch (_phase) {
+      RiveButtonIdle() => 'Send KOT',
+      RiveButtonLoading() => 'Sending...',
+      RiveButtonSuccess() => 'Sent',
+      RiveButtonError() => 'Retry KOT',
+    };
+    return LiquidPrimaryButton(
+      label: label,
+      leadingIcon: switch (_phase) {
+        RiveButtonSuccess() => Icons.check,
+        RiveButtonError() => Icons.refresh,
+        _ => Icons.local_fire_department_outlined,
       },
+      onPressed: _phase is RiveButtonLoading || _phase is RiveButtonSuccess
+          ? null
+          : _onTap,
+      fullWidth: true,
     );
   }
 }

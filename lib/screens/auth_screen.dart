@@ -23,10 +23,30 @@ class AuthScreen extends ConsumerStatefulWidget {
   ConsumerState<AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreenState extends ConsumerState<AuthScreen> {
+class _AuthScreenState extends ConsumerState<AuthScreen>
+    with SingleTickerProviderStateMixin {
   final List<String> _pin = [];
   String? _error;
   bool _submitting = false;
+
+  // Shake animation controller for wrong PIN
+  late final AnimationController _shakeCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 480),
+  );
+  late final Animation<double> _shakeAnim = TweenSequence([
+    TweenSequenceItem(tween: Tween(begin: 0.0, end: -12.0), weight: 1),
+    TweenSequenceItem(tween: Tween(begin: -12.0, end: 12.0), weight: 2),
+    TweenSequenceItem(tween: Tween(begin: 12.0, end: -8.0), weight: 2),
+    TweenSequenceItem(tween: Tween(begin: -8.0, end: 8.0), weight: 2),
+    TweenSequenceItem(tween: Tween(begin: 8.0, end: 0.0), weight: 1),
+  ]).animate(CurvedAnimation(parent: _shakeCtrl, curve: Curves.easeInOut));
+
+  @override
+  void dispose() {
+    _shakeCtrl.dispose();
+    super.dispose();
+  }
 
   void _press(String key) {
     if (_submitting) return;
@@ -56,7 +76,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
 
     final pin = _pin.join();
-    debugPrint('[Auth] Submitting PIN (${'*' * pin.length})...');
     final socketService = ref.read(socketServiceProvider);
     final syncService = ref.read(syncServiceProvider);
 
@@ -64,9 +83,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       pin,
       onVerified: (response) {
         if (!mounted) return;
-        debugPrint('[Auth] ✓ PIN verified — applying initial sync');
         ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
-        // Apply initial sync data from the verify response.
         final syncRaw = response['sync'];
         final syncData =
             (syncRaw is Map) ? Map<String, dynamic>.from(syncRaw) : response;
@@ -74,21 +91,15 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         syncService.unregisterListeners();
         syncService.registerListeners();
 
-        // Set operator info if provided.
         final opData = response['operator'];
         if (opData is Map) {
           final om = Map<String, dynamic>.from(opData);
-          final opName = om['name']?.toString() ?? 'Operator';
-          final opRole = om['role']?.toString() ?? 'Waiter';
-          debugPrint('[Auth] Operator: $opName ($opRole)');
           ref.read(operatorProvider.notifier).state = Operator(
-            name: opName,
-            role: opRole,
+            name: om['name']?.toString() ?? 'Operator',
+            role: om['role']?.toString() ?? 'Waiter',
             shift: om['shift']?.toString() ?? 'Day',
             username: om['id']?.toString() ?? om['username']?.toString() ?? '',
           );
-        } else {
-          debugPrint('[Auth] ⚠ No operator data in response');
         }
 
         ref.read(connectionProvider.notifier).state = ConnectionStatus(
@@ -96,18 +107,17 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
         );
         ref.read(isAuthenticatedProvider.notifier).state = true;
-        debugPrint('[Auth] → Navigating to /tables');
         context.go('/tables');
       },
       onRejected: (error) {
         if (!mounted) return;
-        debugPrint('[Auth] ✗ PIN rejected: $error');
         ref.read(feedbackServiceProvider).fire(const FeedbackError());
         setState(() {
           _submitting = false;
           _error = error;
           _pin.clear();
         });
+        _shakeCtrl.forward(from: 0);
       },
     );
   }
@@ -154,125 +164,229 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           child: CustomScrollView(
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.all(AppSpacing.xl),
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.lg),
                 sliver: SliverFillRemaining(
                   hasScrollBody: false,
                   child: Column(
                     children: [
-                      // Restaurant header — confirms successful pairing.
+                      // Paired restaurant badge — top strip
                       LiquidGlassSurface(
                         borderRadius: const BorderRadius.all(AppRadii.md),
-                        padding: const EdgeInsets.all(14),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 11),
                         child: Row(
                           children: [
                             Container(
-                              width: 36,
-                              height: 36,
+                              width: 32,
+                              height: 32,
                               decoration: BoxDecoration(
-                                color:
-                                    AppColors.success.withValues(alpha: 0.16),
+                                color: AppColors.success.withValues(alpha: 0.14),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.check_rounded,
-                                  color: AppColors.success, size: 20),
+                              child: const Icon(Icons.wifi_rounded,
+                                  color: AppColors.success, size: 16),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Paired · $restaurantName',
+                                  Text(restaurantName,
                                       style: AppTypography.bodyMd.copyWith(
-                                          fontWeight: FontWeight.w600),
+                                          fontWeight: FontWeight.w700),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis),
-                                  Text(deviceLabel,
-                                      style: AppTypography.caption,
+                                  Text('Paired · $deviceLabel',
+                                      style: AppTypography.caption.copyWith(
+                                          color: AppColors.success),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis),
                                 ],
                               ),
                             ),
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: AppColors.success,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      const Spacer(),
-                      const Text('Welcome back',
-                          style: AppTypography.displayMd),
-                      const SizedBox(height: 4),
-                      const Text('Sign in to start your shift',
-                          style: AppTypography.caption),
-                      const SizedBox(height: 28),
 
-                      // PIN dots — operator identified by JWT token, only PIN needed.
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(4, (i) {
-                          final filled = i < _pin.length;
-                          return SpringBuilder(
-                            to: filled ? 1.0 : 0.0,
-                            spring: RestroSprings.snappy,
-                            builder: (BuildContext _, double t, Widget? __) {
-                              return Container(
-                                margin:
-                                    const EdgeInsets.symmetric(horizontal: 6),
-                                width: 14,
-                                height: 14,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Color.lerp(Colors.transparent,
-                                      AppColors.terra500, t),
-                                  border: Border.all(
-                                    color: Color.lerp(AppColors.ink30,
-                                            AppColors.terra500, t) ??
-                                        AppColors.ink30,
-                                    width: 1.5,
+                      const Spacer(),
+
+                      // Logo + headline block
+                      Hero(
+                        tag: HeroTags.appLogo,
+                        child: Container(
+                          width: 64,
+                          height: 64,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF2A2622),
+                            borderRadius: BorderRadius.all(AppRadii.md),
+                            boxShadow: AppShadows.terraGlow,
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Padding(
+                            padding: const EdgeInsets.all(7),
+                            child: Image.asset(
+                              'assets/images/appicon_cream.png',
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+
+                      // Headline: big Cormorant serif — feels editorial & premium
+                      const Text(
+                        'Welcome back',
+                        style: TextStyle(
+                          fontFamily: AppTypography.cormorant,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 36,
+                          height: 1.05,
+                          color: AppColors.ink,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        'Enter your PIN to start your shift',
+                        style: AppTypography.caption.copyWith(
+                          fontSize: 13,
+                          color: AppColors.ink50,
+                        ),
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // PIN dots — shakes on error
+                      AnimatedBuilder(
+                        animation: _shakeAnim,
+                        builder: (_, child) => Transform.translate(
+                          offset: Offset(_shakeAnim.value, 0),
+                          child: child,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(4, (i) {
+                            final filled = i < _pin.length;
+                            final isError = _error != null;
+                            return SpringBuilder(
+                              to: filled ? 1.0 : 0.0,
+                              spring: RestroSprings.snappy,
+                              builder: (_, t, __) {
+                                final fillColor = isError
+                                    ? Color.lerp(Colors.transparent,
+                                        AppColors.danger, t)!
+                                    : Color.lerp(Colors.transparent,
+                                        AppColors.terra500, t)!;
+                                final borderColor = isError
+                                    ? Color.lerp(AppColors.ink10,
+                                        AppColors.danger, t)!
+                                    : Color.lerp(AppColors.ink30,
+                                        AppColors.terra500, t)!;
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 120),
+                                  margin: const EdgeInsets.symmetric(
+                                      horizontal: 8),
+                                  width: filled ? 18 : 16,
+                                  height: filled ? 18 : 16,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: fillColor,
+                                    border: Border.all(
+                                      color: borderColor,
+                                      width: 1.5,
+                                    ),
+                                    boxShadow: filled && !isError
+                                        ? [
+                                            BoxShadow(
+                                              color: AppColors.terra400
+                                                  .withValues(alpha: 0.4 * t),
+                                              blurRadius: 10,
+                                              spreadRadius: 1,
+                                            ),
+                                          ]
+                                        : null,
+                                  ),
+                                );
+                              },
+                            );
+                          }),
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      // Error text or spacer label
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: _error != null
+                            ? Padding(
+                                key: const ValueKey('error'),
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Text(
+                                  _error!,
+                                  style: AppTypography.caption.copyWith(
+                                    color: AppColors.danger,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              );
-                            },
-                          );
-                        }),
+                              )
+                            : Padding(
+                                key: const ValueKey('label'),
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Text(
+                                  '4-DIGIT PIN',
+                                  style: AppTypography.micro.copyWith(
+                                    letterSpacing: 2.0,
+                                    color: AppColors.ink30,
+                                  ),
+                                ),
+                              ),
                       ),
-                      const SizedBox(height: 8),
-                      Text('Enter 4-digit PIN',
-                          style:
-                              AppTypography.micro.copyWith(letterSpacing: 1.4)),
-
-                      if (_error != null) ...[
-                        const SizedBox(height: 12),
-                        Text(_error!,
-                            style: AppTypography.caption
-                                .copyWith(color: AppColors.danger)),
-                      ],
 
                       const Spacer(),
+
+                      // PIN Pad
                       PinPad(
                         onKeyPress: _press,
                         onSubmit: _maybeSubmit,
                         onDelete: _delete,
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 16),
 
+                      // Footer actions
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           TextButton.icon(
                             onPressed: _cancelPairing,
-                            icon: const Icon(Icons.close, size: 16),
+                            icon: const Icon(Icons.link_off_rounded, size: 15),
                             label: const Text('Cancel pairing'),
                             style: TextButton.styleFrom(
-                              foregroundColor: AppColors.ink70,
+                              foregroundColor: AppColors.ink50,
                               textStyle: AppTypography.caption,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
                             ),
                           ),
                           TextButton.icon(
                             onPressed: () => HelpSheet.show(context),
-                            icon: const Icon(Icons.help_outline, size: 16),
+                            icon: const Icon(Icons.help_outline_rounded,
+                                size: 15),
                             label: const Text('Help'),
                             style: TextButton.styleFrom(
-                              foregroundColor: AppColors.ink70,
+                              foregroundColor: AppColors.ink50,
                               textStyle: AppTypography.caption,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
                             ),
                           ),
                         ],

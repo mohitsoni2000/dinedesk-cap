@@ -110,7 +110,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   @override
   Widget build(BuildContext context) {
     final tables = ref.watch(tablesProvider);
-    final conn = ref.watch(connectionProvider);
+    final connOnline = ref.watch(connectionProvider.select((c) => c.online));
     final op = ref.watch(operatorProvider);
     final opName = op?.name ?? 'there';
     final restaurant = ref.watch(restaurantProvider);
@@ -169,7 +169,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                     }),
                   ),
                   LiquidPill(
-                    tint: conn.online
+                    tint: connOnline
                         ? null
                         : AppColors.warn.withValues(alpha: 0.32),
                     child: Row(
@@ -180,13 +180,13 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                           height: 8,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: conn.online
+                            color: connOnline
                                 ? AppColors.success
                                 : AppColors.warn,
                           ),
                         ),
                         const SizedBox(width: 6),
-                        Text(conn.online ? 'LIVE' : 'OFFLINE'),
+                        Text(connOnline ? 'LIVE' : 'OFFLINE'),
                       ],
                     ),
                   ),
@@ -482,9 +482,9 @@ class _TableCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final linkGroups = ref.watch(linkGroupsProvider);
-    final isLinked = linkGroups.values
-        .any((ids) => ids.contains(table.serverId));
+    final isLinked = ref.watch(linkGroupsProvider.select(
+      (groups) => groups.values.any((ids) => ids.contains(table.serverId)),
+    ));
 
     return GestureDetector(
       onTap: isLoading ? null : onTap,

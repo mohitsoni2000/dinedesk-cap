@@ -319,7 +319,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   Widget build(BuildContext context) {
     final menu = ref.watch(menuProvider);
     final cart = ref.watch(cartProvider);
-    final cartTotal = cart.fold(0.0, (s, l) => s + l.lineTotal);
     final orderNotes = ref.watch(orderNotesProvider);
 
     final sections = <String, List<MenuItem>>{};
@@ -880,12 +879,16 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                   }),
                 ),
                 // Auto-KOT hint — shows when cart reaches threshold.
-                Builder(builder: (_) {
+                Consumer(builder: (context, ref, _) {
                   final flags = ref.watch(flagsProvider);
-                  final itemCount = cart.fold<int>(0, (s, l) => s + l.qty);
+                  final (itemCount, isEmpty) = ref.watch(
+                    cartProvider.select(
+                      (c) => (c.fold<int>(0, (s, l) => s + l.qty), c.isEmpty),
+                    ),
+                  );
                   if (!flags.autoKot ||
                       itemCount < flags.autoKotThreshold ||
-                      cart.isEmpty) {
+                      isEmpty) {
                     return const SizedBox.shrink();
                   }
                   return Padding(
@@ -946,72 +949,86 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     ),
                   );
                 }),
-                if (cart.isNotEmpty) ...[
-                  _OrderNoteRow(
-                    note: orderNotes,
-                    onTap: _showNotesDialog,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                    child: Opacity(
-                      opacity: _readOnly ? 0.45 : 1.0,
-                      child: PredictiveScale(
-                        enabled: false,
-                        maxScaleBoost: 0.015,
-                        child: Hero(
-                          tag: HeroTags.cartBar,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: GestureDetector(
-                              onTap: _readOnly
-                                  ? null
-                                  : () => context
-                                      .push('/order/${widget.tableId}/review'),
-                              child: Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [
-                                      AppColors.terra400,
-                                      AppColors.terra600
-                                    ],
-                                  ),
-                                  borderRadius:
-                                      const BorderRadius.all(AppRadii.md),
-                                  boxShadow:
-                                      _readOnly ? [] : AppShadows.terraGlow,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Text(
-                                      _readOnly
-                                          ? 'View-only — cannot review'
-                                          : 'Review · ${cart.length} ${cart.length == 1 ? "item" : "items"}',
-                                      style: AppTypography.bodyMd.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600),
-                                    ),
-                                    const Spacer(),
-                                    if (!_readOnly) ...[
-                                      KineticRupeeCounter(
-                                        amount: cartTotal,
-                                        fontSize: 18,
-                                        color: Colors.white,
+                Consumer(builder: (context, ref, _) {
+                  final (count, total) = ref.watch(
+                    cartProvider.select(
+                      (c) => (
+                        c.length,
+                        c.fold(0.0, (double s, l) => s + l.lineTotal),
+                      ),
+                    ),
+                  );
+                  if (count == 0) return const SizedBox.shrink();
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _OrderNoteRow(
+                        note: orderNotes,
+                        onTap: _showNotesDialog,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                        child: Opacity(
+                          opacity: _readOnly ? 0.45 : 1.0,
+                          child: PredictiveScale(
+                            enabled: false,
+                            maxScaleBoost: 0.015,
+                            child: Hero(
+                              tag: HeroTags.cartBar,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: GestureDetector(
+                                  onTap: _readOnly
+                                      ? null
+                                      : () => context
+                                          .push('/order/${widget.tableId}/review'),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          AppColors.terra400,
+                                          AppColors.terra600
+                                        ],
                                       ),
-                                      const SizedBox(width: 8),
-                                    ],
-                                    const Icon(Icons.arrow_forward,
-                                        color: Colors.white),
-                                  ],
+                                      borderRadius:
+                                          const BorderRadius.all(AppRadii.md),
+                                      boxShadow:
+                                          _readOnly ? [] : AppShadows.terraGlow,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          _readOnly
+                                              ? 'View-only — cannot review'
+                                              : 'Review · $count ${count == 1 ? "item" : "items"}',
+                                          style: AppTypography.bodyMd.copyWith(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600),
+                                        ),
+                                        const Spacer(),
+                                        if (!_readOnly) ...[
+                                          KineticRupeeCounter(
+                                            amount: total,
+                                            fontSize: 18,
+                                            color: Colors.white,
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                        const Icon(Icons.arrow_forward,
+                                            color: Colors.white),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
+                    ],
+                  );
+                }),
               ],
             ),
           ),

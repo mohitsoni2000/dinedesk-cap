@@ -18,6 +18,7 @@ import '../widgets/liquid_mesh_background.dart';
 import '../widgets/app_card.dart';
 import '../widgets/item_detail_sheet.dart';
 import '../widgets/kot_history_sheet.dart';
+import '../widgets/quick_action_tile.dart';
 import '../widgets/package_sheet.dart';
 import '../widgets/liquid_glass_surface.dart';
 import '../widgets/payment_sheet.dart';
@@ -313,6 +314,71 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
       ),
     );
     controller.dispose();
+  }
+
+  void _showItemQuickMenu(BuildContext context, MenuItem item) {
+    ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.paper,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: AppRadii.lg),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(item.name, style: AppTypography.headline),
+            Text('₹${item.price.toStringAsFixed(0)}', style: AppTypography.caption),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: QuickActionTile(
+                    icon: Icons.add,
+                    label: 'Add',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      if (_itemNeedsSheet(item)) {
+                        ItemDetailSheet.show(context, item);
+                      } else {
+                        ref.read(cartProvider.notifier).add(item);
+                        ref.read(feedbackServiceProvider).fire(const FeedbackLight());
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: QuickActionTile(
+                    icon: Icons.info_outline,
+                    label: 'Details',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      ItemDetailSheet.show(context, item);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: QuickActionTile(
+                    icon: Icons.edit_note,
+                    label: 'Add Note',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      ItemDetailSheet.show(context, item, autoFocusNote: true);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: MediaQuery.of(context).viewPadding.bottom),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -891,6 +957,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                           },
                                           onTap: () => ItemDetailSheet.show(
                                               context, entry.value[i]),
+                                          onLongPress: _readOnly
+                                              ? null
+                                              : () => _showItemQuickMenu(
+                                                  context, entry.value[i]),
                                         ),
                                       ),
                                       if (i < entry.value.length - 1)
@@ -1413,14 +1483,16 @@ class _ItemRow extends StatelessWidget {
   final MenuItem item;
   final VoidCallback onAdd;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   const _ItemRow(
-      {required this.item, required this.onAdd, required this.onTap});
+      {required this.item, required this.onAdd, required this.onTap, this.onLongPress});
 
   @override
   Widget build(BuildContext context) {
     final unavailable = !item.available;
     return InkWell(
       onTap: unavailable ? null : onTap,
+      onLongPress: unavailable ? null : onLongPress,
       child: Opacity(
         opacity: unavailable ? 0.45 : 1,
         child: Padding(

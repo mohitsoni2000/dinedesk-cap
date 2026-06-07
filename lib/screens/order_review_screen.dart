@@ -11,6 +11,7 @@ import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/customer_sheet.dart';
+import '../widgets/quick_action_tile.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_mesh_background.dart';
 import '../widgets/order_submitting_overlay.dart';
@@ -363,6 +364,129 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     );
   }
 
+  void _editCartLineNote(BuildContext context, CartLine line, int index) {
+    final controller = TextEditingController(text: line.itemNote);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.paper,
+        title: const Text('Item Note', style: AppTypography.title),
+        content: TextField(
+          controller: controller,
+          maxLines: 2,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Allergies, prep notes…',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final newNote = controller.text.trim();
+              final current = ref.read(cartProvider);
+              if (index < current.length) {
+                final old = current[index];
+                ref.read(cartProvider.notifier).addCustom(
+                      item: old.item,
+                      qty: old.qty,
+                      mods: old.mods,
+                      selectedOptions: old.selectedOptions,
+                      modsExtra: old.modsExtra,
+                      itemNote: newNote,
+                      variationId: old.variationId,
+                      variationName: old.variationName,
+                    );
+                ref.read(cartProvider.notifier).removeAt(index);
+              }
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Save', style: TextStyle(color: AppColors.terra500)),
+          ),
+        ],
+      ),
+    ).then((_) => controller.dispose());
+  }
+
+  void _showCartLineMenu(BuildContext context, CartLine line, int index) {
+    ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.paper,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: AppRadii.lg),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(line.item.name, style: AppTypography.headline),
+            Text(
+              '×${line.qty}  ·  ₹${line.lineTotal.toStringAsFixed(0)}',
+              style: AppTypography.caption,
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: QuickActionTile(
+                    icon: Icons.add,
+                    label: '+1',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      ref.read(cartProvider.notifier).setQtyAt(index, line.qty + 1);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: QuickActionTile(
+                    icon: Icons.remove,
+                    label: '−1',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      ref.read(cartProvider.notifier).setQtyAt(index, line.qty - 1);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: QuickActionTile(
+                    icon: Icons.edit_note,
+                    label: 'Edit Note',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _editCartLineNote(context, line, index);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: QuickActionTile(
+                    icon: Icons.delete_outline,
+                    label: 'Remove',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      ref.read(feedbackServiceProvider).fire(const FeedbackError());
+                      ref.read(cartProvider.notifier).removeAt(index);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: MediaQuery.of(context).viewPadding.bottom),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Undo a recently deleted cart line.
   void _undoDelete(CartLine line) {
     ref.read(cartProvider.notifier).addCustom(
@@ -590,7 +714,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                           ),
                                         );
                                     },
-                                    child: _CartRow(line: cart[i], index: i),
+                                    child: GestureDetector(
+                                      onLongPress: () => _showCartLineMenu(
+                                        context,
+                                        cart[i],
+                                        i,
+                                      ),
+                                      child: _CartRow(line: cart[i], index: i),
+                                    ),
                                   ),
                                   if (i < cart.length - 1)
                                     const Divider(

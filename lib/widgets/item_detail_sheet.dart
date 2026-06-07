@@ -16,18 +16,19 @@ import '../widgets/liquid_chrome.dart';
 
 class ItemDetailSheet extends ConsumerStatefulWidget {
   final MenuItem item;
-  const ItemDetailSheet({super.key, required this.item});
+  final bool autoFocusNote;
+  const ItemDetailSheet({super.key, required this.item, this.autoFocusNote = false});
 
   @override
   ConsumerState<ItemDetailSheet> createState() => _ItemDetailSheetState();
 
-  static Future<void> show(BuildContext context, MenuItem item) {
+  static Future<void> show(BuildContext context, MenuItem item, {bool autoFocusNote = false}) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.32),
-      builder: (_) => ItemDetailSheet(item: item),
+      builder: (_) => ItemDetailSheet(item: item, autoFocusNote: autoFocusNote),
     );
   }
 }
@@ -38,6 +39,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
   final Set<String> _multiSelections = {};
   String _note = '';
   String? _selectedVariationId;
+  final FocusNode _noteFocusNode = FocusNode();
 
   bool get _hasServerOptions => widget.item.optionGroups.isNotEmpty;
   bool get _hasVariations => widget.item.variations.isNotEmpty;
@@ -59,6 +61,17 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
         _singleSelections[group.id] = group.options.first.id;
       }
     }
+    if (widget.autoFocusNote) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _noteFocusNode.requestFocus();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _noteFocusNode.dispose();
+    super.dispose();
   }
 
   double get _serverOptionExtra => _selectedServerOptions.fold(
@@ -282,6 +295,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                     blur: 18,
                     thickness: 8,
                     child: TextField(
+                      focusNode: _noteFocusNode,
                       decoration: const InputDecoration(
                         border: InputBorder.none,
                         hintText: 'Allergies, prep notes…',

@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/providers.dart';
 import 'feedback_kind.dart';
 
 class FeedbackService {
-  FeedbackService();
+  FeedbackService(this._ref);
+
+  final Ref _ref;
 
   final List<AudioPlayer> _pool = <AudioPlayer>[];
   int _nextPlayer = 0;
@@ -25,7 +28,8 @@ class FeedbackService {
 
   void fire(FeedbackKind kind) {
     if (!_initialized) return;
-    unawaited(kind.triggerHaptic());
+    final hapticOn = _ref.read(hapticEnabledProvider);
+    if (hapticOn) unawaited(kind.triggerHaptic());
     final String? asset = kind.audioAsset;
     if (asset != null) {
       final AudioPlayer player = _pool[_nextPlayer];
@@ -54,7 +58,7 @@ class FeedbackService {
 
 final Provider<FeedbackService> feedbackServiceProvider =
     Provider<FeedbackService>((Ref ref) {
-  final FeedbackService service = FeedbackService();
+  final FeedbackService service = FeedbackService(ref);
   ref.onDispose(() => service.dispose());
   return service;
 });

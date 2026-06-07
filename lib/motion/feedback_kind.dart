@@ -32,6 +32,10 @@ final class FeedbackSelection extends FeedbackKind {
   const FeedbackSelection();
 }
 
+final class FeedbackDragTick extends FeedbackKind {
+  const FeedbackDragTick();
+}
+
 extension FeedbackHaptic on FeedbackKind {
   Future<void> triggerHaptic() async {
     switch (this) {
@@ -52,6 +56,8 @@ extension FeedbackHaptic on FeedbackKind {
       case FeedbackWarning():
         await HapticFeedback.mediumImpact();
       case FeedbackSelection():
+        await HapticFeedback.selectionClick();
+      case FeedbackDragTick():
         await HapticFeedback.selectionClick();
     }
   }

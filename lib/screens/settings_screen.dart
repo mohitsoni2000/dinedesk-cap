@@ -26,9 +26,11 @@ class _SettingsState {
 }
 
 class _SettingsNotifier extends StateNotifier<_SettingsState> {
-  _SettingsNotifier() : super(const _SettingsState()) {
+  _SettingsNotifier(this._ref) : super(const _SettingsState()) {
     _load();
   }
+
+  final Ref _ref;
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -36,6 +38,8 @@ class _SettingsNotifier extends StateNotifier<_SettingsState> {
       soundEnabled: prefs.getBool('setting_sound') ?? true,
       hapticEnabled: prefs.getBool('setting_haptic') ?? true,
     );
+    _ref.read(hapticEnabledProvider.notifier).state =
+        prefs.getBool('setting_haptic') ?? true;
   }
 
   Future<void> setSoundEnabled(bool v) async {
@@ -46,6 +50,7 @@ class _SettingsNotifier extends StateNotifier<_SettingsState> {
 
   Future<void> setHapticEnabled(bool v) async {
     state = state.copyWith(hapticEnabled: v);
+    _ref.read(hapticEnabledProvider.notifier).state = v;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('setting_haptic', v);
   }
@@ -53,7 +58,7 @@ class _SettingsNotifier extends StateNotifier<_SettingsState> {
 
 final _settingsProvider =
     StateNotifierProvider<_SettingsNotifier, _SettingsState>(
-  (_) => _SettingsNotifier(),
+  (ref) => _SettingsNotifier(ref),
 );
 
 // ─── Screen ──────────────────────────────────────────────────────────────────

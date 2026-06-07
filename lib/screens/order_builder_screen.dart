@@ -848,22 +848,50 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                     for (int i = 0;
                                         i < entry.value.length;
                                         i++) ...[
-                                      _ItemRow(
-                                        item: entry.value[i],
+                                      _SwipeToAddWrapper(
+                                        readOnly: _readOnly,
+                                        onDragTick: () => ref
+                                            .read(feedbackServiceProvider)
+                                            .fire(const FeedbackDragTick()),
+                                        onSwipeConfirm: () => ref
+                                            .read(feedbackServiceProvider)
+                                            .fire(const FeedbackMedium()),
                                         onAdd: () {
-                                          ref
-                                              .read(feedbackServiceProvider)
-                                              .fire(const FeedbackLight());
-                                          ref
-                                              .read(cartProvider.notifier)
-                                              .add(entry.value[i]);
-                                          ref
-                                              .read(
-                                                  recentItemsProvider.notifier)
-                                              .track(entry.value[i]);
+                                          final item = entry.value[i];
+                                          if (_itemNeedsSheet(item)) {
+                                            ItemDetailSheet.show(context, item);
+                                          } else {
+                                            ref
+                                                .read(feedbackServiceProvider)
+                                                .fire(const FeedbackLight());
+                                            ref
+                                                .read(cartProvider.notifier)
+                                                .add(item);
+                                            ref
+                                                .read(
+                                                    recentItemsProvider.notifier)
+                                                .track(item);
+                                          }
                                         },
-                                        onTap: () => ItemDetailSheet.show(
+                                        onOpenSheet: () => ItemDetailSheet.show(
                                             context, entry.value[i]),
+                                        child: _ItemRow(
+                                          item: entry.value[i],
+                                          onAdd: () {
+                                            ref
+                                                .read(feedbackServiceProvider)
+                                                .fire(const FeedbackLight());
+                                            ref
+                                                .read(cartProvider.notifier)
+                                                .add(entry.value[i]);
+                                            ref
+                                                .read(
+                                                    recentItemsProvider.notifier)
+                                                .track(entry.value[i]);
+                                          },
+                                          onTap: () => ItemDetailSheet.show(
+                                              context, entry.value[i]),
+                                        ),
                                       ),
                                       if (i < entry.value.length - 1)
                                         const Divider(
@@ -1263,6 +1291,124 @@ class _RunningOrderCard extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+// Returns true if the item requires user configuration before being added
+// to the cart — i.e. it has variations or required option groups.
+bool _itemNeedsSheet(MenuItem item) {
+  if (item.variations.isNotEmpty) return true;
+  return item.optionGroups.any((g) => g.isRequired || g.minSelect > 0);
+}
+
+class _SwipeToAddWrapper extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onDragTick;
+  final VoidCallback? onSwipeConfirm;
+  final VoidCallback onAdd;
+  final VoidCallback onOpenSheet;
+  final bool readOnly;
+
+  const _SwipeToAddWrapper({
+    required this.child,
+    required this.onAdd,
+    required this.onOpenSheet,
+    this.onDragTick,
+    this.onSwipeConfirm,
+    this.readOnly = false,
+  });
+
+  @override
+  State<_SwipeToAddWrapper> createState() => _SwipeToAddWrapperState();
+}
+
+class _SwipeToAddWrapperState extends State<_SwipeToAddWrapper>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  double _dragOffset = 0;
+  static const double _maxDrag = 80;
+  static const double _threshold = 40;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onDragUpdate(DragUpdateDetails d) {
+    if (widget.readOnly) return;
+    final prev = _dragOffset;
+    _dragOffset = (_dragOffset + d.delta.dx).clamp(0.0, _maxDrag);
+    setState(() {});
+    final wasBelowThreshold = prev < _threshold;
+    final isAboveThreshold = _dragOffset >= _threshold;
+    if (wasBelowThreshold && isAboveThreshold) {
+      widget.onDragTick?.call();
+    }
+  }
+
+  void _onDragEnd(DragEndDetails _) {
+    if (widget.readOnly) return;
+    if (_dragOffset >= _threshold) {
+      widget.onSwipeConfirm?.call();
+      widget.onAdd();
+    }
+    // Spring-back animation
+    final startOffset = _dragOffset;
+    _ctrl.value = 0;
+    _ctrl.animateTo(
+      1,
+      curve: Curves.easeOutCubic,
+      duration: const Duration(milliseconds: 180),
+    );
+    _ctrl.addListener(() {
+      if (!mounted) return;
+      setState(() {
+        _dragOffset = startOffset * (1 - _ctrl.value);
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onHorizontalDragUpdate: widget.readOnly ? null : _onDragUpdate,
+      onHorizontalDragEnd: widget.readOnly ? null : _onDragEnd,
+      child: Stack(
+        children: [
+          // Green background revealed as card slides right
+          if (_dragOffset > 0)
+            Positioned.fill(
+              child: Container(
+                decoration: const BoxDecoration(color: AppColors.success),
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.only(left: 16),
+                child: Opacity(
+                  opacity: (_dragOffset / _maxDrag).clamp(0.0, 1.0),
+                  child: const Icon(
+                    Icons.add,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+              ),
+            ),
+          Transform.translate(
+            offset: Offset(_dragOffset, 0),
+            child: widget.child,
+          ),
+        ],
       ),
     );
   }

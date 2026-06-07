@@ -3,11 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:restro/data/providers.dart';
 
 void main() {
-  test('initial sync maps desktop flat menu categories and option groups', () {
+  test('initial sync maps desktop flat menu categories and option groups', () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
-    container.read(syncServiceProvider).applyInitialSync({
+    await container.read(syncServiceProvider).applyInitialSync({
       'floors': const [],
       'tables': const [],
       'menu': {

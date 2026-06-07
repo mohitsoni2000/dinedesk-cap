@@ -535,17 +535,21 @@ class SyncService {
   }
 
   Future<void> _loadTimerCache() async {
-    final prefs = await SharedPreferences.getInstance();
-    final keys = prefs.getKeys().where((k) => k.startsWith(_timerKeyPrefix));
-    _tableTimerCache = {};
-    for (final key in keys) {
-      final val = prefs.getString(key);
-      if (val != null) {
-        final dt = DateTime.tryParse(val);
-        if (dt != null) {
-          _tableTimerCache[key.substring(_timerKeyPrefix.length)] = dt;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys().where((k) => k.startsWith(_timerKeyPrefix));
+      _tableTimerCache = {};
+      for (final key in keys) {
+        final val = prefs.getString(key);
+        if (val != null) {
+          final dt = DateTime.tryParse(val);
+          if (dt != null) {
+            _tableTimerCache[key.substring(_timerKeyPrefix.length)] = dt;
+          }
         }
       }
+    } catch (_) {
+      _tableTimerCache = {};
     }
   }
 

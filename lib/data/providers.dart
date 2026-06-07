@@ -513,6 +513,13 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
     ];
   }
 
+  void setNoteAt(int index, String note) {
+    if (index < 0 || index >= state.length) return;
+    final next = [...state];
+    next[index] = next[index].copyWith(itemNote: note);
+    state = next;
+  }
+
   double get total => state.fold(0.0, (s, l) => s + l.lineTotal);
 
   // Group lines by kitchen section for the KOT preview.

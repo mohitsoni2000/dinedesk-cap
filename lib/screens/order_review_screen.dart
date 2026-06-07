@@ -388,21 +388,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           TextButton(
             onPressed: () {
               final newNote = controller.text.trim();
-              final current = ref.read(cartProvider);
-              if (index < current.length) {
-                final old = current[index];
-                ref.read(cartProvider.notifier).addCustom(
-                      item: old.item,
-                      qty: old.qty,
-                      mods: old.mods,
-                      selectedOptions: old.selectedOptions,
-                      modsExtra: old.modsExtra,
-                      itemNote: newNote,
-                      variationId: old.variationId,
-                      variationName: old.variationName,
-                    );
-                ref.read(cartProvider.notifier).removeAt(index);
-              }
+              ref.read(cartProvider.notifier).setNoteAt(index, newNote);
               Navigator.of(ctx).pop();
             },
             child: const Text('Save', style: TextStyle(color: AppColors.terra500)),
@@ -451,7 +437,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                     label: '−1',
                     onTap: () {
                       Navigator.of(context).pop();
-                      ref.read(cartProvider.notifier).setQtyAt(index, line.qty - 1);
+                      if (line.qty > 1) {
+                        ref.read(cartProvider.notifier).setQtyAt(index, line.qty - 1);
+                      }
                     },
                   ),
                 ),

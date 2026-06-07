@@ -27,6 +27,13 @@ class AppColors {
   static const ink05 = Color(0x0D140E08);
   static const amber = Color(0xFFF59E0B);
 
+  // Read-only / view-only mode banner (warn amber spectrum)
+  static const readOnlyBannerBg = Color(0xFFFEF3C7);
+  static const readOnlyBannerText = Color(0xFF92400E);
+
+  // Trending item indicator dot in fast-add bar
+  static const trendingDot = Color(0xFFFF6B35);
+
   static const paper = Color(0xFFFFFCF8);
   static const paperWarm = Color(0xFFF9E8D2);
   static const paperDeeper = Color(0xFFF2DBC0);
@@ -46,6 +53,20 @@ class AppColors {
   static const tableDirtyBg = Color(0xFFFDF0DC);
   static const tableReservedBg = Color(0xFFF0E8FB);
   static const tableFreeBg = Color(0xFFE8F5EC);
+
+  // Brand — app logo / hero container background
+  static const logoBg = Color(0xFF2A2622);
+
+  // Achievement — warm gold for KOT success, kinetic counters
+  static const gold = Color(0xFFFFB964);
+
+  // Paper gradient — mesh background top-left (between paper and paperWarm)
+  static const paperHint = Color(0xFFFFF6EA);
+
+  // Dark mesh background gradient stops
+  static const meshDark1 = Color(0xFF2A1A10);
+  static const meshDark2 = Color(0xFF1C130C);
+  static const meshDark3 = Color(0xFF14100C);
 }
 
 class AppRadii {
@@ -174,6 +195,12 @@ class AppShadows {
     BoxShadow(color: Color(0x52E05D38), blurRadius: 20, offset: Offset(0, 8)),
   ];
 
+  /// Deep terra glow for the hero app icon container (88px logo).
+  static const List<BoxShadow> logoGlow = [
+    BoxShadow(color: Color(0x4DE05D38), blurRadius: 24, offset: Offset(0, 8)),
+    BoxShadow(color: Color(0x1AE05D38), blurRadius: 48, offset: Offset(0, 20)),
+  ];
+
   /// Shadow for glass surfaces — softer, more diffuse than card shadow.
   /// Glass floats above content, needs a deeper ambient shadow.
   static const List<BoxShadow> glass = [
@@ -182,4 +209,191 @@ class AppShadows {
     BoxShadow(color: Color(0x12140E08), blurRadius: 28, offset: Offset(0, 14)),
     BoxShadow(color: Color(0x0A140E08), blurRadius: 56, offset: Offset(0, 28)),
   ];
+}
+
+/// Reusable alpha/opacity values for consistent visual weight.
+class AppAlphas {
+  AppAlphas._();
+
+  /// Surface overlays
+  static const double overlayHeavy = 0.92;   // review screen backdrop
+  static const double overlayMedium = 0.68; // scan overlay
+  static const double overlayLight = 0.35;  // subtle tints
+
+  /// Glass tint layers
+  static const double glassTintLight = 0.06;   // white on dark
+  static const double glassTintMedium = 0.10;  // standard glass
+  static const double glassTintHeavy = 0.18;   // strong tint
+  static const double glassTintDanger = 0.22;  // danger glass
+
+  /// Badge/status backgrounds
+  static const double badgeLight = 0.10;  // subtle badge bg
+  static const double badgeMedium = 0.14; // standard badge bg
+  static const double badgeStrong = 0.20; // high-contrast badge bg
+
+  /// Button tints
+  static const double buttonHover = 0.50;  // white overlay on buttons
+  static const double buttonPressed = 0.60;
+  static const double buttonDisabled = 0.30;
+
+  /// Semantic overlays
+  static const double successOverlay = 0.14; // success tint backgrounds
+  static const double warnOverlay = 0.12;    // warn tint backgrounds
+  static const double dangerOverlay = 0.12;   // danger tint backgrounds
+  static const double infoOverlay = 0.10;     // info tint backgrounds
+
+  /// Chip/text fields
+  static const double chipDefault = 0.08;   // chip bg
+  static const double chipActive = 0.18;     // active chip bg
+  static const double chipAmber = 0.22;      // amber chip bg
+
+  /// Divider/border
+  static const double dividerLight = 0.08;
+  static const double dividerMedium = 0.12;
+
+  /// Progress/bar backgrounds
+  static const double progressBg = 0.10;
+
+  /// Banner tints
+  static const double bannerDanger = 0.12;
+  static const double bannerWarn = 0.18;
+}
+
+/// Inline radius values for when you need the raw double (e.g., Container decoration).
+class AppRadiiValues {
+  AppRadiiValues._();
+
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+  static const double pill = 9999;
+}
+
+/// Touch target sizes — 48px is the WCAG AA minimum for interactive elements.
+class AppTouchTargets {
+  AppTouchTargets._();
+
+  /// Minimum recommended touch target (WCAG AA)
+  static const double minimum = 48;
+
+  /// Standard interactive element
+  static const double standard = 48;
+
+  /// Small inline control (stepper, icon button)
+  static const double control = 48;
+
+  /// Chip / filter pill
+  static const double chip = 48;
+
+  /// Section tab (floor tabs)
+  static const double tab = 48;
+
+  /// Icon-only button
+  static const double iconButton = 48;
+
+  /// Large CTA button (primary action)
+  static const double cta = 56;
+}
+
+/// Icon sizes for consistent visual hierarchy.
+class AppIconSizes {
+  AppIconSizes._();
+
+  /// Micro — badge counters, small labels
+  static const double micro = 12;
+
+  /// Control — stepper +/-, chip icons
+  static const double control = 16;
+
+  /// Standard — list item icons, inline controls
+  static const double standard = 18;
+
+  /// Body — section headers, prominent icons
+  static const double body = 20;
+
+  /// Title — AppBar icons, feature icons
+  static const double title = 22;
+
+  /// Headline — empty state icons, feature illustrations
+  static const double headline = 28;
+
+  /// Display — large decorative illustrations
+  static const double display = 36;
+}
+
+/// Sheet / modal padding tokens for consistent inner margins.
+class AppSheetPadding {
+  AppSheetPadding._();
+
+  /// Standard sheet outer padding
+  static const EdgeInsets sheet = EdgeInsets.all(20);
+
+  /// Compact sheet for smaller modals
+  static const EdgeInsets compact = EdgeInsets.all(16);
+
+  /// Large sheet for feature modals
+  static const EdgeInsets large = EdgeInsets.all(24);
+
+  /// Content area — text + actions
+  static const EdgeInsets content = EdgeInsets.symmetric(horizontal: 20, vertical: 16);
+
+  /// Input fields within sheets
+  static const EdgeInsets input = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
+}
+
+/// Section spacing — vertical gaps between sections within a screen/sheet.
+class AppSectionSpacing {
+  AppSectionSpacing._();
+
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+}
+
+/// Motion tokens — durations and curves for consistent animation feel.
+class AppMotion {
+  AppMotion._();
+
+  // Durations — ordered from micro-interaction to large reveal
+  static const Duration quick = Duration(milliseconds: 120);
+  static const Duration fast = Duration(milliseconds: 180);
+  static const Duration standard = Duration(milliseconds: 260);
+  static const Duration slow = Duration(milliseconds: 400);
+  static const Duration xslow = Duration(milliseconds: 600);
+
+  // Curves
+  /// Smooth deceleration — use for entrances and settling.
+  static const Curve entrance = Curves.easeOutCubic;
+
+  /// Sharp acceleration — use for exits and dismissals.
+  static const Curve exit = Curves.easeIn;
+
+  /// Symmetric ease — use for transitions with no clear in/out direction.
+  static const Curve symmetric = Curves.easeInOut;
+
+  /// Elastic overshoot — use for success states and celebrations.
+  static const Curve spring = Curves.elasticOut;
+}
+
+/// Chip / pill specific tokens.
+class AppChipPadding {
+  AppChipPadding._();
+
+  /// Filter chip (section filter, floor tabs)
+  static const EdgeInsets filterChip = EdgeInsets.symmetric(horizontal: 14, vertical: 12);
+
+  /// Compact chip (fast-add, recent items)
+  static const EdgeInsets compactChip = EdgeInsets.symmetric(horizontal: 12, vertical: 10);
+
+  /// Status badge (table state, order status)
+  static const EdgeInsets statusBadge = EdgeInsets.symmetric(horizontal: 8, vertical: 4);
+
+  /// Section label (chip-like section headers)
+  static const EdgeInsets sectionLabel = EdgeInsets.symmetric(horizontal: 14, vertical: 8);
 }

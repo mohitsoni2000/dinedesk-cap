@@ -41,7 +41,7 @@ void main() {
     }
   });
 
-  test('billed running table opens bill detail', () {
+  test('billed running table still opens order screen from table grid', () {
     final intent = resolveTableOpenIntent(
       _table(
         state: TableState.mine,
@@ -50,8 +50,8 @@ void main() {
       ),
     );
 
-    expect(intent.action, TableOpenAction.openBill);
-    expect(intent.route, '/history/order-1');
+    expect(intent.action, TableOpenAction.openOrder);
+    expect(intent.route, '/order/table-1');
   });
 
   test('dirty table stays blocked', () {

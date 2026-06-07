@@ -104,20 +104,28 @@ class PredictiveScale extends StatefulWidget {
 }
 
 class _PredictiveScaleState extends State<PredictiveScale> {
-  double _proximity = 0;
+  final ValueNotifier<double> _proximity = ValueNotifier(0);
+
+  @override
+  void dispose() {
+    _proximity.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return PredictiveZone(
       enabled: widget.enabled,
       maxProximityRadius: widget.maxProximityRadius,
-      onIntentProximity: (double p) {
-        if (mounted) setState(() => _proximity = p);
-      },
-      child: AnimatedScale(
-        scale: 1.0 + widget.maxScaleBoost * _proximity,
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOutCubic,
+      onIntentProximity: (double p) => _proximity.value = p,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _proximity,
+        builder: (_, p, child) => AnimatedScale(
+          scale: 1.0 + widget.maxScaleBoost * p,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          child: child,
+        ),
         child: widget.child,
       ),
     );

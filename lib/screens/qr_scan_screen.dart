@@ -231,7 +231,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                         width: 36,
                         height: 36,
                         decoration: const BoxDecoration(
-                          color: Color(0xFF2A2622),
+                          color: AppColors.logoBg,
                           borderRadius: BorderRadius.all(Radius.circular(10)),
                           boxShadow: AppShadows.terraGlow,
                         ),

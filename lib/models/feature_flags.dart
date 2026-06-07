@@ -104,10 +104,10 @@ class FeatureFlags {
       autoKot: flag('flag_auto_kot'),
       autoKotThreshold: int.tryParse('${map['auto_kot_threshold']}') ?? 5,
       predictiveMotion: flag('flag_predictive_motion'),
-      itemVariations: flag('item_variations'),
-      waiterAssignment: flag('waiter_assignment'),
-      manualEntry: flag('manual_entry'),
-      kotEdit: flag('kot_edit'),
+      itemVariations: flag('flag_item_variations') || flag('item_variations'),
+      waiterAssignment: flag('flag_waiter_assignment') || flag('waiter_assignment'),
+      manualEntry: flag('flag_manual_entry') || flag('manual_entry'),
+      kotEdit: flag('flag_kot_edit') || flag('kot_edit'),
     );
   }
 }

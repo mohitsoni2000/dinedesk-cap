@@ -22,6 +22,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
   bool _showText = false;
   Timer? _autoNav;
   String? _tableDisplayName;
+  int _countdown = 20;
 
   @override
   void initState() {
@@ -35,8 +36,25 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) setState(() => _showText = true);
     });
-    _autoNav = Timer(const Duration(milliseconds: 8000), () {
-      if (mounted) context.go('/tables');
+    _startAutoNav();
+  }
+
+  void _startAutoNav() {
+    setState(() => _countdown = 20);
+    _autoNav?.cancel();
+    _autoNav = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        if (_countdown > 1) {
+          _countdown--;
+        } else {
+          timer.cancel();
+          context.go('/tables');
+        }
+      });
     });
   }
 
@@ -79,17 +97,43 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                     child: Column(children: [
                       const Text('Sent to Kitchen',
                           style: AppTypography.displayMd),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 24),
+                      // Large prominent KOT number
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 32, vertical: 16),
+                        decoration: BoxDecoration(
+                          color: AppColors.gold.withValues(alpha: AppAlphas.badgeLight),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: AppColors.gold.withValues(alpha: 0.30),
+                              width: 1.5),
+                        ),
+                        child: Column(
+                          children: [
+                            const Text('KOT NUMBER',
+                                style: TextStyle(
+                                  fontFamily: AppTypography.inter,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 2.5,
+                                  color: AppColors.gold,
+                                )),
+                            const SizedBox(height: 8),
+                            KineticKotNumber(
+                              number:
+                                  int.tryParse(ref.watch(lastKotIdProvider)) ?? 0,
+                              fontSize: 64,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Table ${_tableDisplayName ?? widget.tableId} · KOT ',
+                          Text('Table ${_tableDisplayName ?? widget.tableId}',
                               style: AppTypography.caption),
-                          KineticKotNumber(
-                            number:
-                                int.tryParse(ref.watch(lastKotIdProvider)) ?? 0,
-                            fontSize: 14,
-                          ),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -113,13 +157,44 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                           child: child,
                         );
                       },
-                      child: LiquidPrimaryButton(
-                        label: 'Back to Tables',
-                        fullWidth: true,
-                        onPressed: () {
-                          _autoNav?.cancel();
-                          context.go('/tables');
-                        },
+                      child: Column(
+                        children: [
+                          // Manual override — users who already noted the KOT
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed: () {
+                                _autoNav?.cancel();
+                                context.go('/tables');
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.gold,
+                                side: const BorderSide(
+                                    color: AppColors.gold, width: 1.5),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: const Text(
+                                "I've noted the KOT",
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.3),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          LiquidPrimaryButton(
+                            label: 'Back to Tables ($_countdown)',
+                            fullWidth: true,
+                            onPressed: () {
+                              _autoNav?.cancel();
+                              context.go('/tables');
+                            },
+                          ),
+                        ],
                       ),
                     ),
                   ),

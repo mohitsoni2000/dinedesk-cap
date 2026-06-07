@@ -65,11 +65,10 @@ class _SpringBuilderState extends State<SpringBuilder>
     _controller.animateWith(_simulation);
   }
 
+  // No setState — values are read directly from controller in AnimatedBuilder.
   void _onTick() {
-    setState(() {
-      _currentValue = _controller.value;
-      _currentVelocity = _controller.velocity;
-    });
+    _currentValue = _controller.value;
+    _currentVelocity = _controller.velocity;
   }
 
   @override
@@ -90,7 +89,11 @@ class _SpringBuilderState extends State<SpringBuilder>
 
   @override
   Widget build(BuildContext context) {
-    return widget.builder(context, _currentValue, widget.child);
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) =>
+          widget.builder(context, _controller.value, widget.child),
+    );
   }
 }
 

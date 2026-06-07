@@ -25,6 +25,13 @@ class ConnectionBanner extends ConsumerStatefulWidget {
 class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
   Timer? _ticker;
   int _remaining = 120; // seconds — full 2-min grace window
+  FeedbackService? _feedbackSvc;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _feedbackSvc = ref.read(feedbackServiceProvider);
+  }
 
   @override
   void dispose() {
@@ -47,7 +54,7 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
       } else {
         setState(() => _remaining--);
         if (_remaining == 30) {
-          ref.read(feedbackServiceProvider).fire(const FeedbackWarning());
+          _feedbackSvc?.fire(const FeedbackWarning());
         }
       }
     });
@@ -56,6 +63,27 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
   void _stopTimer() {
     _ticker?.cancel();
     _ticker = null;
+  }
+
+  void _resetTimer() {
+    if (!mounted) return;
+    setState(() => _remaining = 120);
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (_remaining <= 1) {
+        _ticker?.cancel();
+        setState(() => _remaining = 0);
+        Future.microtask(() {
+          if (mounted) context.go('/disconnected');
+        });
+      } else {
+        setState(() => _remaining--);
+        if (_remaining == 30) {
+          _feedbackSvc?.fire(const FeedbackWarning());
+        }
+      }
+    });
   }
 
   String get _label {
@@ -164,6 +192,33 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
                                   ),
                                 ),
                               ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: _resetTimer,
+                              borderRadius: BorderRadius.all(AppRadii.sm),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: AppColors.danger.withValues(alpha: 0.5),
+                                    width: 1,
+                                  ),
+                                  borderRadius: BorderRadius.all(AppRadii.sm),
+                                ),
+                                child: Text(
+                                  'Stay here',
+                                  style: AppTypography.caption.copyWith(
+                                    color: AppColors.danger,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ],

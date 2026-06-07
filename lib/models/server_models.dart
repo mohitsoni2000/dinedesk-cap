@@ -462,4 +462,10 @@ class BroadcastEnvelope {
         orderMap?['id']?.toString() ??
         raw['id']?.toString();
   }
+
+  Map<String, dynamic>? get kotMap {
+    final k = raw['kot'];
+    if (k is Map) return Map<String, dynamic>.from(k);
+    return null;
+  }
 }

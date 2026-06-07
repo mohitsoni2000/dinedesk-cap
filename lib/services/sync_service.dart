@@ -120,7 +120,29 @@ class SyncService {
     _socket.on('kot:sent', (data) {
       final env = BroadcastEnvelope(_toMap(data));
       final orderMap = env.orderMap;
-      if (orderMap != null) _replaceActiveOrder(orderMap);
+      if (orderMap != null) {
+        _replaceActiveOrder(orderMap);
+        final order = ServerOrder.fromMap(orderMap);
+        if (order.itemCount > 0) {
+          final kotType = env.kotMap?['kot_type']?.toString();
+          var entry = _serverOrderToHistory(order);
+          if (kotType == 'modified') {
+            entry = HistoryOrder(
+              id: entry.id,
+              orderId: entry.orderId,
+              tableId: entry.tableId,
+              time: entry.time,
+              date: entry.date,
+              itemCount: entry.itemCount,
+              total: entry.total,
+              status: OrderStatus.modified,
+              lines: entry.lines,
+              notes: entry.notes,
+            );
+          }
+          _upsertHistory(entry);
+        }
+      }
       _applyTablesFromEnvelope(env);
     });
 
@@ -191,12 +213,17 @@ class SyncService {
       _ref.read(flagsProvider.notifier).state = FeatureFlags.fromMap(flagsMap);
     });
 
-    _socket.on('menu:updated', (data) {
+    _socket.on('menu:updated', (data) async {
       final map = _toMap(data);
       _ref.read(menuLoadingProvider.notifier).state = true;
-      _ref.read(menuProvider.notifier).state = _parseMenuItems(map);
-      _ref.read(rawMenuDataProvider.notifier).state = map;
-      _ref.read(menuLoadingProvider.notifier).state = false;
+      try {
+        _ref.read(menuProvider.notifier).state = _parseMenuItems(map);
+        _ref.read(rawMenuDataProvider.notifier).state = map;
+      } catch (e, st) {
+        debugPrint('$_tag menu:updated parse error: $e $st');
+      } finally {
+        _ref.read(menuLoadingProvider.notifier).state = false;
+      }
     });
 
     _socket.on('fast-add:updated', (data) {
@@ -236,6 +263,24 @@ class SyncService {
         }
       }
       _ref.read(linkGroupsProvider.notifier).state = newGroups;
+    });
+
+    _socket.on('table:presence:updated', (data) {
+      final map = _toMap(data);
+      final raw = map['presences'];
+      final next = <String, String>{};
+      if (raw is List) {
+        for (final item in raw) {
+          if (item is Map) {
+            final tableId = item['table_id']?.toString() ?? '';
+            final name = item['operator_name']?.toString() ?? '';
+            if (tableId.isNotEmpty && name.isNotEmpty) {
+              next[tableId] = name;
+            }
+          }
+        }
+      }
+      _ref.read(tablePresencesProvider.notifier).state = next;
     });
 
     _socket.on('operator:online', (data) {
@@ -412,10 +457,14 @@ class SyncService {
 
   // ─── Reconnect re-sync ───────────────────────────────────────────────────
 
-  /// R1 fix: after socket reconnect, re-join broadcast rooms and refresh all
-  /// state via `operator:resync`. Falls back to forcing re-login if the server
-  /// session has expired (PIN timeout).
+  /// After socket reconnect, re-join broadcast rooms and refresh all state
+  /// via `operator:resync`. Shows sync-in-progress feedback to the user.
   void _requestResync() {
+    _ref.read(connectionProvider.notifier).state = const ConnectionStatus(
+      online: true,
+      label: 'Syncing…',
+    );
+
     _socket.emitAck('operator:resync', {}).then((res) {
       if (res['kind'] == 'success') {
         final syncRaw = res['sync'];
@@ -423,11 +472,16 @@ class SyncService {
           applyInitialSync(Map<String, dynamic>.from(syncRaw));
         }
       } else {
-        // Server session expired — force the user to re-verify PIN.
         _ref.read(isAuthenticatedProvider.notifier).state = false;
       }
     }).catchError((_) {
-      // Network error during resync — do nothing; next reconnect will retry.
+      debugPrint('$_tag Resync failed — data may be stale');
+      final restaurant = _ref.read(restaurantProvider);
+      _ref.read(connectionProvider.notifier).state = ConnectionStatus(
+        online: true,
+        label:
+            'Connected · ${restaurant?.name ?? "Restaurant"} — sync failed, tap to retry',
+      );
     });
   }
 
@@ -454,6 +508,7 @@ class SyncService {
       'table:shifted',
       'table:merged',
       'table:links:updated',
+      'table:presence:updated',
     ]) {
       _socket.off(event);
     }

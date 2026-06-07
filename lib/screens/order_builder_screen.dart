@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../services/socket_service.dart';
 import '../models/server_models.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
@@ -35,14 +36,50 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   bool _searchOpen = false;
   String? _activeSection;
 
+  bool _readOnly = false;
+  String _holderName = '';
+  bool _isSaving = false;
+  SocketService? _socketSvc;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _socketSvc = ref.read(socketServiceProvider);
+  }
+
   @override
   void initState() {
     super.initState();
-    // Auto-show payment sheet if the table already has active bills (billed state).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _maybeAutoShowPayment();
+      if (mounted) {
+        _joinPresence();
+        _maybeAutoShowPayment();
+      }
     });
   }
+
+  Future<void> _joinPresence() async {
+    final socketService = ref.read(socketServiceProvider);
+    try {
+      final ack = await socketService.emitAck(
+        'table:presence:join',
+        {'table_id': widget.tableId},
+      );
+      if (!mounted) return;
+      if (ack['kind'] == 'success' && ack['holder'] != null) {
+        final holder = ack['holder'];
+        if (holder is Map) {
+          setState(() {
+            _readOnly = true;
+            _holderName = holder['operator_name']?.toString() ?? 'Another waiter';
+          });
+        }
+      }
+    } catch (_) {
+      // Presence is non-critical — silently ignore if server is unreachable.
+    }
+  }
+
 
   void _maybeAutoShowPayment() {
     final tables = ref.read(tablesProvider);
@@ -86,12 +123,102 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     return ServerOrder.fromMap(Map<String, dynamic>.from(raw));
   }
 
+  /// Converts the current cart into a server-side draft order, then navigates away.
+  Future<void> _saveAndExitDraft() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+
+    final messenger = ScaffoldMessenger.of(context);
+    final socketService = ref.read(socketServiceProvider);
+    final notes = ref.read(orderNotesProvider);
+    final items = ref.read(cartProvider)
+        .map((l) => <String, dynamic>{
+              'item_id': l.item.id,
+              if (l.variationId != null) 'variation_id': l.variationId,
+              if (l.variationName != null) 'variation_name': l.variationName,
+              'quantity': l.qty,
+              'selected_options':
+                  l.selectedOptions.map((o) => o.toJson()).toList(),
+              'notes': l.itemNote,
+            })
+        .toList();
+
+    final response = await socketService.emitAck(
+      'order:create',
+      <String, dynamic>{
+        'table_id': widget.tableId,
+        'items': items,
+        'notes': notes,
+        'order_type': 'dine_in',
+      },
+    );
+
+    if (!mounted) return;
+    setState(() => _isSaving = false);
+
+    if (response['kind'] == 'error') {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              response['message']?.toString() ?? 'Could not save draft — please try again',
+            ),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      return;
+    }
+
+    ref.read(syncServiceProvider).applyOrderAck(response, includeHistory: true);
+    ref.read(cartProvider.notifier).clear();
+    ref.read(orderNotesProvider.notifier).state = '';
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Draft saved — resume anytime'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    _leaveOrder();
+  }
+
   void _leaveOrder() {
     if (context.canPop()) {
       context.pop();
     } else {
       context.go('/tables');
     }
+  }
+
+  Future<bool> _confirmKotBanner(int itemCount) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.paper,
+        title: const Text('Send KOT to kitchen now?', style: AppTypography.title),
+        content: Text(
+          '$itemCount ${itemCount == 1 ? "item" : "items"} ready to fire. '
+          'You can keep editing before sending from the review screen.',
+          style: AppTypography.bodyMd,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Send',
+                style: TextStyle(color: AppColors.terra500)),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
   }
 
   Future<bool> _confirmDiscard() async {
@@ -122,11 +249,78 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     return ok ?? false;
   }
 
+  Future<void> _confirmClearCart() async {
+    final cart = ref.read(cartProvider);
+    if (cart.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.paper,
+        title: const Text('Clear cart?', style: AppTypography.title),
+        content: Text(
+          '${cart.length} ${cart.length == 1 ? "item" : "items"} will be removed.',
+          style: AppTypography.bodyMd,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Clear', style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      ref.read(cartProvider.notifier).clear();
+    }
+  }
+
+  Future<void> _showNotesDialog() async {
+    final current = ref.read(orderNotesProvider);
+    final controller = TextEditingController(text: current);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.paper,
+        title: const Text('Order note', style: AppTypography.title),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'e.g. Birthday table, extra napkins, VIP…',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              ref.read(orderNotesProvider.notifier).state =
+                  controller.text.trim();
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Save',
+                style: TextStyle(color: AppColors.terra500)),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final menu = ref.watch(menuProvider);
     final cart = ref.watch(cartProvider);
     final cartTotal = cart.fold(0.0, (s, l) => s + l.lineTotal);
+    final orderNotes = ref.watch(orderNotesProvider);
 
     final sections = <String, List<MenuItem>>{};
     for (final m in menu) {
@@ -166,6 +360,28 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
           body: SafeArea(
             child: Column(
               children: [
+                if (_readOnly)
+                  Container(
+                    width: double.infinity,
+                    color: AppColors.readOnlyBannerBg,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.lock_outline,
+                            size: 16, color: AppColors.readOnlyBannerText),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '$_holderName is working on this table. View-only mode.',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.readOnlyBannerText,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 LiquidAppBar(
                   title: 'Table $tableDisplay',
                   leading: IconButton(
@@ -248,6 +464,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             case 'packages':
                               PackageSheet.show(context);
                               break;
+                            case 'clear_cart':
+                              _confirmClearCart();
+                              break;
                           }
                         },
                         itemBuilder: (ctx) => [
@@ -290,18 +509,48 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 ],
                               ),
                             ),
+                          if (cart.isNotEmpty) ...[
+                            const PopupMenuDivider(),
+                            PopupMenuItem(
+                              value: 'clear_cart',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.delete_sweep_outlined,
+                                      size: 18, color: AppColors.danger),
+                                  const SizedBox(width: 8),
+                                  Text('Clear Cart',
+                                      style: AppTypography.bodyMd
+                                          .copyWith(color: AppColors.danger)),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       );
                     }),
                     IconButton(
-                      icon: const Icon(Icons.bookmark_border,
-                          color: AppColors.ink70),
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.ink70,
+                              ),
+                            )
+                          : const Icon(Icons.bookmark_border,
+                              color: AppColors.ink70),
                       tooltip: 'Save & exit',
-                      onPressed: () async {
-                        final ok = await _confirmDiscard();
-                        if (!context.mounted) return;
-                        if (ok) _leaveOrder();
-                      },
+                      onPressed: _isSaving
+                          ? null
+                          : () async {
+                              final cart = ref.read(cartProvider);
+                              if (cart.isEmpty) {
+                                _leaveOrder();
+                                return;
+                              }
+                              await _saveAndExitDraft();
+                            },
                     ),
                   ],
                 ),
@@ -361,7 +610,17 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                   ),
                 // Fast-add bar — pinned + auto trending items from server.
                 if (runningOrder != null && runningOrder.itemCount > 0)
-                  _RunningOrderCard(order: runningOrder),
+                  _RunningOrderCard(
+                    order: runningOrder,
+                    tableId: widget.tableId,
+                    cartIsEmpty: cart.isEmpty,
+                    onPrintSummary: () {
+                      ref.read(socketServiceProvider).emit(
+                        'print:summary',
+                        {'order_id': runningOrder.id},
+                      );
+                    },
+                  ),
                 Builder(builder: (context) {
                   final pinned = ref.watch(fastAddPinnedProvider);
                   final auto = ref.watch(fastAddAutoProvider);
@@ -373,10 +632,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                   ];
                   if (merged.isEmpty) return const SizedBox.shrink();
                   return SizedBox(
-                    height: 44,
+                    height: AppTouchTargets.chip,
                     child: ListView(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, AppSpacing.xs),
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -426,7 +685,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                         height: 6,
                                         margin: const EdgeInsets.only(right: 4),
                                         decoration: const BoxDecoration(
-                                          color: Color(0xFFFF6B35),
+                                          color: AppColors.trendingDot,
                                           shape: BoxShape.circle,
                                         ),
                                       ),
@@ -458,10 +717,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                   final recent = ref.watch(recentItemsProvider);
                   if (recent.isEmpty) return const SizedBox.shrink();
                   return SizedBox(
-                    height: 44,
+                    height: AppTouchTargets.chip,
                     child: ListView(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, AppSpacing.xs),
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -537,20 +796,35 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       );
                     }
                     return sections.isEmpty
-                        ? const Center(
+                        ? Center(
                             child: Padding(
-                              padding: EdgeInsets.all(32),
+                              padding: const EdgeInsets.all(32),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.restaurant_menu,
+                                  const Icon(Icons.restaurant_menu,
                                       color: AppColors.ink30, size: 48),
-                                  SizedBox(height: 12),
-                                  Text('No items match',
-                                      style: AppTypography.title),
-                                  SizedBox(height: 4),
-                                  Text('Try a different search',
-                                      style: AppTypography.caption),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _query.isNotEmpty
+                                        ? 'No results for "$_query"'
+                                        : _activeSection != null
+                                            ? 'Nothing in "$_activeSection"'
+                                            : menu.isEmpty
+                                                ? 'Menu not loaded yet'
+                                                : 'No items match',
+                                    style: AppTypography.title,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _query.isNotEmpty
+                                        ? 'Try searching something else'
+                                        : _activeSection != null
+                                            ? 'Try a different section'
+                                            : 'Menu will appear once synced',
+                                    style: AppTypography.caption,
+                                  ),
                                 ],
                               ),
                             ),
@@ -639,14 +913,27 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             ),
                           ),
                           GestureDetector(
-                            onTap: () =>
-                                context.push('/order/${widget.tableId}/review'),
+                            onTap: _readOnly
+                                ? null
+                                : () async {
+                                    final confirmed =
+                                        await _confirmKotBanner(itemCount);
+                                    if (confirmed) {
+                                      if (context.mounted) {
+                                        context.push(
+                                            '/order/${widget.tableId}/review');
+                                      }
+                                    }
+                                  },
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 4),
-                              decoration: const BoxDecoration(
-                                color: AppColors.amber,
-                                borderRadius: BorderRadius.all(AppRadii.pill),
+                              decoration: BoxDecoration(
+                                color: _readOnly
+                                    ? Colors.grey.shade400
+                                    : AppColors.amber,
+                                borderRadius:
+                                    const BorderRadius.all(AppRadii.pill),
                               ),
                               child: Text('Send',
                                   style: AppTypography.caption.copyWith(
@@ -659,49 +946,64 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     ),
                   );
                 }),
-                if (cart.isNotEmpty)
+                if (cart.isNotEmpty) ...[
+                  _OrderNoteRow(
+                    note: orderNotes,
+                    onTap: _showNotesDialog,
+                  ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: PredictiveScale(
-                      enabled: false, // Behind flag — enable when ready
-                      maxScaleBoost: 0.015,
-                      child: Hero(
-                        tag: HeroTags.cartBar,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: GestureDetector(
-                            onTap: () =>
-                                context.push('/order/${widget.tableId}/review'),
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    AppColors.terra400,
-                                    AppColors.terra600
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: Opacity(
+                      opacity: _readOnly ? 0.45 : 1.0,
+                      child: PredictiveScale(
+                        enabled: false,
+                        maxScaleBoost: 0.015,
+                        child: Hero(
+                          tag: HeroTags.cartBar,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: GestureDetector(
+                              onTap: _readOnly
+                                  ? null
+                                  : () => context
+                                      .push('/order/${widget.tableId}/review'),
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      AppColors.terra400,
+                                      AppColors.terra600
+                                    ],
+                                  ),
+                                  borderRadius:
+                                      const BorderRadius.all(AppRadii.md),
+                                  boxShadow:
+                                      _readOnly ? [] : AppShadows.terraGlow,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      _readOnly
+                                          ? 'View-only — cannot review'
+                                          : 'Review · ${cart.length} ${cart.length == 1 ? "item" : "items"}',
+                                      style: AppTypography.bodyMd.copyWith(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                    const Spacer(),
+                                    if (!_readOnly) ...[
+                                      KineticRupeeCounter(
+                                        amount: cartTotal,
+                                        fontSize: 18,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    const Icon(Icons.arrow_forward,
+                                        color: Colors.white),
                                   ],
                                 ),
-                                borderRadius: BorderRadius.all(AppRadii.md),
-                                boxShadow: AppShadows.terraGlow,
-                              ),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    'Review · ${cart.length} ${cart.length == 1 ? "item" : "items"}',
-                                    style: AppTypography.bodyMd.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600),
-                                  ),
-                                  const Spacer(),
-                                  KineticRupeeCounter(
-                                    amount: cartTotal,
-                                    fontSize: 18,
-                                    color: Colors.white,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Icon(Icons.arrow_forward,
-                                      color: Colors.white),
-                                ],
                               ),
                             ),
                           ),
@@ -709,12 +1011,19 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       ),
                     ),
                   ),
+                ],
               ],
             ),
           ),
         ),
       ), // LiquidMeshBackground
     );
+  }
+
+  @override
+  void dispose() {
+    _socketSvc?.emit('table:presence:leave', {'table_id': widget.tableId});
+    super.dispose();
   }
 }
 
@@ -757,9 +1066,72 @@ class _SectionChip extends StatelessWidget {
   }
 }
 
+class _OrderNoteRow extends StatelessWidget {
+  final String note;
+  final VoidCallback onTap;
+  const _OrderNoteRow({required this.note, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasNote = note.isNotEmpty;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: hasNote
+              ? AppColors.terra50
+              : Colors.white.withValues(alpha: 0.5),
+          borderRadius: const BorderRadius.all(AppRadii.sm),
+          border: Border.all(
+            color: hasNote ? AppColors.terra200 : AppColors.ink10,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              hasNote ? Icons.notes : Icons.add_comment_outlined,
+              size: 15,
+              color: hasNote ? AppColors.terra600 : AppColors.ink30,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                hasNote ? note : 'Add order note…',
+                style: AppTypography.caption.copyWith(
+                  color: hasNote ? AppColors.ink : AppColors.ink30,
+                  fontWeight:
+                      hasNote ? FontWeight.w600 : FontWeight.w400,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(
+              Icons.edit_outlined,
+              size: 13,
+              color: AppColors.ink30,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _RunningOrderCard extends StatelessWidget {
   final ServerOrder order;
-  const _RunningOrderCard({required this.order});
+  final String tableId;
+  final bool cartIsEmpty;
+  final VoidCallback onPrintSummary;
+
+  const _RunningOrderCard({
+    required this.order,
+    required this.tableId,
+    required this.cartIsEmpty,
+    required this.onPrintSummary,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -832,6 +1204,46 @@ class _RunningOrderCard extends StatelessWidget {
                 ),
               ],
             ],
+            if (cartIsEmpty) ...[
+              const SizedBox(height: 10),
+              const Divider(height: 1, thickness: 1, color: AppColors.terra200),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onPrintSummary,
+                      icon: const Icon(Icons.print_outlined, size: 14),
+                      label: const Text('Print Summary'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.terra600,
+                        side: const BorderSide(color: AppColors.terra300),
+                        textStyle: AppTypography.caption
+                            .copyWith(fontWeight: FontWeight.w600),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => KotHistorySheet.show(context, tableId),
+                      icon: const Icon(Icons.history_outlined, size: 14),
+                      label: const Text('KOT History'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.ink70,
+                        side: const BorderSide(color: AppColors.ink30),
+                        textStyle: AppTypography.caption
+                            .copyWith(fontWeight: FontWeight.w600),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -872,11 +1284,10 @@ class _ItemRow extends StatelessWidget {
                         if (unavailable) ...[
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
+                            padding: AppChipPadding.statusBadge,
                             decoration: BoxDecoration(
-                              color: AppColors.warn.withValues(alpha: 0.16),
-                              borderRadius: BorderRadius.circular(4),
+                              color: AppColors.warn.withValues(alpha: AppAlphas.warnOverlay),
+                              borderRadius: BorderRadius.all(AppRadii.xs),
                             ),
                             child: Text('86',
                                 style: AppTypography.micro.copyWith(

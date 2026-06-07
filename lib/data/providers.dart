@@ -518,6 +518,10 @@ final syncServiceProvider = Provider<SyncService>(
   (ref) => SyncService(ref.read(socketServiceProvider), ref),
 );
 
+// tableId → operator_name of the waiter currently on that table's order screen.
+final tablePresencesProvider =
+    StateProvider<Map<String, String>>((_) => {});
+
 // ─────────────── Auth ───────────────
 
 final isAuthenticatedProvider = StateProvider<bool>((_) => false);

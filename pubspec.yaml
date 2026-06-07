@@ -51,8 +51,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/audio/
-    - assets/rive/
+    - assets/images/
   fonts:
     - family: Inter
       fonts:
@@ -64,9 +63,6 @@ flutter:
           weight: 600
         - asset: assets/fonts/Inter-Bold.ttf
           weight: 700
-    - family: Fraunces
-      fonts:
-        - asset: assets/fonts/Fraunces-VariableFont.ttf
     - family: Cormorant
       fonts:
         - asset: assets/fonts/CormorantGaramond.ttf

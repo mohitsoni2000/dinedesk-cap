@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../motion/motion.dart';
@@ -73,27 +75,32 @@ class _SendKotButtonState extends ConsumerState<SendKotButton> {
 
 class SendKotButtonController {
   _SendKotButtonState? _state;
+  Timer? _resetTimer;
 
-  void _attach(_SendKotButtonState s) {
-    _state = s;
-  }
+  void _attach(_SendKotButtonState s) => _state = s;
 
   void _detach() {
+    _resetTimer?.cancel();
+    _resetTimer = null;
     _state = null;
   }
 
   void confirmSuccess() {
+    _resetTimer?.cancel();
     _state?._setPhase(const RiveButtonSuccess());
-    Future<void>.delayed(const Duration(milliseconds: 2500), () {
+    _resetTimer = Timer(const Duration(milliseconds: 2500), () {
       _state?._setPhase(const RiveButtonIdle());
+      _resetTimer = null;
     });
   }
 
   void confirmError() {
+    _resetTimer?.cancel();
     _state?._setPhase(const RiveButtonError());
   }
 
   void reset() {
+    _resetTimer?.cancel();
     _state?._setPhase(const RiveButtonIdle());
   }
 }

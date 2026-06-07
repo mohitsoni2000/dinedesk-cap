@@ -226,7 +226,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                           width: 64,
                           height: 64,
                           decoration: const BoxDecoration(
-                            color: Color(0xFF2A2622),
+                            color: AppColors.logoBg,
                             borderRadius: BorderRadius.all(AppRadii.md),
                             boxShadow: AppShadows.terraGlow,
                           ),

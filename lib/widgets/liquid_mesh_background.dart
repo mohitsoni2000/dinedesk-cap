@@ -57,9 +57,9 @@ class _MeshPainter extends CustomPainter {
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: dark
-            ? const [Color(0xFF2A1A10), Color(0xFF1C130C), Color(0xFF14100C)]
+            ? const [AppColors.meshDark1, AppColors.meshDark2, AppColors.meshDark3]
             : const [
-                Color(0xFFFFF6EA),
+                AppColors.paperHint,
                 AppColors.paperWarm,
                 AppColors.paperDeeper
               ],

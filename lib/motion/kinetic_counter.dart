@@ -85,7 +85,7 @@ class KineticRupeeCounter extends StatelessWidget {
   Widget build(BuildContext context) {
     final NumberFormat fmt = NumberFormat.decimalPattern('en_IN');
     return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: amount, end: amount),
+      tween: Tween<double>(begin: 0, end: amount),
       duration: duration,
       curve: Curves.easeOutCubic,
       builder: (BuildContext context, double rolled, Widget? _) {
@@ -160,7 +160,7 @@ class _KineticKotNumberState extends State<KineticKotNumber>
             fontFamily: AppTypography.cormorant,
             fontSize: widget.fontSize,
             fontWeight: FontWeight.w600,
-            color: const Color(0xFFFFB964),
+            color: AppColors.gold,
             fontStyle: FontStyle.italic,
             letterSpacing: 0,
             fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],

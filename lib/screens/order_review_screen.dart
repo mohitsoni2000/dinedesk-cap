@@ -25,15 +25,31 @@ class OrderReviewScreen extends ConsumerStatefulWidget {
 
 enum _OrderType { dineIn, takeaway }
 
+/// Step identifier for per-step error messages in order submission.
+enum _OrderFlowStep { orderCreate, kotSend, billGenerate, payment }
+
+/// Result of a single order submission step — carries step ID and user message.
+final class _OrderFlowStepResult {
+  /// Which step failed, or null if the flow succeeded.
+  final _OrderFlowStep? failedStep;
+  /// Human-readable error message for display.
+  final String? errorMessage;
+
+  const _OrderFlowStepResult({this.failedStep, this.errorMessage});
+  bool get isSuccess => failedStep == null;
+}
+
 class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   final TextEditingController _notes = TextEditingController();
   Map<String, dynamic>? _customer;
   _OrderType _orderType = _OrderType.dineIn;
+  StateController<String>? _notesNotifier;
 
   @override
   void initState() {
     super.initState();
     _notes.text = ref.read(orderNotesProvider);
+    _notesNotifier = ref.read(orderNotesProvider.notifier);
   }
 
   bool _submitted = false;
@@ -47,7 +63,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     // Fix #8: Don't clear notes on back navigation — they should persist
     // when user goes back to add more items. Only clear on successful submit.
     if (_submitted) {
-      ref.read(orderNotesProvider.notifier).state = '';
+      _notesNotifier?.state = '';
     }
     _notes.dispose();
     super.dispose();
@@ -143,19 +159,16 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     });
   }
 
-  Future<bool> _runOrderFlow({
+  /// Runs the order submission flow, returning which step failed and why.
+  Future<_OrderFlowStepResult> _runOrderFlow({
     required bool generateBill,
     required bool collectPayment,
     String quickSettleMode = 'cash',
   }) async {
     final cart = ref.read(cartProvider);
     final socketService = ref.read(socketServiceProvider);
-
     String? orderId;
 
-    // OR2 fix: if KOT was already sent for this order (previous attempt
-    // succeeded up to kot:send but bill:generate failed), skip order:create/
-    // update and kot:send entirely to avoid doubling items in kitchen.
     if (_kotSentOrderId != null) {
       orderId = _kotSentOrderId;
     } else {
@@ -166,65 +179,78 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         items: items,
         notes: _notes.text,
       );
-      if (orderResponse['kind'] == 'error') return false;
-      ref
-          .read(syncServiceProvider)
-          .applyOrderAck(orderResponse, includeHistory: true);
+      if (orderResponse['kind'] == 'error') {
+        return _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.orderCreate,
+          errorMessage: 'Could not save order — please retry',
+        );
+      }
+      ref.read(syncServiceProvider).applyOrderAck(orderResponse, includeHistory: true);
       _rememberKotLabel(orderResponse);
 
-      orderId =
-          _orderIdFromResponse(orderResponse, fallback: fallbackOrderId);
-      if (orderId == null || orderId.isEmpty) return false;
+      orderId = _orderIdFromResponse(orderResponse, fallback: fallbackOrderId);
+      if (orderId == null || orderId.isEmpty) {
+        return _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.orderCreate,
+          errorMessage: 'Order saved but ID not returned — please retry',
+        );
+      }
 
       final kotResponse = await socketService.emitAck(
-        'kot:send',
-        <String, dynamic>{'order_id': orderId},
+        'kot:send', <String, dynamic>{'order_id': orderId},
       );
-      if (kotResponse['kind'] == 'error') return false;
-      ref
-          .read(syncServiceProvider)
-          .applyOrderAck(kotResponse, includeHistory: true);
-
-      // Mark KOT as sent so retries skip order:create/update + kot:send.
+      if (kotResponse['kind'] == 'error') {
+        return _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.kotSend,
+          errorMessage: 'Failed to send KOT to kitchen — please retry',
+        );
+      }
+      ref.read(syncServiceProvider).applyOrderAck(kotResponse, includeHistory: true);
       _kotSentOrderId = orderId;
     }
 
-    if (!generateBill) return true;
+    if (!generateBill) return const _OrderFlowStepResult();
 
     final billResponse = await socketService.emitAck(
-      'bill:generate',
-      <String, dynamic>{'order_id': orderId},
+      'bill:generate', <String, dynamic>{'order_id': orderId},
     );
-    if (billResponse['kind'] == 'error') return false;
+    if (billResponse['kind'] == 'error') {
+      return _OrderFlowStepResult(
+        failedStep: _OrderFlowStep.billGenerate,
+        errorMessage: 'Failed to generate bill — please retry',
+      );
+    }
     ref.read(syncServiceProvider).applyOrderAck(
-          billResponse,
-          includeHistory: true,
-          markTableBilled: true,
-        );
-    if (!collectPayment) return true;
+          billResponse, includeHistory: true, markTableBilled: true);
+    if (!collectPayment) return const _OrderFlowStepResult();
 
     final bills = billResponse['bills'];
     final bill = (bills is List && bills.isNotEmpty && bills.first is Map)
-        ? Map<String, dynamic>.from(bills.first as Map)
-        : null;
+        ? Map<String, dynamic>.from(bills.first as Map) : null;
     final billId = bill?['id']?.toString();
-    if (billId == null || billId.isEmpty) return false;
+    if (billId == null || billId.isEmpty) {
+      return _OrderFlowStepResult(
+        failedStep: _OrderFlowStep.billGenerate,
+        errorMessage: 'Bill generated but ID not returned — please retry',
+      );
+    }
 
     final total = cart.fold(0.0, (double s, CartLine l) => s + l.lineTotal);
     final billTotal = (bill?['total_amount'] as num?)?.toDouble() ?? total;
     final paymentResponse = await socketService.emitAck(
-      'bill:payment',
-      <String, dynamic>{
+      'bill:payment', <String, dynamic>{
         'bill_id': billId,
-        'payments': [
-          {'payment_mode': quickSettleMode, 'amount': billTotal},
-        ],
+        'payments': [{'payment_mode': quickSettleMode, 'amount': billTotal}],
       },
     );
-    ref
-        .read(syncServiceProvider)
-        .applyOrderAck(paymentResponse, includeHistory: true);
-    return paymentResponse['kind'] != 'error';
+    if (paymentResponse['kind'] == 'error') {
+      return _OrderFlowStepResult(
+        failedStep: _OrderFlowStep.payment,
+        errorMessage: 'Payment failed — please retry from the bill screen',
+      );
+    }
+    ref.read(syncServiceProvider).applyOrderAck(paymentResponse, includeHistory: true);
+    return const _OrderFlowStepResult();
   }
 
   Future<void> _submit() async {
@@ -242,12 +268,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     ref.read(orderNotesProvider.notifier).state = _notes.text;
 
     final completer = Completer<bool>();
-    unawaited(_runOrderFlow(
+    final runningFlow = _runOrderFlow(
       generateBill: generateBill,
       collectPayment: collectPayment,
       quickSettleMode: quickSettleMode,
-    ).then((ok) {
-      if (!completer.isCompleted) completer.complete(ok);
+    );
+    unawaited(runningFlow.then((result) {
+      if (!completer.isCompleted) completer.complete(result.isSuccess);
     }));
 
     final ok = await OrderSubmittingOverlay.show(context, completer: completer);
@@ -260,11 +287,31 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       context.go('/order/${widget.tableId}/success');
       return;
     }
-    ScaffoldMessenger.of(context)
+
+    // Flow failed — capture messenger before await to avoid async gap warning.
+    final messenger = ScaffoldMessenger.of(context);
+    String msg = 'Order could not be confirmed — please retry';
+    try {
+      final result = await runningFlow;
+      if (result.errorMessage != null) {
+        final stepLabel = switch (result.failedStep) {
+          _OrderFlowStep.orderCreate => 'Order creation',
+          _OrderFlowStep.kotSend => 'KOT to kitchen',
+          _OrderFlowStep.billGenerate => 'Bill generation',
+          _OrderFlowStep.payment => 'Payment',
+          null => null,
+        };
+        msg = stepLabel != null
+            ? '$stepLabel failed: ${result.errorMessage}'
+            : result.errorMessage!;
+      }
+    } catch (_) {
+      // ignore — use default message
+    }
+
+    messenger
       ..clearSnackBars()
-      ..showSnackBar(const SnackBar(
-        content: Text('Order could not be confirmed — please retry'),
-      ));
+      ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
   /// KOT + Bill: create order → send KOT → generate bill in one action.
@@ -386,99 +433,17 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                     title: 'Review · $tableDisplay',
                     leading: IconButton(
                       icon: const Icon(Icons.arrow_back),
-                      onPressed: () => context.pop(),
+                      onPressed: cart.isEmpty
+                          ? null // Task #10 fix: disable back with empty cart
+                          : () => context.pop(),
                     ),
                   ),
                 ),
               ),
               Expanded(
                 child: cart.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.shopping_basket_outlined,
-                              color: AppColors.ink30,
-                              size: 48,
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Cart is empty',
-                              style: AppTypography.title,
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Go back and add items',
-                              style: AppTypography.caption,
-                            ),
-                            const SizedBox(height: 20),
-                            // Fix #5: Add Items CTA on empty cart.
-                            LiquidPrimaryButton(
-                              label: 'Add Items',
-                              fullWidth: true,
-                              leadingIcon: Icons.add,
-                              onPressed: () => context.pop(),
-                            ),
-                            const SizedBox(height: 12),
-                            // Repeat Last Order — re-add items from previous order on this table.
-                            Builder(
-                              builder: (_) {
-                                final history = ref.watch(historyProvider);
-                                final lastOrder = history
-                                    .where(
-                                      (o) =>
-                                          o.tableId == tableDisplay &&
-                                          o.lines.isNotEmpty &&
-                                          o.status != OrderStatus.cancelled,
-                                    )
-                                    .firstOrNull;
-                                if (lastOrder == null) {
-                                  return const SizedBox.shrink();
-                                }
-                                return LiquidSecondaryButton(
-                                  label: 'Repeat Last Order (${lastOrder.id})',
-                                  leadingIcon: Icons.replay,
-                                  onPressed: () {
-                                    final menu = ref.read(menuProvider);
-                                    for (final line in lastOrder.lines) {
-                                      // Match by item ID; fall back to name if ID missing.
-                                      final menuItem = menu
-                                          .where((m) =>
-                                              line.itemId.isNotEmpty
-                                                  ? m.id == line.itemId
-                                                  : m.name == line.name)
-                                          .firstOrNull;
-                                      if (menuItem != null) {
-                                        ref
-                                            .read(cartProvider.notifier)
-                                            .addCustom(
-                                              item: menuItem,
-                                              qty: line.qty,
-                                              mods: line.mods,
-                                              modsExtra: 0,
-                                              itemNote: '',
-                                            );
-                                      }
-                                    }
-                                    ref
-                                        .read(feedbackServiceProvider)
-                                        .fire(const FeedbackMedium());
-                                    ScaffoldMessenger.of(context)
-                                      ..clearSnackBars()
-                                      ..showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            '${lastOrder.lines.length} items added from ${lastOrder.id}',
-                                          ),
-                                        ),
-                                      );
-                                  },
-                                );
-                              },
-                            ),
-                          ],
-                        ),
+                    ? _EmptyCartGuard(
+                        onBackToMenu: () => context.pop(),
                       )
                     : ListView(
                         padding: EdgeInsets.fromLTRB(
@@ -1201,6 +1166,137 @@ class _KotRow extends StatelessWidget {
   }
 }
 
+/// Task #10 fix: guard wrapping the empty-cart state with a PopScope so the
+/// user cannot accidentally back out of the review screen with nothing ordered.
+/// Both the Android back button and iOS swipe gesture are intercepted.
+class _EmptyCartGuard extends ConsumerWidget {
+  final VoidCallback onBackToMenu;
+  const _EmptyCartGuard({required this.onBackToMenu});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _showEmptyCartDialog(context);
+      },
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.shopping_basket_outlined,
+              color: AppColors.ink30,
+              size: 48,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Cart is empty',
+              style: AppTypography.title,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Go back and add items',
+              style: AppTypography.caption,
+            ),
+            const SizedBox(height: 20),
+            LiquidPrimaryButton(
+              label: 'Add Items',
+              fullWidth: true,
+              leadingIcon: Icons.add,
+              onPressed: () => context.pop(),
+            ),
+            const SizedBox(height: 12),
+            Builder(
+              builder: (_) {
+                final history = ref.watch(historyProvider);
+                final lastOrder = history
+                    .where(
+                      (o) => o.lines.isNotEmpty && o.status != OrderStatus.cancelled,
+                    )
+                    .firstOrNull;
+                if (lastOrder == null) {
+                  return const SizedBox.shrink();
+                }
+                return LiquidSecondaryButton(
+                  label: 'Repeat Last Order (${lastOrder.id})',
+                  leadingIcon: Icons.replay,
+                  onPressed: () {
+                    final menu = ref.read(menuProvider);
+                    int added = 0;
+                    final skipped = <String>[];
+                    for (final line in lastOrder.lines) {
+                      final menuItem = menu
+                          .where((m) =>
+                              line.itemId.isNotEmpty
+                                  ? m.id == line.itemId
+                                  : m.name == line.name)
+                          .firstOrNull;
+                      if (menuItem != null) {
+                        ref.read(cartProvider.notifier).addCustom(
+                              item: menuItem,
+                              qty: line.qty,
+                              mods: line.mods,
+                              modsExtra: 0,
+                              itemNote: '',
+                            );
+                        added++;
+                      } else {
+                        skipped.add(line.name);
+                      }
+                    }
+                    ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
+                    final summary = skipped.isEmpty
+                        ? '$added item${added == 1 ? '' : 's'} added from ${lastOrder.id}'
+                        : '$added item${added == 1 ? '' : 's'} added, '
+                            '${skipped.length} item${skipped.length == 1 ? '' : 's'} '
+                            'skipped: '
+                            '${skipped.take(3).join(', ')}'
+                            '${skipped.length > 3 ? ' (+${skipped.length - 3} more)' : ''}';
+                    ScaffoldMessenger.of(context)
+                      ..clearSnackBars()
+                      ..showSnackBar(
+                        SnackBar(
+                          content: Text(summary),
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                  },
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEmptyCartDialog(BuildContext context) {
+    showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nothing to review'),
+        content: const Text(
+          'Your cart is empty. Go back and add items to place an order.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Stay'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Go to Menu'),
+          ),
+        ],
+      ),
+    ).then((confirmed) {
+      if (confirmed == true) onBackToMenu();
+    });
+  }
+}
+
 class _VegMark extends StatelessWidget {
   final bool isVeg;
   const _VegMark({required this.isVeg});
@@ -1208,16 +1304,16 @@ class _VegMark extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = isVeg ? AppColors.success : AppColors.danger;
     return Container(
-      width: 12,
-      height: 12,
+      width: 14,
+      height: 14,
       decoration: BoxDecoration(
         border: Border.all(color: color, width: 1.5),
         borderRadius: BorderRadius.circular(2),
       ),
       child: Center(
         child: Container(
-          width: 5,
-          height: 5,
+          width: 6,
+          height: 6,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
       ),

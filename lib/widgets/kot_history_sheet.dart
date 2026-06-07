@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
+import 'kot_edit_sheet.dart';
 import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
 
@@ -31,18 +32,20 @@ class KotHistorySheet extends ConsumerWidget {
     final allOrders = ref.watch(historyProvider);
     final tables = ref.watch(tablesProvider);
 
-    // Find orders for this table (match by serverId → tableId display name).
-    String tableDisplay = tableServerId;
-    for (final t in tables) {
-      if (t.serverId == tableServerId) {
-        tableDisplay = t.id;
-        break;
-      }
-    }
+    final table =
+        tables.where((t) => t.serverId == tableServerId).firstOrNull;
+    final tableDisplay = table?.id ?? tableServerId;
+    final activeOrderId = table?.activeOrderId;
 
-    final tableOrders = allOrders
-        .where((o) => o.tableId == tableDisplay || o.tableId == tableServerId)
-        .toList()
+    // Primary filter: match by active order ID (most reliable — one order per table).
+    // Fallback: match by tableId display name or raw serverId for orders loaded
+    // before the active order was tracked (e.g. boot-loaded entries).
+    final tableOrders = allOrders.where((o) {
+      if (activeOrderId != null && o.orderId == activeOrderId) return true;
+      if (o.tableId == tableDisplay) return true;
+      if (o.tableId == tableServerId) return true;
+      return false;
+    }).toList()
       ..sort((a, b) {
         // Newest first: compare YYYY-MM-DDTHH:MM lexicographically.
         final aKey = '${a.date}T${a.time}';
@@ -129,7 +132,7 @@ class KotHistorySheet extends ConsumerWidget {
   }
 }
 
-class _KotCard extends StatelessWidget {
+class _KotCard extends ConsumerWidget {
   final HistoryOrder order;
   const _KotCard({required this.order});
 
@@ -147,8 +150,12 @@ class _KotCard extends StatelessWidget {
         OrderStatus.paid => 'PAID',
       };
 
+  bool get _isEditable =>
+      order.status == OrderStatus.sent || order.status == OrderStatus.modified;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final canEdit = ref.watch(flagsProvider).kotEdit && _isEditable;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -232,6 +239,24 @@ class _KotCard extends StatelessWidget {
             if (order.lines.length > 5)
               Text('+${order.lines.length - 5} more items',
                   style: AppTypography.micro.copyWith(color: AppColors.ink50)),
+          ],
+          if (canEdit) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: AppColors.ink10),
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: () => KotEditSheet.show(context, order),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.edit_note, size: 15, color: AppColors.warn),
+                  const SizedBox(width: 4),
+                  Text('Edit KOT',
+                      style: AppTypography.caption
+                          .copyWith(color: AppColors.warn, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
           ],
         ],
       ),

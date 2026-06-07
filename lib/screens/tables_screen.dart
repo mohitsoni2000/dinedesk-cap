@@ -22,6 +22,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   String _query = '';
   bool _searchOpen = false;
   bool _openingTable = false;
+  String? _openingTableId;
 
   void _onTableTap(RestaurantTable t) async {
     if (_openingTable) return;
@@ -41,7 +42,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
     ref.read(selectedTableIdProvider.notifier).state = t.serverId;
 
     if (intent.action == TableOpenAction.createDraft) {
-      setState(() => _openingTable = true);
+      setState(() {
+        _openingTable = true;
+        _openingTableId = t.serverId;
+      });
       final response = await ref.read(socketServiceProvider).emitAck(
         'order:create',
         {
@@ -51,7 +55,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
         },
       );
       if (!mounted) return;
-      setState(() => _openingTable = false);
+      setState(() {
+        _openingTable = false;
+        _openingTableId = null;
+      });
       if (response['kind'] == 'error') {
         _showTableError(
             response['message']?.toString() ?? 'Could not open table');
@@ -254,6 +261,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                         final t = filtered[i];
                         return _TableCard(
                           table: t,
+                          isLoading: _openingTable && _openingTableId == t.serverId,
                           onTap: () => _onTableTap(t),
                           onLongPress:
                               (t.state == TableState.mine ||
@@ -392,10 +400,11 @@ class _FloorTabs extends StatelessWidget {
 
 class _TableCard extends ConsumerWidget {
   final RestaurantTable table;
+  final bool isLoading;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   const _TableCard(
-      {required this.table, required this.onTap, this.onLongPress});
+      {required this.table, required this.isLoading, required this.onTap, this.onLongPress});
 
   Color _bg() {
     switch (table.state) {
@@ -451,7 +460,7 @@ class _TableCard extends ConsumerWidget {
         .any((ids) => ids.contains(table.serverId));
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: isLoading ? null : onTap,
       onLongPress: onLongPress,
       child: Hero(
         tag: HeroTags.tableCard(table.serverId),
@@ -471,70 +480,93 @@ class _TableCard extends ConsumerWidget {
             ),
           );
         },
-        child: Container(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: _bg(),
-            borderRadius: const BorderRadius.all(AppRadii.lg),
-            border: Border.all(color: _border(), width: 1),
-            boxShadow: table.state == TableState.mine
-                ? AppShadows.terraGlow
-                : AppShadows.card,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        child: Stack(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: _bg(),
+                borderRadius: const BorderRadius.all(AppRadii.lg),
+                border: Border.all(color: _border(), width: 1),
+                boxShadow: table.state == TableState.mine
+                    ? AppShadows.terraGlow
+                    : AppShadows.card,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      table.id,
-                      style: AppTypography.displayMd.copyWith(fontSize: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          table.id,
+                          style: AppTypography.displayMd.copyWith(fontSize: 24),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text('${table.seats} seats', style: AppTypography.caption),
+                    ],
+                  ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(_stateLabel(),
+                            style: AppTypography.micro,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      if (isLinked)
+                        const Icon(Icons.link, size: 12, color: AppColors.info),
+                    ],
+                  ),
+                  if (table.coverCount != null) ...[
+                    const SizedBox(height: 2),
+                    Text('${table.coverCount} guests',
+                        style: AppTypography.caption),
+                  ],
+                  if (table.bill != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      formatRupeesCompact(table.bill!),
+                      style:
+                          AppTypography.title.copyWith(fontWeight: FontWeight.w700),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text('${table.seats} seats', style: AppTypography.caption),
-                ],
-              ),
-              const Spacer(),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(_stateLabel(),
-                        style: AppTypography.micro,
+                  ],
+                  if (table.note != null) ...[
+                    const SizedBox(height: 4),
+                    Text(table.note!,
+                        style: AppTypography.caption,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
-                  ),
-                  if (isLinked)
-                    const Icon(Icons.link, size: 12, color: AppColors.info),
+                  ],
                 ],
               ),
-              if (table.coverCount != null) ...[
-                const SizedBox(height: 2),
-                Text('${table.coverCount} guests',
-                    style: AppTypography.caption),
-              ],
-              if (table.bill != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  formatRupeesCompact(table.bill!),
-                  style:
-                      AppTypography.title.copyWith(fontWeight: FontWeight.w700),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            ),
+            if (isLoading)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.ink.withValues(alpha: 0.38),
+                    borderRadius: const BorderRadius.all(AppRadii.lg),
+                  ),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                 ),
-              ],
-              if (table.note != null) ...[
-                const SizedBox(height: 4),
-                Text(table.note!,
-                    style: AppTypography.caption,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-              ],
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );

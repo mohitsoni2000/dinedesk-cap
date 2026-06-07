@@ -150,20 +150,9 @@ class _SplashScreenState extends State<SplashScreen>
                               width: 88,
                               height: 88,
                               decoration: const BoxDecoration(
-                                color: Color(0xFF2A2622),
+                                color: AppColors.logoBg,
                                 borderRadius: BorderRadius.all(AppRadii.lg),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Color(0x4DE05D38),
-                                    blurRadius: 24,
-                                    offset: Offset(0, 8),
-                                  ),
-                                  BoxShadow(
-                                    color: Color(0x1AE05D38),
-                                    blurRadius: 48,
-                                    offset: Offset(0, 20),
-                                  ),
-                                ],
+                                boxShadow: AppShadows.logoGlow,
                               ),
                               clipBehavior: Clip.antiAlias,
                               child: Padding(

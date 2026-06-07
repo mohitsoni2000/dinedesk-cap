@@ -37,12 +37,22 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
   final Map<String, String> _singleSelections = {};
   final Set<String> _multiSelections = {};
   String _note = '';
+  String? _selectedVariationId;
 
   bool get _hasServerOptions => widget.item.optionGroups.isNotEmpty;
+  bool get _hasVariations => widget.item.variations.isNotEmpty;
+
+  MenuItemVariation? get _selectedVariation =>
+      widget.item.variations
+          .where((v) => v.id == _selectedVariationId)
+          .firstOrNull;
 
   @override
   void initState() {
     super.initState();
+    if (widget.item.variations.isNotEmpty) {
+      _selectedVariationId = widget.item.variations.first.id;
+    }
     for (final group in widget.item.optionGroups) {
       if ((group.isRequired || group.minSelect > 0) &&
           group.options.isNotEmpty) {
@@ -75,7 +85,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final unit = widget.item.price + _serverOptionExtra;
+    final basePrice = _selectedVariation?.price ?? widget.item.price;
+    final unit = basePrice + _serverOptionExtra;
     final total = unit * _qty;
 
     return DraggableScrollableSheet(
@@ -119,9 +130,75 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(formatRupeesCompact(widget.item.price),
-                      style: AppTypography.title),
+                  Text(
+                    _selectedVariation != null
+                        ? formatRupeesCompact(_selectedVariation!.price)
+                        : formatRupeesCompact(widget.item.price),
+                    style: AppTypography.title,
+                  ),
                   const SizedBox(height: 24),
+
+                  // Variations (size / variant) — shown when item has multiple options.
+                  if (_hasVariations) ...[
+                    Text('SIZE / VARIANT',
+                        style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final variation in widget.item.variations)
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              setState(
+                                  () => _selectedVariationId = variation.id);
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: _selectedVariationId == variation.id
+                                    ? AppColors.terra500.withValues(alpha: 0.10)
+                                    : Colors.white.withValues(alpha: 0.6),
+                                borderRadius: const BorderRadius.all(AppRadii.sm),
+                                border: Border.all(
+                                  color: _selectedVariationId == variation.id
+                                      ? AppColors.terra500.withValues(alpha: 0.5)
+                                      : AppColors.ink10,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    variation.name,
+                                    style: AppTypography.bodyMd.copyWith(
+                                      fontWeight:
+                                          _selectedVariationId == variation.id
+                                              ? FontWeight.w600
+                                              : FontWeight.w400,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    formatRupeesCompact(variation.price),
+                                    style: AppTypography.caption.copyWith(
+                                      color: AppColors.terra600,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    const Divider(height: 1, color: AppColors.ink10),
+                    const SizedBox(height: 20),
+                  ],
 
                   // Qty.
                   Row(
@@ -249,13 +326,23 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                           selectedOpts.add(option);
                         }
 
+                        final variationPriceDiff = (_selectedVariation?.price ??
+                                widget.item.price) -
+                            widget.item.price;
+                        final allMods = [
+                          if (_selectedVariation != null)
+                            _selectedVariation!.name,
+                          ...modLabels,
+                        ];
                         ref.read(cartProvider.notifier).addCustom(
                               item: widget.item,
                               qty: _qty,
-                              mods: modLabels,
+                              mods: allMods,
                               selectedOptions: selectedOpts,
-                              modsExtra: _serverOptionExtra,
+                              modsExtra: _serverOptionExtra + variationPriceDiff,
                               itemNote: _note,
+                              variationId: _selectedVariationId,
+                              variationName: _selectedVariation?.name,
                             );
                         Navigator.of(context).pop();
                       },

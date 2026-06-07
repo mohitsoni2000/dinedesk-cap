@@ -39,6 +39,7 @@ class _DepthParallaxStackState extends State<DepthParallaxStack>
     with SingleTickerProviderStateMixin {
   StreamSubscription<GyroscopeEvent>? _sub;
   late final Ticker _ticker;
+  final ValueNotifier<Offset> _offset = ValueNotifier(Offset.zero);
 
   double _targetX = 0;
   double _targetY = 0;
@@ -66,34 +67,41 @@ class _DepthParallaxStackState extends State<DepthParallaxStack>
     _targetY *= _decay;
     _currentX += (_targetX - _currentX) * widget.smoothing;
     _currentY += (_targetY - _currentY) * widget.smoothing;
-    if (mounted) setState(() {});
+    final next = Offset(_currentX, _currentY);
+    // ValueNotifier skips notification when value hasn't changed (settled state).
+    if (_offset.value != next) _offset.value = next;
   }
 
   @override
   void dispose() {
     _sub?.cancel();
     _ticker.dispose();
+    _offset.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final bool reducedMotion = MediaQuery.of(context).disableAnimations;
-    final double effX = reducedMotion ? 0 : _currentX;
-    final double effY = reducedMotion ? 0 : _currentY;
-
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        for (final DepthLayer layer in widget.layers)
-          Transform.translate(
-            offset: Offset(
-              effX * widget.maxOffset * layer.depth,
-              effY * widget.maxOffset * layer.depth,
-            ),
-            child: layer.child,
-          ),
-      ],
+    return ValueListenableBuilder<Offset>(
+      valueListenable: _offset,
+      builder: (context, offset, _) {
+        final double effX = reducedMotion ? 0 : offset.dx;
+        final double effY = reducedMotion ? 0 : offset.dy;
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            for (final DepthLayer layer in widget.layers)
+              Transform.translate(
+                offset: Offset(
+                  effX * widget.maxOffset * layer.depth,
+                  effY * widget.maxOffset * layer.depth,
+                ),
+                child: layer.child,
+              ),
+          ],
+        );
+      },
     );
   }
 }

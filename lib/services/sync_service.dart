@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/providers.dart';
 import '../models/feature_flags.dart';
 import '../models/server_models.dart';
@@ -516,11 +517,33 @@ class SyncService {
 
   // ─── Converters (ServerModel → local provider model) ──────────────────────
 
+  // ─── Table timer helpers (SharedPreferences) ─────────────────────────────
+
+  static const _timerKeyPrefix = 'table_timer_';
+
+  Future<void> _stampTableTimer(String serverId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        '$_timerKeyPrefix$serverId', DateTime.now().toIso8601String());
+  }
+
+  Future<void> _clearTableTimer(String serverId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('$_timerKeyPrefix$serverId');
+  }
+
   RestaurantTable _serverTableToLocal(ServerTable st) {
     final floorName = _floorMap[st.floorId] ?? st.floorId;
     final currentOperatorId = _ref.read(operatorProvider)?.username;
     final tableState =
         _mapTableStatus(st.status, currentOperatorId, st.operatorId);
+
+    // Fire-and-forget: stamp or clear the table timer in SharedPreferences.
+    if (tableState == TableState.mine) {
+      unawaited(_stampTableTimer(st.id));
+    } else {
+      unawaited(_clearTableTimer(st.id));
+    }
 
     return RestaurantTable(
       id: st.name,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
@@ -23,6 +24,27 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   bool _searchOpen = false;
   bool _openingTable = false;
   String? _openingTableId;
+  Map<String, DateTime> _timerMap = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTimers();
+  }
+
+  Future<void> _loadTimers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys().where((k) => k.startsWith('table_timer_'));
+    final map = <String, DateTime>{};
+    for (final key in keys) {
+      final val = prefs.getString(key);
+      if (val != null) {
+        final dt = DateTime.tryParse(val);
+        if (dt != null) map[key.substring('table_timer_'.length)] = dt;
+      }
+    }
+    if (mounted) setState(() => _timerMap = map);
+  }
 
   void _onTableTap(RestaurantTable t) async {
     if (_openingTable) return;
@@ -228,49 +250,55 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            Expanded(
-              child: filtered.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.search_off,
-                                color: AppColors.ink30, size: 48),
-                            SizedBox(height: 12),
-                            Text('No tables match', style: AppTypography.title),
-                            SizedBox(height: 4),
-                            Text('Try a different search or floor',
-                                style: AppTypography.caption),
-                          ],
+            StreamBuilder<int>(
+              stream: Stream.periodic(const Duration(minutes: 1), (i) => i),
+              builder: (context, _) => Expanded(
+                child: filtered.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.search_off,
+                                  color: AppColors.ink30, size: 48),
+                              SizedBox(height: 12),
+                              Text('No tables match',
+                                  style: AppTypography.title),
+                              SizedBox(height: 4),
+                              Text('Try a different search or floor',
+                                  style: AppTypography.caption),
+                            ],
+                          ),
                         ),
+                      )
+                    : GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        gridDelegate:
+                            const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 200,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 1.05,
+                        ),
+                        itemCount: filtered.length,
+                        itemBuilder: (_, i) {
+                          final t = filtered[i];
+                          return _TableCard(
+                            table: t,
+                            isLoading:
+                                _openingTable && _openingTableId == t.serverId,
+                            onTap: () => _onTableTap(t),
+                            onLongPress:
+                                (t.state == TableState.mine ||
+                                        t.state == TableState.other)
+                                    ? () => TableMergeSheet.show(context, t)
+                                    : null,
+                            occupiedSince: _timerMap[t.serverId],
+                          );
+                        },
                       ),
-                    )
-                  : GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: 200,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 1.05,
-                      ),
-                      itemCount: filtered.length,
-                      itemBuilder: (_, i) {
-                        final t = filtered[i];
-                        return _TableCard(
-                          table: t,
-                          isLoading: _openingTable && _openingTableId == t.serverId,
-                          onTap: () => _onTableTap(t),
-                          onLongPress:
-                              (t.state == TableState.mine ||
-                                      t.state == TableState.other)
-                                  ? () => TableMergeSheet.show(context, t)
-                                  : null,
-                        );
-                      },
-                    ),
+              ),
             ),
           ],
         ),
@@ -403,8 +431,29 @@ class _TableCard extends ConsumerWidget {
   final bool isLoading;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
-  const _TableCard(
-      {required this.table, required this.isLoading, required this.onTap, this.onLongPress});
+  final DateTime? occupiedSince;
+  const _TableCard({
+    required this.table,
+    required this.isLoading,
+    required this.onTap,
+    this.onLongPress,
+    this.occupiedSince,
+  });
+
+  String _timerLabel(DateTime since) {
+    final elapsed = DateTime.now().difference(since);
+    if (elapsed.inHours >= 1) {
+      return '${elapsed.inHours}h ${elapsed.inMinutes.remainder(60)}m';
+    }
+    return '${elapsed.inMinutes}m';
+  }
+
+  Color _timerColor(DateTime since) {
+    final elapsed = DateTime.now().difference(since);
+    if (elapsed.inMinutes < 30) return AppColors.success;
+    if (elapsed.inMinutes < 60) return AppColors.warn;
+    return AppColors.danger;
+  }
 
   Color _bg() {
     switch (table.state) {
@@ -547,6 +596,26 @@ class _TableCard extends ConsumerWidget {
                 ],
               ),
             ),
+            if (table.state == TableState.mine && occupiedSince != null)
+              Positioned(
+                right: 4,
+                bottom: 4,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: _timerColor(occupiedSince!),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _timerLabel(occupiedSince!),
+                    style: AppTypography.micro.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
             if (isLoading)
               Positioned.fill(
                 child: Container(

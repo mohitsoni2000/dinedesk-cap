@@ -1328,6 +1328,8 @@ class _SwipeToAddWrapperState extends State<_SwipeToAddWrapper>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   double _dragOffset = 0;
+  double _springStartOffset = 0;
+  bool _thresholdCrossed = false;
   static const double _maxDrag = 80;
   static const double _threshold = 40;
 
@@ -1338,6 +1340,10 @@ class _SwipeToAddWrapperState extends State<_SwipeToAddWrapper>
       vsync: this,
       duration: const Duration(milliseconds: 180),
     );
+    _ctrl.addListener(() {
+      if (!mounted) return;
+      setState(() => _dragOffset = _springStartOffset * (1 - _ctrl.value));
+    });
   }
 
   @override
@@ -1351,33 +1357,22 @@ class _SwipeToAddWrapperState extends State<_SwipeToAddWrapper>
     final prev = _dragOffset;
     _dragOffset = (_dragOffset + d.delta.dx).clamp(0.0, _maxDrag);
     setState(() {});
-    final wasBelowThreshold = prev < _threshold;
-    final isAboveThreshold = _dragOffset >= _threshold;
-    if (wasBelowThreshold && isAboveThreshold) {
+    if (!_thresholdCrossed && prev < _threshold && _dragOffset >= _threshold) {
+      _thresholdCrossed = true;
       widget.onDragTick?.call();
     }
   }
 
   void _onDragEnd(DragEndDetails _) {
+    _thresholdCrossed = false;
     if (widget.readOnly) return;
     if (_dragOffset >= _threshold) {
       widget.onSwipeConfirm?.call();
       widget.onAdd();
     }
     // Spring-back animation
-    final startOffset = _dragOffset;
-    _ctrl.value = 0;
-    _ctrl.animateTo(
-      1,
-      curve: Curves.easeOutCubic,
-      duration: const Duration(milliseconds: 180),
-    );
-    _ctrl.addListener(() {
-      if (!mounted) return;
-      setState(() {
-        _dragOffset = startOffset * (1 - _ctrl.value);
-      });
-    });
+    _springStartOffset = _dragOffset;
+    _ctrl.forward(from: 0);
   }
 
   @override

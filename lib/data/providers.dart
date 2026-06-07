@@ -15,6 +15,9 @@ enum TableState { mine, other, dirty, reserved, free }
 
 enum OrderStatus { sent, modified, cancelled, paid }
 
+// Tracks optimistic sync state for cart lines during KOT send.
+enum SyncStatus { synced, pending, failed }
+
 class RestaurantTable {
   static const _absent = Object();
 
@@ -32,6 +35,7 @@ class RestaurantTable {
   final int orderItemCount;
   final int oldestKotMinutes;
   final int kotCount;
+  final DateTime? occupiedSince;
   const RestaurantTable({
     required this.id,
     required this.serverId,
@@ -47,6 +51,7 @@ class RestaurantTable {
     this.orderItemCount = 0,
     this.oldestKotMinutes = 0,
     this.kotCount = 0,
+    this.occupiedSince,
   });
 
   RestaurantTable copyWith({
@@ -64,6 +69,7 @@ class RestaurantTable {
     int? orderItemCount,
     int? oldestKotMinutes,
     int? kotCount,
+    Object? occupiedSince = _absent,
   }) =>
       RestaurantTable(
         id: id ?? this.id,
@@ -84,6 +90,9 @@ class RestaurantTable {
         orderItemCount: orderItemCount ?? this.orderItemCount,
         oldestKotMinutes: oldestKotMinutes ?? this.oldestKotMinutes,
         kotCount: kotCount ?? this.kotCount,
+        occupiedSince: occupiedSince == _absent
+            ? this.occupiedSince
+            : occupiedSince as DateTime?,
       );
 }
 
@@ -200,6 +209,7 @@ class CartLine {
   final String itemNote;
   final String? variationId; // selected item variation id (nullable)
   final String? variationName; // selected item variation name (nullable)
+  final SyncStatus syncStatus;
 
   CartLine({
     required this.item,
@@ -210,6 +220,7 @@ class CartLine {
     this.itemNote = '',
     this.variationId,
     this.variationName,
+    this.syncStatus = SyncStatus.synced,
   }) : uid = _nextUid++;
 
   CartLine._clone({
@@ -222,6 +233,7 @@ class CartLine {
     required this.itemNote,
     this.variationId,
     this.variationName,
+    this.syncStatus = SyncStatus.synced,
   });
 
   double get lineTotal => (item.price + modsExtra) * qty;
@@ -234,6 +246,7 @@ class CartLine {
     String? itemNote,
     String? variationId,
     String? variationName,
+    SyncStatus? syncStatus,
   }) =>
       CartLine._clone(
         uid: uid,
@@ -245,6 +258,7 @@ class CartLine {
         itemNote: itemNote ?? this.itemNote,
         variationId: variationId ?? this.variationId,
         variationName: variationName ?? this.variationName,
+        syncStatus: syncStatus ?? this.syncStatus,
       );
 }
 
@@ -475,6 +489,30 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
 
   void clear() => state = const [];
 
+  void setSyncStatusAll(SyncStatus status) {
+    state = [for (final l in state) l.copyWith(syncStatus: status)];
+  }
+
+  void setSyncStatusFailed() {
+    state = [
+      for (final l in state)
+        if (l.syncStatus == SyncStatus.pending)
+          l.copyWith(syncStatus: SyncStatus.failed)
+        else
+          l,
+    ];
+  }
+
+  void retryFailed() {
+    state = [
+      for (final l in state)
+        if (l.syncStatus == SyncStatus.failed)
+          l.copyWith(syncStatus: SyncStatus.pending)
+        else
+          l,
+    ];
+  }
+
   double get total => state.fold(0.0, (s, l) => s + l.lineTotal);
 
   // Group lines by kitchen section for the KOT preview.
@@ -521,6 +559,10 @@ final syncServiceProvider = Provider<SyncService>(
 // tableId → operator_name of the waiter currently on that table's order screen.
 final tablePresencesProvider =
     StateProvider<Map<String, String>>((_) => {});
+
+// Haptic enabled flag — mirrors SharedPreferences 'setting_haptic'.
+// Updated by _SettingsNotifier in settings_screen.dart on every toggle.
+final hapticEnabledProvider = StateProvider<bool>((_) => true);
 
 // ─────────────── Auth ───────────────
 

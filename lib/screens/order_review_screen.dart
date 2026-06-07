@@ -59,6 +59,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   // On retry after bill:generate failure, skip order:create/update + kot:send.
   String? _kotSentOrderId;
 
+  // Re-entry guard: prevents concurrent _runOrderFlow calls on double-tap.
+  bool _running = false;
+
   @override
   void dispose() {
     // Fix #8: Don't clear notes on back navigation — they should persist
@@ -284,54 +287,61 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     required bool collectPayment,
     String quickSettleMode = 'cash',
   }) async {
-    ref.read(feedbackServiceProvider).fire(const FeedbackHeavy());
-    ref.read(orderNotesProvider.notifier).state = _notes.text;
+    if (_running) return;
+    _running = true;
 
-    final completer = Completer<bool>();
-    final runningFlow = _runOrderFlow(
-      generateBill: generateBill,
-      collectPayment: collectPayment,
-      quickSettleMode: quickSettleMode,
-    );
-    unawaited(runningFlow.then((result) {
-      if (!completer.isCompleted) completer.complete(result.isSuccess);
-    }));
-
-    final ok = await OrderSubmittingOverlay.show(context, completer: completer);
-    if (!mounted) return;
-    if (ok) {
-      _submitted = true;
-      _kotSentOrderId = null; // OR2: reset so next order starts fresh
-      ref.read(cartProvider.notifier).clear();
-      ref.read(orderNotesProvider.notifier).state = '';
-      context.go('/order/${widget.tableId}/success');
-      return;
-    }
-
-    // Flow failed — capture messenger before await to avoid async gap warning.
-    final messenger = ScaffoldMessenger.of(context);
-    String msg = 'Order could not be confirmed — please retry';
     try {
-      final result = await runningFlow;
-      if (result.errorMessage != null) {
-        final stepLabel = switch (result.failedStep) {
-          _OrderFlowStep.orderCreate => 'Order creation',
-          _OrderFlowStep.kotSend => 'KOT to kitchen',
-          _OrderFlowStep.billGenerate => 'Bill generation',
-          _OrderFlowStep.payment => 'Payment',
-          null => null,
-        };
-        msg = stepLabel != null
-            ? '$stepLabel failed: ${result.errorMessage}'
-            : result.errorMessage!;
-      }
-    } catch (_) {
-      // ignore — use default message
-    }
+      ref.read(feedbackServiceProvider).fire(const FeedbackHeavy());
+      ref.read(orderNotesProvider.notifier).state = _notes.text;
 
-    messenger
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(msg)));
+      final completer = Completer<bool>();
+      final runningFlow = _runOrderFlow(
+        generateBill: generateBill,
+        collectPayment: collectPayment,
+        quickSettleMode: quickSettleMode,
+      );
+      unawaited(runningFlow.then((result) {
+        if (!completer.isCompleted) completer.complete(result.isSuccess);
+      }));
+
+      final ok = await OrderSubmittingOverlay.show(context, completer: completer);
+      if (!mounted) return;
+      if (ok) {
+        _submitted = true;
+        _kotSentOrderId = null; // OR2: reset so next order starts fresh
+        ref.read(cartProvider.notifier).clear();
+        ref.read(orderNotesProvider.notifier).state = '';
+        context.go('/order/${widget.tableId}/success');
+        return;
+      }
+
+      // Flow failed — capture messenger before await to avoid async gap warning.
+      final messenger = ScaffoldMessenger.of(context);
+      String msg = 'Order could not be confirmed — please retry';
+      try {
+        final result = await runningFlow;
+        if (result.errorMessage != null) {
+          final stepLabel = switch (result.failedStep) {
+            _OrderFlowStep.orderCreate => 'Order creation',
+            _OrderFlowStep.kotSend => 'KOT to kitchen',
+            _OrderFlowStep.billGenerate => 'Bill generation',
+            _OrderFlowStep.payment => 'Payment',
+            null => null,
+          };
+          msg = stepLabel != null
+              ? '$stepLabel failed: ${result.errorMessage}'
+              : result.errorMessage!;
+        }
+      } catch (_) {
+        // ignore — use default message
+      }
+
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(msg)));
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
   }
 
   /// KOT + Bill: create order → send KOT → generate bill in one action.

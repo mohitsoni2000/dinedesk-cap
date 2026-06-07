@@ -939,8 +939,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                                 .track(item);
                                           }
                                         },
-                                        onOpenSheet: () => ItemDetailSheet.show(
-                                            context, entry.value[i]),
                                         child: _ItemRow(
                                           item: entry.value[i],
                                           onAdd: () {
@@ -1378,13 +1376,11 @@ class _SwipeToAddWrapper extends StatefulWidget {
   final VoidCallback? onDragTick;
   final VoidCallback? onSwipeConfirm;
   final VoidCallback onAdd;
-  final VoidCallback onOpenSheet;
   final bool readOnly;
 
   const _SwipeToAddWrapper({
     required this.child,
     required this.onAdd,
-    required this.onOpenSheet,
     this.onDragTick,
     this.onSwipeConfirm,
     this.readOnly = false,

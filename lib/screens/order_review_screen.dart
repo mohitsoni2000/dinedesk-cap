@@ -202,6 +202,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
       // Optimistic UI: mark all cart lines as pending before the KOT emit.
       ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.pending);
+      _kotSentOrderId = orderId;  // set before emit so timeout-retry skips KOT
       Map<String, dynamic> kotResponse;
       try {
         kotResponse = await socketService
@@ -229,7 +230,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       }
       ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.synced);
       ref.read(syncServiceProvider).applyOrderAck(kotResponse, includeHistory: true);
-      _kotSentOrderId = orderId;
     }
 
     if (!generateBill) return const _OrderFlowStepResult();

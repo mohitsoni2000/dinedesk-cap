@@ -81,13 +81,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
 
     socketService.verifyPin(
       pin,
-      onVerified: (response) {
+      onVerified: (response) async {
         if (!mounted) return;
         ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
         final syncRaw = response['sync'];
         final syncData =
             (syncRaw is Map) ? Map<String, dynamic>.from(syncRaw) : response;
-        syncService.applyInitialSync(syncData);
+        await syncService.applyInitialSync(syncData);
         syncService.unregisterListeners();
         syncService.registerListeners();
 

@@ -468,11 +468,11 @@ class SyncService {
       label: 'Syncing…',
     );
 
-    _socket.emitAck('operator:resync', {}).then((res) {
+    _socket.emitAck('operator:resync', {}).then((res) async {
       if (res['kind'] == 'success') {
         final syncRaw = res['sync'];
         if (syncRaw is Map) {
-          applyInitialSync(Map<String, dynamic>.from(syncRaw));
+          await applyInitialSync(Map<String, dynamic>.from(syncRaw));
         }
       } else {
         _ref.read(isAuthenticatedProvider.notifier).state = false;

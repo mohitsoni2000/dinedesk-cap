@@ -15,6 +15,7 @@ class SyncService {
   final Ref _ref;
   StreamSubscription<SocketState>? _stateSubscription;
   Map<String, String> _floorMap = {};
+  Map<String, DateTime> _tableTimerCache = {};
 
   SyncService(this._socket, this._ref);
 
@@ -315,7 +316,7 @@ class SyncService {
 
   // ─── Initial sync ─────────────────────────────────────────────────────────
 
-  void applyInitialSync(Map<String, dynamic> data) {
+  Future<void> applyInitialSync(Map<String, dynamic> data) async {
     debugPrint('$_tag ── Applying initial sync ──');
     debugPrint('$_tag   Keys: ${data.keys.toList()}');
 
@@ -356,6 +357,7 @@ class SyncService {
         '$_tag   Floors: ${_floorMap.length} → ${_floorMap.values.toList()}');
 
     // Tables.
+    await _loadTimerCache();
     final tablesList = data['tables'];
     if (tablesList is List) {
       if (tablesList.isNotEmpty && tablesList.first is Map) {
@@ -532,17 +534,41 @@ class SyncService {
     await prefs.remove('$_timerKeyPrefix$serverId');
   }
 
+  Future<void> _loadTimerCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys().where((k) => k.startsWith(_timerKeyPrefix));
+    _tableTimerCache = {};
+    for (final key in keys) {
+      final val = prefs.getString(key);
+      if (val != null) {
+        final dt = DateTime.tryParse(val);
+        if (dt != null) {
+          _tableTimerCache[key.substring(_timerKeyPrefix.length)] = dt;
+        }
+      }
+    }
+  }
+
   RestaurantTable _serverTableToLocal(ServerTable st) {
     final floorName = _floorMap[st.floorId] ?? st.floorId;
     final currentOperatorId = _ref.read(operatorProvider)?.username;
     final tableState =
         _mapTableStatus(st.status, currentOperatorId, st.operatorId);
 
-    // Fire-and-forget: stamp or clear the table timer in SharedPreferences.
+    // Resolve occupiedSince: preserve existing value on re-sync, fall back to
+    // cache (cold start), or record now (first time becoming mine).
+    DateTime? occupiedSince;
     if (tableState == TableState.mine) {
+      final existing = _ref
+          .read(tablesProvider)
+          .where((t) => t.serverId == st.id)
+          .firstOrNull;
+      occupiedSince =
+          existing?.occupiedSince ?? _tableTimerCache[st.id] ?? DateTime.now();
       unawaited(_stampTableTimer(st.id));
     } else {
       unawaited(_clearTableTimer(st.id));
+      _tableTimerCache.remove(st.id);
     }
 
     return RestaurantTable(
@@ -559,6 +585,7 @@ class SyncService {
       orderItemCount: st.orderItemCount,
       oldestKotMinutes: st.oldestKotMinutes,
       kotCount: st.kotCount,
+      occupiedSince: occupiedSince,
     );
   }
 

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
@@ -24,27 +23,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   bool _searchOpen = false;
   bool _openingTable = false;
   String? _openingTableId;
-  Map<String, DateTime> _timerMap = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _loadTimers();
-  }
-
-  Future<void> _loadTimers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final keys = prefs.getKeys().where((k) => k.startsWith('table_timer_'));
-    final map = <String, DateTime>{};
-    for (final key in keys) {
-      final val = prefs.getString(key);
-      if (val != null) {
-        final dt = DateTime.tryParse(val);
-        if (dt != null) map[key.substring('table_timer_'.length)] = dt;
-      }
-    }
-    if (mounted) setState(() => _timerMap = map);
-  }
 
   void _onTableTap(RestaurantTable t) async {
     if (_openingTable) return;
@@ -294,7 +272,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                                         t.state == TableState.other)
                                     ? () => TableMergeSheet.show(context, t)
                                     : null,
-                            occupiedSince: _timerMap[t.serverId],
+                            occupiedSince: t.occupiedSince,
                           );
                         },
                       ),

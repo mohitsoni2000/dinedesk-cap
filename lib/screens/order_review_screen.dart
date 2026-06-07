@@ -197,15 +197,34 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         );
       }
 
-      final kotResponse = await socketService.emitAck(
-        'kot:send', <String, dynamic>{'order_id': orderId},
-      );
+      // Optimistic UI: mark all cart lines as pending before the KOT emit.
+      ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.pending);
+      Map<String, dynamic> kotResponse;
+      try {
+        kotResponse = await socketService
+            .emitAck('kot:send', <String, dynamic>{'order_id': orderId})
+            .timeout(const Duration(seconds: 8));
+      } on TimeoutException {
+        ref.read(cartProvider.notifier).setSyncStatusFailed();
+        return const _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.kotSend,
+          errorMessage: 'KOT timed out — please retry',
+        );
+      } catch (_) {
+        ref.read(cartProvider.notifier).setSyncStatusFailed();
+        return const _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.kotSend,
+          errorMessage: 'Failed to send KOT to kitchen — please retry',
+        );
+      }
       if (kotResponse['kind'] == 'error') {
+        ref.read(cartProvider.notifier).setSyncStatusFailed();
         return _OrderFlowStepResult(
           failedStep: _OrderFlowStep.kotSend,
           errorMessage: 'Failed to send KOT to kitchen — please retry',
         );
       }
+      ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.synced);
       ref.read(syncServiceProvider).applyOrderAck(kotResponse, includeHistory: true);
       _kotSentOrderId = orderId;
     }
@@ -551,6 +570,50 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                     ),
                   ),
                 ),
+              ),
+              // Retry banner — shown when any cart line failed to sync.
+              Consumer(
+                builder: (context, ref, _) {
+                  final hasFailure = ref.watch(
+                    cartProvider.select(
+                      (c) => c.any((l) => l.syncStatus == SyncStatus.failed),
+                    ),
+                  );
+                  if (!hasFailure) return const SizedBox.shrink();
+                  return GestureDetector(
+                    onTap: () {
+                      ref.read(cartProvider.notifier).retryFailed();
+                      _submit();
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      color: AppColors.warn,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                        horizontal: 16,
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Sync failed — tap to retry',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
               Expanded(
                 child: cart.isEmpty
@@ -1161,6 +1224,22 @@ class _CartRow extends ConsumerWidget {
               textAlign: TextAlign.right,
             ),
           ),
+          // Sync status badge — spinner while pending, warning icon if failed.
+          if (line.syncStatus == SyncStatus.pending) ...[
+            const SizedBox(width: 8),
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ] else if (line.syncStatus == SyncStatus.failed) ...[
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.warning_amber_rounded,
+              size: 16,
+              color: AppColors.warn,
+            ),
+          ],
         ],
       ),
     );

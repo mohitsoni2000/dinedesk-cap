@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -23,6 +25,21 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   bool _searchOpen = false;
   bool _openingTable = false;
   String? _openingTableId;
+  Timer? _timerTick;
+
+  @override
+  void initState() {
+    super.initState();
+    _timerTick = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timerTick?.cancel();
+    super.dispose();
+  }
 
   void _onTableTap(RestaurantTable t) async {
     if (_openingTable) return;
@@ -228,9 +245,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            StreamBuilder<int>(
-              stream: Stream.periodic(const Duration(minutes: 1), (i) => i),
-              builder: (context, _) => Expanded(
+            Expanded(
                 child: filtered.isEmpty
                     ? const Center(
                         child: Padding(
@@ -276,7 +291,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                           );
                         },
                       ),
-              ),
             ),
           ],
         ),

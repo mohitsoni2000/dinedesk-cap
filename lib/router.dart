@@ -26,6 +26,7 @@ import 'screens/force_disconnected_screen.dart';
 import 'widgets/connection_banner.dart';
 import 'widgets/liquid_mesh_background.dart';
 import 'widgets/page_transitions.dart';
+import 'widgets/ready_orders_banner.dart';
 import 'widgets/root_shell.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -74,7 +75,9 @@ final routerProvider = Provider<GoRouter>((ref) {
               liquidPage(key: s.pageKey, child: const AuthScreen())),
       ShellRoute(
         builder: (_, __, child) => LiquidMeshBackground(
-          child: ConnectionBanner(child: RootShell(child: child)),
+          child: ConnectionBanner(
+            child: ReadyOrdersBanner(child: RootShell(child: child)),
+          ),
         ),
         routes: [
           GoRoute(

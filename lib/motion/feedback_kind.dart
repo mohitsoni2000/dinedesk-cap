@@ -36,6 +36,10 @@ final class FeedbackDragTick extends FeedbackKind {
   const FeedbackDragTick();
 }
 
+final class FeedbackReadyChime extends FeedbackKind {
+  const FeedbackReadyChime();
+}
+
 extension FeedbackHaptic on FeedbackKind {
   Future<void> triggerHaptic() async {
     switch (this) {
@@ -59,8 +63,19 @@ extension FeedbackHaptic on FeedbackKind {
         await HapticFeedback.selectionClick();
       case FeedbackDragTick():
         await HapticFeedback.selectionClick();
+      case FeedbackReadyChime():
+        await HapticFeedback.mediumImpact();
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await HapticFeedback.lightImpact();
     }
   }
 
-  String? get audioAsset => null;
+  String? get audioAsset {
+    switch (this) {
+      case FeedbackReadyChime():
+        return 'audio/success_chime.mp3';
+      default:
+        return null;
+    }
+  }
 }

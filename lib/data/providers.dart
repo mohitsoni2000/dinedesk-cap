@@ -589,3 +589,25 @@ final lastKotIdProvider = StateProvider<String>((_) => '');
 // Updated by sync_service on 'table:links:updated' broadcasts.
 final linkGroupsProvider =
     StateProvider<Map<String, List<String>>>((_) => {});
+
+// ─────────────── Ready-to-serve ───────────────
+
+/// A kitchen "round ready" notification for an order owned by this device.
+class ReadyTicket {
+  final String orderId;
+  final String? tableId;   // server table UUID
+  final String tableName;  // display, e.g. "T-04" or "Takeaway"
+  final String kotNumber;
+  final List<String> itemLabels; // e.g. ["2× Butter Naan", "1× Dal"]
+
+  const ReadyTicket({
+    required this.orderId,
+    required this.tableId,
+    required this.tableName,
+    required this.kotNumber,
+    required this.itemLabels,
+  });
+}
+
+/// Active ready-to-serve notifications (most recent first).
+final readyOrdersProvider = StateProvider<List<ReadyTicket>>((_) => []);

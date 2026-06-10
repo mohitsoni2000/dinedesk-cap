@@ -499,6 +499,9 @@ class _TableCard extends ConsumerWidget {
     final isLinked = ref.watch(linkGroupsProvider.select(
       (groups) => groups.values.any((ids) => ids.contains(table.serverId)),
     ));
+    final isReady = ref.watch(readyOrdersProvider.select(
+      (list) => list.any((t) => t.tableId == table.serverId),
+    ));
 
     return GestureDetector(
       onTap: isLoading ? null : onTap,
@@ -604,6 +607,26 @@ class _TableCard extends ConsumerWidget {
                     style: AppTypography.micro.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            if (isReady)
+              Positioned(
+                right: 4,
+                top: 4,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.success,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'READY',
+                    style: AppTypography.micro.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),

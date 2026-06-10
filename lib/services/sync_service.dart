@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/providers.dart';
 import '../models/feature_flags.dart';
 import '../models/server_models.dart';
+import '../motion/feedback_kind.dart';
+import '../motion/feedback_service.dart';
 import 'socket_service.dart';
 
 const _tag = '[Sync]';
@@ -191,8 +193,47 @@ class SyncService {
           tablesServed: stats.tablesServed + 1,
           itemsSold: stats.itemsSold,
         );
+        // Clear any ready-to-serve tickets for this paid/closed order.
+        _ref.read(readyOrdersProvider.notifier).state =
+            _ref.read(readyOrdersProvider).where((t) => t.orderId != id).toList();
       }
       _applyTablesFromEnvelope(env);
+    });
+
+    _socket.on('order:ready', (data) {
+      final m = _toMap(data);
+      final orderId = m['order_id']?.toString();
+      if (orderId == null) return;
+      final tableName = (m['table_name']?.toString().isNotEmpty ?? false)
+          ? m['table_name'].toString()
+          : (m['order_type']?.toString() == 'takeaway' ? 'Takeaway' : 'Order');
+      final rawItems = m['items'];
+      final labels = <String>[];
+      if (rawItems is List) {
+        for (final it in rawItems) {
+          if (it is Map) {
+            final qty = it['quantity'] ?? 1;
+            final name = it['item_name']?.toString() ?? 'Item';
+            labels.add('$qty× $name');
+          }
+        }
+      }
+      final ticket = ReadyTicket(
+        orderId: orderId,
+        tableId: m['table_id']?.toString(),
+        tableName: tableName,
+        kotNumber: m['kot_number']?.toString() ?? '',
+        itemLabels: labels,
+      );
+      // Most-recent-first; de-dupe by (orderId, kotNumber).
+      final current = _ref.read(readyOrdersProvider);
+      _ref.read(readyOrdersProvider.notifier).state = [
+        ticket,
+        ...current.where(
+          (t) => !(t.orderId == ticket.orderId && t.kotNumber == ticket.kotNumber),
+        ),
+      ];
+      _ref.read(feedbackServiceProvider).fire(const FeedbackReadyChime());
     });
 
     _socket.on('discount:applied', (data) {
@@ -512,6 +553,7 @@ class SyncService {
       'table:merged',
       'table:links:updated',
       'table:presence:updated',
+      'order:ready',
     ]) {
       _socket.off(event);
     }

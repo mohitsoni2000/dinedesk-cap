@@ -1,9 +1,19 @@
 // Liquid-glass background mesh painter.
 //
-// Paints the warm cream backdrop with terra/amber/violet/teal radial blobs
-// so the LiquidGlass widgets actually have something to refract.
+// Paints the warm cream backdrop with terra/amber/violet/teal radial blobs so
+// the LiquidGlass widgets have something to refract.
 //
-// Used by RootShell as the bottom-most layer behind every screen.
+// PERFORMANCE NOTES (why this is structured the way it is):
+//  • The animated painter is isolated in its own RepaintBoundary and the UI
+//    `child` is a SIBLING in a Stack — so when the mesh repaints each frame it
+//    re-rasterizes ONLY the background layer, not the whole screen on top of it.
+//    (Previously the child sat inside the CustomPaint subtree, so every drift
+//    frame re-rastered the entire UI.)
+//  • `willChange` is true only while animating; when static, Flutter caches the
+//    painted picture and per-frame cost drops to zero.
+//  • Pass `animate: false` for transient pushed screens that sit on screen
+//    briefly (order builder/review/detail) — the drift is imperceptible there
+//    and you save a second looping controller behind the visible one.
 
 import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
@@ -11,8 +21,13 @@ import '../theme/tokens.dart';
 class LiquidMeshBackground extends StatefulWidget {
   final Widget child;
   final bool dark;
-  const LiquidMeshBackground(
-      {super.key, required this.child, this.dark = false});
+  final bool animate;
+  const LiquidMeshBackground({
+    super.key,
+    required this.child,
+    this.dark = false,
+    this.animate = true,
+  });
 
   @override
   State<LiquidMeshBackground> createState() => _LiquidMeshBackgroundState();
@@ -20,26 +35,64 @@ class LiquidMeshBackground extends StatefulWidget {
 
 class _LiquidMeshBackgroundState extends State<LiquidMeshBackground>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 18),
-  )..repeat(reverse: true);
+  AnimationController? _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.animate) _startController();
+  }
+
+  void _startController() {
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 24), // slower drift = cheaper, calmer
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant LiquidMeshBackground old) {
+    super.didUpdateWidget(old);
+    if (widget.animate && _ctrl == null) {
+      _startController();
+    } else if (!widget.animate && _ctrl != null) {
+      _ctrl!.dispose();
+      _ctrl = null;
+    }
+  }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _ctrl?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, child) => CustomPaint(
-        painter: _MeshPainter(t: _ctrl.value, dark: widget.dark),
-        child: child,
-      ),
-      child: widget.child,
+    final Widget background = _ctrl == null
+        ? CustomPaint(
+            size: Size.infinite,
+            isComplex: true,
+            willChange: false,
+            painter: _MeshPainter(t: 0.5, dark: widget.dark),
+          )
+        : AnimatedBuilder(
+            animation: _ctrl!,
+            builder: (_, __) => CustomPaint(
+              size: Size.infinite,
+              isComplex: true,
+              willChange: true,
+              painter: _MeshPainter(t: _ctrl!.value, dark: widget.dark),
+            ),
+          );
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Background lives in its own layer; its repaints never touch the UI.
+        RepaintBoundary(child: background),
+        widget.child,
+      ],
     );
   }
 }

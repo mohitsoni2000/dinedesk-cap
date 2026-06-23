@@ -322,6 +322,7 @@ class HistoryOrder {
   final OrderStatus status;
   final List<HistoryOrderLine> lines;
   final String? notes;
+  final String? createdBy; // user id who created the order (for "my history")
   const HistoryOrder({
     required this.id,
     required this.orderId,
@@ -333,17 +334,20 @@ class HistoryOrder {
     required this.status,
     required this.lines,
     this.notes,
+    this.createdBy,
   });
 }
 
 class HistoryOrderLine {
   final String orderItemId; // Server order_item id — needed for KOT edit
-  final String itemId;      // Menu item id — needed for Repeat Last Order
+  final String itemId; // Menu item id — needed for Repeat Last Order
   final String name;
   final int qty;
   final double price;
   final List<String> mods;
   final String kitchenSection;
+  final String? variationId; // selected variation id — for Repeat Last Order
+  final String? variationName; // selected variation name — for display/repeat
   const HistoryOrderLine({
     required this.orderItemId,
     required this.itemId,
@@ -352,6 +356,8 @@ class HistoryOrderLine {
     required this.price,
     this.mods = const [],
     required this.kitchenSection,
+    this.variationId,
+    this.variationName,
   });
 }
 
@@ -422,8 +428,12 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
   CartNotifier() : super(const []);
 
   void add(MenuItem item) {
-    final i = state.indexWhere(
-        (l) => l.item.id == item.id && l.mods.isEmpty && l.itemNote.isEmpty);
+    // Only merge into a plain (no-variation, no-mods, no-note) existing line.
+    final i = state.indexWhere((l) =>
+        l.item.id == item.id &&
+        l.variationId == null &&
+        l.mods.isEmpty &&
+        l.itemNote.isEmpty);
     if (i >= 0) {
       final next = [...state];
       next[i] = next[i].copyWith(qty: next[i].qty + 1);
@@ -534,6 +544,14 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
 
 final operatorProvider = StateProvider<Operator?>((_) => null);
 
+/// True when the logged-in user is a waiter. Waiters take orders and fire KOTs
+/// but cannot bill, take payment or apply discounts — those actions are hidden
+/// in the UI (and also enforced server-side).
+final isWaiterProvider = Provider<bool>((ref) {
+  final role = ref.watch(operatorProvider)?.role.toLowerCase().trim() ?? '';
+  return role == 'waiter';
+});
+
 final operatorStatsProvider = StateProvider<OperatorStats>(
   (_) => const OperatorStats(ordersToday: 0, tablesServed: 0, itemsSold: 0),
 );
@@ -564,8 +582,7 @@ final syncServiceProvider = Provider<SyncService>(
 );
 
 // tableId → operator_name of the waiter currently on that table's order screen.
-final tablePresencesProvider =
-    StateProvider<Map<String, String>>((_) => {});
+final tablePresencesProvider = StateProvider<Map<String, String>>((_) => {});
 
 // Haptic enabled flag — mirrors SharedPreferences 'setting_haptic'.
 // Updated by _SettingsNotifier in settings_screen.dart on every toggle.
@@ -587,16 +604,15 @@ final lastKotIdProvider = StateProvider<String>((_) => '');
 // ─────────────── Table link groups ───────────────
 // Map of groupId → list of table serverIds belonging to that group.
 // Updated by sync_service on 'table:links:updated' broadcasts.
-final linkGroupsProvider =
-    StateProvider<Map<String, List<String>>>((_) => {});
+final linkGroupsProvider = StateProvider<Map<String, List<String>>>((_) => {});
 
 // ─────────────── Ready-to-serve ───────────────
 
 /// A kitchen "round ready" notification for an order owned by this device.
 class ReadyTicket {
   final String orderId;
-  final String? tableId;   // server table UUID
-  final String tableName;  // display, e.g. "T-04" or "Takeaway"
+  final String? tableId; // server table UUID
+  final String tableName; // display, e.g. "T-04" or "Takeaway"
   final String kotNumber;
   final List<String> itemLabels; // e.g. ["2× Butter Naan", "1× Dal"]
 

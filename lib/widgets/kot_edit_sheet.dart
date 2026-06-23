@@ -69,29 +69,29 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
 
     final reason = _reason.text.trim();
 
-    // Build items_remove (qty → 0) and items_modify (qty changed but > 0).
-    final itemsRemove = <String>[];
-    final itemsModify = <Map<String, dynamic>>[];
+    // Build the kot:edit changes list. Removed (qty→0) items become a 'remove'
+    // change; quantity changes become an 'update_quantity' change. The desktop
+    // routes this through the real editKot path (generates + prints a
+    // modification KOT), unlike order:update which rejects already-sent items.
+    final changes = <Map<String, dynamic>>[];
     for (final l in _lines) {
       if (!l.isModified || l.orderItemId.isEmpty) continue;
       if (l.isRemoved) {
-        itemsRemove.add(l.orderItemId);
+        changes.add({'type': 'remove', 'order_item_id': l.orderItemId});
       } else {
-        itemsModify.add({
+        changes.add({
+          'type': 'update_quantity',
           'order_item_id': l.orderItemId,
-          'quantity': l.currentQty,
+          'new_quantity': l.currentQty,
         });
       }
     }
 
     final socketService = ref.read(socketServiceProvider);
-    socketService.emit('order:update', <String, dynamic>{
+    socketService.emit('kot:edit', <String, dynamic>{
       'order_id': widget.order.orderId,
-      if (itemsRemove.isNotEmpty) 'items_remove': itemsRemove,
-      if (itemsModify.isNotEmpty) 'items_modify': itemsModify,
-      'notes': reason.isNotEmpty
-          ? '${widget.order.notes ?? ''}\n[KOT Edit] $reason'.trim()
-          : widget.order.notes,
+      'changes': changes,
+      'reason': reason.isNotEmpty ? reason : 'Modified from waiter app',
     }, onAck: (response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {

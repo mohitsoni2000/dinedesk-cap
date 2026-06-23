@@ -37,10 +37,15 @@ class KotHistorySheet extends ConsumerWidget {
     final tableDisplay = table?.id ?? tableServerId;
     final activeOrderId = table?.activeOrderId;
 
-    // Primary filter: match by active order ID (most reliable — one order per table).
-    // Fallback: match by tableId display name or raw serverId for orders loaded
-    // before the active order was tracked (e.g. boot-loaded entries).
+    // KOT history is for the table's CURRENT open session only — like the
+    // desktop POS, which shows the KOT rounds of the active order. Paid/cancelled
+    // orders belong to closed sessions and must NOT appear (a new order on the
+    // same table starts a fresh history). Match the active order, or any
+    // still-open order for this table; exclude paid/cancelled.
     final tableOrders = allOrders.where((o) {
+      if (o.status == OrderStatus.paid || o.status == OrderStatus.cancelled) {
+        return false;
+      }
       if (activeOrderId != null && o.orderId == activeOrderId) return true;
       if (o.tableId == tableDisplay) return true;
       if (o.tableId == tableServerId) return true;
@@ -155,7 +160,10 @@ class _KotCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final canEdit = ref.watch(flagsProvider).kotEdit && _isEditable;
+    // Waiters can view KOT history but not edit — only operators edit KOTs.
+    final canEdit = ref.watch(flagsProvider).kotEdit &&
+        _isEditable &&
+        !ref.watch(isWaiterProvider);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(

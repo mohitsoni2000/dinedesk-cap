@@ -33,6 +33,7 @@ enum _OrderFlowStep { orderCreate, kotSend, billGenerate, payment }
 final class _OrderFlowStepResult {
   /// Which step failed, or null if the flow succeeded.
   final _OrderFlowStep? failedStep;
+
   /// Human-readable error message for display.
   final String? errorMessage;
 
@@ -189,8 +190,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           errorMessage: 'Could not save order — please retry',
         );
       }
-      ref.read(syncServiceProvider).applyOrderAck(orderResponse, includeHistory: true);
-      _rememberKotLabel(orderResponse);
+      ref
+          .read(syncServiceProvider)
+          .applyOrderAck(orderResponse, includeHistory: true);
 
       orderId = _orderIdFromResponse(orderResponse, fallback: fallbackOrderId);
       if (orderId == null || orderId.isEmpty) {
@@ -202,12 +204,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
       // Optimistic UI: mark all cart lines as pending before the KOT emit.
       ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.pending);
-      _kotSentOrderId = orderId;  // set before emit so timeout-retry skips KOT
+      _kotSentOrderId = orderId; // set before emit so timeout-retry skips KOT
       Map<String, dynamic> kotResponse;
       try {
-        kotResponse = await socketService
-            .emitAck('kot:send', <String, dynamic>{'order_id': orderId})
-            .timeout(const Duration(seconds: 8));
+        kotResponse = await socketService.emitAck('kot:send', <String, dynamic>{
+          'order_id': orderId
+        }).timeout(const Duration(seconds: 8));
       } on TimeoutException {
         ref.read(cartProvider.notifier).setSyncStatusFailed();
         return const _OrderFlowStepResult(
@@ -229,13 +231,23 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         );
       }
       ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.synced);
-      ref.read(syncServiceProvider).applyOrderAck(kotResponse, includeHistory: true);
+      ref
+          .read(syncServiceProvider)
+          .applyOrderAck(kotResponse, includeHistory: true);
+      // Capture the real KOT number from the kot:send ack (the order:create ack
+      // has kot_number = null because no KOT existed yet).
+      _rememberKotLabel(kotResponse);
+      // Physically print the KOT on the kitchen printer. kot:send only creates
+      // the KOT record on the desktop; the desktop renderer prints on print:kot
+      // (same path as the reprint button). Without this the KOT never printed.
+      socketService.emit('print:kot', <String, dynamic>{'order_id': orderId});
     }
 
     if (!generateBill) return const _OrderFlowStepResult();
 
     final billResponse = await socketService.emitAck(
-      'bill:generate', <String, dynamic>{'order_id': orderId},
+      'bill:generate',
+      <String, dynamic>{'order_id': orderId},
     );
     if (billResponse['kind'] == 'error') {
       return _OrderFlowStepResult(
@@ -243,13 +255,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         errorMessage: 'Failed to generate bill — please retry',
       );
     }
-    ref.read(syncServiceProvider).applyOrderAck(
-          billResponse, includeHistory: true, markTableBilled: true);
+    ref.read(syncServiceProvider).applyOrderAck(billResponse,
+        includeHistory: true, markTableBilled: true);
     if (!collectPayment) return const _OrderFlowStepResult();
 
     final bills = billResponse['bills'];
     final bill = (bills is List && bills.isNotEmpty && bills.first is Map)
-        ? Map<String, dynamic>.from(bills.first as Map) : null;
+        ? Map<String, dynamic>.from(bills.first as Map)
+        : null;
     final billId = bill?['id']?.toString();
     if (billId == null || billId.isEmpty) {
       return _OrderFlowStepResult(
@@ -261,9 +274,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final total = cart.fold(0.0, (double s, CartLine l) => s + l.lineTotal);
     final billTotal = (bill?['total_amount'] as num?)?.toDouble() ?? total;
     final paymentResponse = await socketService.emitAck(
-      'bill:payment', <String, dynamic>{
+      'bill:payment',
+      <String, dynamic>{
         'bill_id': billId,
-        'payments': [{'payment_mode': quickSettleMode, 'amount': billTotal}],
+        'payments': [
+          {'payment_mode': quickSettleMode, 'amount': billTotal}
+        ],
       },
     );
     if (paymentResponse['kind'] == 'error') {
@@ -272,7 +288,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         errorMessage: 'Payment failed — please retry from the bill screen',
       );
     }
-    ref.read(syncServiceProvider).applyOrderAck(paymentResponse, includeHistory: true);
+    ref
+        .read(syncServiceProvider)
+        .applyOrderAck(paymentResponse, includeHistory: true);
     return const _OrderFlowStepResult();
   }
 
@@ -304,7 +322,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         if (!completer.isCompleted) completer.complete(result.isSuccess);
       }));
 
-      final ok = await OrderSubmittingOverlay.show(context, completer: completer);
+      final ok =
+          await OrderSubmittingOverlay.show(context, completer: completer);
       if (!mounted) return;
       if (ok) {
         _submitted = true;
@@ -369,8 +388,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.paper,
-        shape:
-            const RoundedRectangleBorder(borderRadius: BorderRadius.all(AppRadii.lg)),
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(AppRadii.lg)),
         title: const Text('Payment Mode', style: AppTypography.title),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -420,7 +439,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               ref.read(cartProvider.notifier).setNoteAt(index, newNote);
               Navigator.of(ctx).pop();
             },
-            child: const Text('Save', style: TextStyle(color: AppColors.terra500)),
+            child:
+                const Text('Save', style: TextStyle(color: AppColors.terra500)),
           ),
         ],
       ),
@@ -455,7 +475,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                     label: '+1',
                     onTap: () {
                       Navigator.of(context).pop();
-                      ref.read(cartProvider.notifier).setQtyAt(index, line.qty + 1);
+                      ref
+                          .read(cartProvider.notifier)
+                          .setQtyAt(index, line.qty + 1);
                     },
                   ),
                 ),
@@ -467,7 +489,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                     onTap: () {
                       Navigator.of(context).pop();
                       if (line.qty > 1) {
-                        ref.read(cartProvider.notifier).setQtyAt(index, line.qty - 1);
+                        ref
+                            .read(cartProvider.notifier)
+                            .setQtyAt(index, line.qty - 1);
                       }
                     },
                   ),
@@ -490,7 +514,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                     label: 'Remove',
                     onTap: () {
                       Navigator.of(context).pop();
-                      ref.read(feedbackServiceProvider).fire(const FeedbackError());
+                      ref
+                          .read(feedbackServiceProvider)
+                          .fire(const FeedbackError());
                       ref.read(cartProvider.notifier).removeAt(index);
                     },
                   ),
@@ -513,6 +539,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           selectedOptions: line.selectedOptions,
           modsExtra: line.modsExtra,
           itemNote: line.itemNote,
+          variationId: line.variationId,
+          variationName: line.variationName,
         );
   }
 
@@ -555,12 +583,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     // from socket broadcast), disable "KOT + Bill" and "Quick Settle" to
     // prevent duplicate bill generation.
     final activeBillCount = tables
-        .where((t) => t.serverId == widget.tableId)
-        .map((t) => t.activeBillCount)
-        .firstOrNull ?? 0;
+            .where((t) => t.serverId == widget.tableId)
+            .map((t) => t.activeBillCount)
+            .firstOrNull ??
+        0;
     final billAlreadyGenerated = activeBillCount > 0;
 
     return LiquidMeshBackground(
+      animate: false,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
@@ -1103,33 +1133,35 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                           onPressed: _submit,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      // Secondary actions row.
-                      Row(
-                        children: [
-                          Expanded(
-                            child: LiquidSecondaryButton(
-                              label: 'KOT + Bill',
-                              leadingIcon: Icons.receipt_long,
-                              // D1: disable if bill already generated from
-                              // another device — prevent duplicate billing.
-                              onPressed: billAlreadyGenerated
-                                  ? null
-                                  : _submitKotAndBill,
+                      // Billing/payment actions — hidden for waiters (they can
+                      // only send KOT; billing is operator-only, also server-enforced).
+                      if (!ref.watch(isWaiterProvider)) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: LiquidSecondaryButton(
+                                label: 'KOT + Bill',
+                                leadingIcon: Icons.receipt_long,
+                                // D1: disable if bill already generated from
+                                // another device — prevent duplicate billing.
+                                onPressed: billAlreadyGenerated
+                                    ? null
+                                    : _submitKotAndBill,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: LiquidSecondaryButton(
-                              label: 'Quick Settle',
-                              leadingIcon: Icons.payments_outlined,
-                              onPressed: billAlreadyGenerated
-                                  ? null
-                                  : _quickSettle,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: LiquidSecondaryButton(
+                                label: 'Quick Settle',
+                                leadingIcon: Icons.payments_outlined,
+                                onPressed:
+                                    billAlreadyGenerated ? null : _quickSettle,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                       if (billAlreadyGenerated) ...[
                         const SizedBox(height: 4),
                         Text(
@@ -1421,7 +1453,9 @@ class _EmptyCartGuard extends ConsumerWidget {
                 final history = ref.watch(historyProvider);
                 final lastOrder = history
                     .where(
-                      (o) => o.lines.isNotEmpty && o.status != OrderStatus.cancelled,
+                      (o) =>
+                          o.lines.isNotEmpty &&
+                          o.status != OrderStatus.cancelled,
                     )
                     .firstOrNull;
                 if (lastOrder == null) {
@@ -1436,25 +1470,31 @@ class _EmptyCartGuard extends ConsumerWidget {
                     final skipped = <String>[];
                     for (final line in lastOrder.lines) {
                       final menuItem = menu
-                          .where((m) =>
-                              line.itemId.isNotEmpty
-                                  ? m.id == line.itemId
-                                  : m.name == line.name)
+                          .where((m) => line.itemId.isNotEmpty
+                              ? m.id == line.itemId
+                              : m.name == line.name)
                           .firstOrNull;
                       if (menuItem != null) {
+                        // Reconstruct the price delta so the repeated line bills
+                        // at its original (variation-inclusive) unit price.
+                        final modsExtra = line.price - menuItem.price;
                         ref.read(cartProvider.notifier).addCustom(
                               item: menuItem,
                               qty: line.qty,
                               mods: line.mods,
-                              modsExtra: 0,
+                              modsExtra: modsExtra,
                               itemNote: '',
+                              variationId: line.variationId,
+                              variationName: line.variationName,
                             );
                         added++;
                       } else {
                         skipped.add(line.name);
                       }
                     }
-                    ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
+                    ref
+                        .read(feedbackServiceProvider)
+                        .fire(const FeedbackMedium());
                     final summary = skipped.isEmpty
                         ? '$added item${added == 1 ? '' : 's'} added from ${lastOrder.id}'
                         : '$added item${added == 1 ? '' : 's'} added, '

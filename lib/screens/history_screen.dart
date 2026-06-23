@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/liquid_chrome.dart';
@@ -90,9 +91,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final orders = ref.watch(historyProvider);
+    // "My history" — show only orders the logged-in user created (their own KOTs).
+    // Entries with an unknown creator are kept so nothing silently disappears.
+    final myId = ref.watch(operatorProvider)?.username ?? '';
+    final myOrders = myId.isEmpty
+        ? orders
+        : orders
+            .where((o) => o.createdBy == null || o.createdBy == myId)
+            .toList();
 
     // H1 fix: sort newest-first so the most recent orders appear at the top.
-    final filtered = _dateScoped(orders).where((o) {
+    final filtered = _dateScoped(myOrders).where((o) {
       if (_statusFilter != null && o.status != _statusFilter) return false;
       return true;
     }).toList()
@@ -138,7 +147,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 children: [
                   // Compute counts from date-scoped list (H5 fix).
-                  ..._buildStatusChips(orders),
+                  ..._buildStatusChips(myOrders),
                 ],
               ),
             ),
@@ -176,12 +185,15 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (_, i) {
                         final o = filtered[i];
-                        return _OrderTile(
-                          order: o,
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            context.push('/history/${o.id}');
-                          },
+                        return Entrance(
+                          delay: Duration(milliseconds: 45 * (i < 10 ? i : 10)),
+                          child: _OrderTile(
+                            order: o,
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              context.push('/history/${o.id}');
+                            },
+                          ),
                         );
                       },
                     ),

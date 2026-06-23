@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -113,6 +114,7 @@ class SyncService {
                 status: OrderStatus.cancelled,
                 lines: h.lines,
                 notes: h.notes,
+                createdBy: h.createdBy,
               )
             else
               h,
@@ -142,6 +144,7 @@ class SyncService {
               status: OrderStatus.modified,
               lines: entry.lines,
               notes: entry.notes,
+              createdBy: entry.createdBy,
             );
           }
           _upsertHistory(entry);
@@ -182,6 +185,7 @@ class SyncService {
                 status: OrderStatus.paid,
                 lines: h.lines,
                 notes: h.notes,
+                createdBy: h.createdBy,
               )
             else
               h,
@@ -201,6 +205,9 @@ class SyncService {
     });
 
     _socket.on('order:ready', (data) {
+      // Gated on the Ready-to-Serve flag. The POS also gates emission, so this
+      // is defense-in-depth: if the flag is off, drop the alert outright.
+      if (!_ref.read(flagsProvider).readyToServe) return;
       final m = _toMap(data);
       final orderId = m['order_id']?.toString();
       if (orderId == null) return;
@@ -667,10 +674,17 @@ class SyncService {
       status: _mapOrderStatus(so.status),
       lines: so.items.map(_serverItemToLine).toList(),
       notes: so.notes,
+      createdBy: so.createdBy,
     );
   }
 
   HistoryOrderLine _serverItemToLine(ServerOrderItem item) {
+    // mods = chosen variation (e.g. "Half") followed by selected option names.
+    final mods = <String>[
+      if (item.variationName != null && item.variationName!.trim().isNotEmpty)
+        item.variationName!.trim(),
+      ..._parseSelectedOptionNames(item.selectedOptions),
+    ];
     return HistoryOrderLine(
       orderItemId: item.id,
       itemId: item.itemId,
@@ -678,8 +692,30 @@ class SyncService {
       qty: item.quantity,
       price: item.unitPrice > 0 ? item.unitPrice : item.totalPrice,
       kitchenSection: item.itemType,
-      mods: item.selectedOptions.isNotEmpty ? [item.selectedOptions] : const [],
+      mods: mods,
+      variationId: item.variationId,
+      variationName: item.variationName,
     );
+  }
+
+  /// Parse the server's selected_options JSON string ("[]" when empty) into a
+  /// list of option-name labels. Previously the raw "[]" string was shown as a
+  /// literal modifier under each item.
+  List<String> _parseSelectedOptionNames(String raw) {
+    if (raw.trim().isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((m) => (m['option_name'] ?? '').toString().trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+      }
+    } catch (_) {
+      // Non-JSON legacy value — ignore rather than render raw text.
+    }
+    return const [];
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -811,6 +847,7 @@ class SyncService {
     final rawItems = data['items'];
     final rawCategories = data['categories'];
     final optionGroupsByItem = _parseOptionGroupsByItem(data);
+    final variationsByItem = _parseVariationsByItem(data);
     final categoryById = _categoryMap(rawCategories);
 
     if (rawItems is List) {
@@ -825,7 +862,10 @@ class SyncService {
           }
           final si = ServerMenuItem.fromMap(m);
           items.add(_serverMenuItemToLocal(
-            si.copyWith(optionGroups: optionGroupsByItem[si.id] ?? const []),
+            si.copyWith(
+              optionGroups: optionGroupsByItem[si.id] ?? const [],
+              variations: variationsByItem[si.id] ?? const [],
+            ),
           ));
         }
       }
@@ -845,7 +885,9 @@ class SyncService {
                 final si = ServerMenuItem.fromMap(m);
                 items.add(_serverMenuItemToLocal(
                   si.copyWith(
-                      optionGroups: optionGroupsByItem[si.id] ?? const []),
+                    optionGroups: optionGroupsByItem[si.id] ?? const [],
+                    variations: variationsByItem[si.id] ?? const [],
+                  ),
                 ));
               }
             }
@@ -854,6 +896,23 @@ class SyncService {
       }
     }
     return items;
+  }
+
+  /// Groups item_variations from the sync payload by their item_id.
+  Map<String, List<ServerItemVariation>> _parseVariationsByItem(
+    Map<String, dynamic> data,
+  ) {
+    final rawVariations = data['item_variations'] ?? data['variations'];
+    final byItem = <String, List<ServerItemVariation>>{};
+    if (rawVariations is List) {
+      for (final raw in rawVariations) {
+        if (raw is! Map) continue;
+        final v = ServerItemVariation.fromMap(Map<String, dynamic>.from(raw));
+        if (v.itemId.isEmpty) continue;
+        byItem.putIfAbsent(v.itemId, () => []).add(v);
+      }
+    }
+    return byItem;
   }
 
   Map<String, ({String name, String type})> _categoryMap(
@@ -873,13 +932,23 @@ class SyncService {
     return map;
   }
 
+  /// Display price for an item. Items priced via variations carry base_price 0;
+  /// fall back to the cheapest variation so the menu card never shows ₹0.
+  double _effectivePrice(ServerMenuItem si) {
+    if (si.basePrice > 0) return si.basePrice;
+    final prices =
+        si.variations.map((v) => v.price).where((p) => p > 0).toList();
+    if (prices.isEmpty) return si.basePrice;
+    return prices.reduce((a, b) => a < b ? a : b);
+  }
+
   MenuItem _serverMenuItemToLocal(ServerMenuItem si) {
     return MenuItem(
       id: si.id,
       name: si.name,
       section: si.categoryName,
       kitchenSection: si.categoryType,
-      price: si.basePrice,
+      price: _effectivePrice(si),
       isVeg: si.isVeg,
       available: si.isAvailable,
       note: si.note,

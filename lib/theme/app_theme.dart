@@ -33,6 +33,18 @@ class AppTheme {
       iconTheme: const IconThemeData(color: AppColors.ink, size: 22),
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
+      // Any Material route that doesn't go through liquidPage still gets the
+      // iOS push (parallax + interactive back) on every platform.
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
+        },
+      ),
     );
   }
 }

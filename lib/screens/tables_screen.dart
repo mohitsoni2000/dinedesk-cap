@@ -277,17 +277,23 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                         itemCount: filtered.length,
                         itemBuilder: (_, i) {
                           final t = filtered[i];
-                          return _TableCard(
-                            table: t,
-                            isLoading:
-                                _openingTable && _openingTableId == t.serverId,
-                            onTap: () => _onTableTap(t),
-                            onLongPress:
-                                (t.state == TableState.mine ||
-                                        t.state == TableState.other)
-                                    ? () => TableMergeSheet.show(context, t)
-                                    : null,
-                            occupiedSince: t.occupiedSince,
+                          return Entrance(
+                            delay:
+                                Duration(milliseconds: 35 * (i < 12 ? i : 12)),
+                            offsetY: 10,
+                            child: _TableCard(
+                              table: t,
+                              isLoading: _openingTable &&
+                                  _openingTableId == t.serverId,
+                              onTap: () => _onTableTap(t),
+                              // Table merge — disabled for waiters (operator-only).
+                              onLongPress: ((t.state == TableState.mine ||
+                                          t.state == TableState.other) &&
+                                      !ref.watch(isWaiterProvider))
+                                  ? () => TableMergeSheet.show(context, t)
+                                  : null,
+                              occupiedSince: t.occupiedSince,
+                            ),
                           );
                         },
                       ),
@@ -503,9 +509,10 @@ class _TableCard extends ConsumerWidget {
       (list) => list.any((t) => t.tableId == table.serverId),
     ));
 
-    return GestureDetector(
+    return Pressable(
       onTap: isLoading ? null : onTap,
       onLongPress: onLongPress,
+      pressedScale: 0.97,
       child: Hero(
         tag: HeroTags.tableCard(table.serverId),
         flightShuttleBuilder: (_, anim, __, ___, ____) {

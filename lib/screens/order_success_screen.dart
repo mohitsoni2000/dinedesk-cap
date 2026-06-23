@@ -121,8 +121,12 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                                 )),
                             const SizedBox(height: 8),
                             KineticKotNumber(
-                              number:
-                                  int.tryParse(ref.watch(lastKotIdProvider)) ?? 0,
+                              // KOT numbers arrive prefixed ("KOT-002"); pull the
+                              // numeric part so the counter shows the real number.
+                              number: int.tryParse(ref
+                                      .watch(lastKotIdProvider)
+                                      .replaceAll(RegExp(r'[^0-9]'), '')) ??
+                                  0,
                               fontSize: 64,
                             ),
                           ],

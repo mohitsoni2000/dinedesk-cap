@@ -3,6 +3,11 @@
 // Boot flow:   /splash → /scan → /connecting → /auth → /tables
 // On disconnect:  banner overlay → /disconnected (after 2-min grace)
 // On force-kick:  /force-disconnected
+//
+// Tab section (/tables, /history, /profile, /settings) is a
+// StatefulShellRoute.indexedStack: each tab keeps its own Navigator + state
+// (scroll position, search text, etc.) and switching is INSTANT with no slide —
+// the iOS tab-bar behaviour. Push/modal routes still use liquidPage.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -73,31 +78,38 @@ final routerProvider = Provider<GoRouter>((ref) {
           path: '/auth',
           pageBuilder: (_, s) =>
               liquidPage(key: s.pageKey, child: const AuthScreen())),
-      ShellRoute(
-        builder: (_, __, child) => LiquidMeshBackground(
+
+      // ── Tab section: indexed stack keeps each tab alive & switches instantly ──
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) => LiquidMeshBackground(
           child: ConnectionBanner(
-            child: ReadyOrdersBanner(child: RootShell(child: child)),
+            child: ReadyOrdersBanner(
+              child: RootShell(navigationShell: navigationShell),
+            ),
           ),
         ),
-        routes: [
-          GoRoute(
-              path: '/tables',
-              pageBuilder: (_, s) =>
-                  liquidPage(key: s.pageKey, child: const TablesScreen())),
-          GoRoute(
-              path: '/history',
-              pageBuilder: (_, s) =>
-                  liquidPage(key: s.pageKey, child: const HistoryScreen())),
-          GoRoute(
-              path: '/profile',
-              pageBuilder: (_, s) =>
-                  liquidPage(key: s.pageKey, child: const ProfileScreen())),
-          GoRoute(
-              path: '/settings',
-              pageBuilder: (_, s) =>
-                  liquidPage(key: s.pageKey, child: const SettingsScreen())),
+        branches: [
+          StatefulShellBranch(routes: [
+            GoRoute(
+                path: '/tables', builder: (_, __) => const TablesScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+                path: '/history', builder: (_, __) => const HistoryScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+                path: '/profile', builder: (_, __) => const ProfileScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+                path: '/settings',
+                builder: (_, __) => const SettingsScreen()),
+          ]),
         ],
       ),
+
+      // ── Push / modal routes over the shell ──
       GoRoute(
           path: '/order/:tableId',
           pageBuilder: (_, s) => liquidPage(

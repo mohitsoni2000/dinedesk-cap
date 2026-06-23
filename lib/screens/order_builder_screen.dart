@@ -316,6 +316,20 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     controller.dispose();
   }
 
+  /// Adds an item to the cart, opening the configuration sheet first when the
+  /// item needs a variation (when enabled) or required-option choice. This is the
+  /// single routing point for every quick-add entry point (rows, fast-add, recents).
+  void _addOrConfigure(BuildContext context, MenuItem item, {bool track = true}) {
+    final variationsEnabled = ref.read(flagsProvider).itemVariations;
+    if (_itemNeedsSheet(item, variationsEnabled: variationsEnabled)) {
+      ItemDetailSheet.show(context, item);
+      return;
+    }
+    ref.read(feedbackServiceProvider).fire(const FeedbackLight());
+    ref.read(cartProvider.notifier).add(item);
+    if (track) ref.read(recentItemsProvider.notifier).track(item);
+  }
+
   void _showItemQuickMenu(BuildContext context, MenuItem item) {
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
     showModalBottomSheet(
@@ -341,12 +355,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     label: 'Add',
                     onTap: () {
                       Navigator.of(context).pop();
-                      if (_itemNeedsSheet(item)) {
-                        ItemDetailSheet.show(context, item);
-                      } else {
-                        ref.read(cartProvider.notifier).add(item);
-                        ref.read(feedbackServiceProvider).fire(const FeedbackLight());
-                      }
+                      _addOrConfigure(context, item);
                     },
                   ),
                 ),
@@ -420,6 +429,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
         }
       },
       child: LiquidMeshBackground(
+        animate: false,
         child: Scaffold(
           backgroundColor: Colors.transparent,
           body: SafeArea(
@@ -508,6 +518,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       final isLinked = linkGroups.values
                           .any((ids) => ids.contains(widget.tableId));
                       final flags = ref.watch(flagsProvider);
+                      // Waiters cannot shift/link/merge tables — hide those items.
+                      final isWaiter = ref.watch(isWaiterProvider);
                       if (!isTableAction && !flags.packages) {
                         return const SizedBox.shrink();
                       }
@@ -535,7 +547,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           }
                         },
                         itemBuilder: (ctx) => [
-                          if (isTableAction)
+                          if (isTableAction && !isWaiter)
                             PopupMenuItem(
                               value: 'shift',
                               child: Row(
@@ -550,7 +562,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 ],
                               ),
                             ),
-                          if (isTableAction && !isLinked)
+                          if (isTableAction && !isLinked && !isWaiter)
                             PopupMenuItem(
                               value: 'link',
                               child: Row(
@@ -679,6 +691,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     order: runningOrder,
                     tableId: widget.tableId,
                     cartIsEmpty: cart.isEmpty,
+                    isWaiter: ref.watch(isWaiterProvider),
                     onPrintSummary: () {
                       ref.read(socketServiceProvider).emit(
                         'print:summary',
@@ -714,15 +727,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           Padding(
                             padding: const EdgeInsets.only(right: 6),
                             child: GestureDetector(
-                              onTap: () {
-                                ref
-                                    .read(feedbackServiceProvider)
-                                    .fire(const FeedbackLight());
-                                ref.read(cartProvider.notifier).add(item);
-                                ref
-                                    .read(recentItemsProvider.notifier)
-                                    .track(item);
-                              },
+                              onTap: () => _addOrConfigure(context, item),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
@@ -799,12 +804,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           Padding(
                             padding: const EdgeInsets.only(right: 6),
                             child: GestureDetector(
-                              onTap: () {
-                                ref
-                                    .read(feedbackServiceProvider)
-                                    .fire(const FeedbackLight());
-                                ref.read(cartProvider.notifier).add(item);
-                              },
+                              onTap: () => _addOrConfigure(context, item),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
@@ -922,37 +922,12 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                         onSwipeConfirm: () => ref
                                             .read(feedbackServiceProvider)
                                             .fire(const FeedbackMedium()),
-                                        onAdd: () {
-                                          final item = entry.value[i];
-                                          if (_itemNeedsSheet(item)) {
-                                            ItemDetailSheet.show(context, item);
-                                          } else {
-                                            ref
-                                                .read(feedbackServiceProvider)
-                                                .fire(const FeedbackLight());
-                                            ref
-                                                .read(cartProvider.notifier)
-                                                .add(item);
-                                            ref
-                                                .read(
-                                                    recentItemsProvider.notifier)
-                                                .track(item);
-                                          }
-                                        },
+                                        onAdd: () => _addOrConfigure(
+                                            context, entry.value[i]),
                                         child: _ItemRow(
                                           item: entry.value[i],
-                                          onAdd: () {
-                                            ref
-                                                .read(feedbackServiceProvider)
-                                                .fire(const FeedbackLight());
-                                            ref
-                                                .read(cartProvider.notifier)
-                                                .add(entry.value[i]);
-                                            ref
-                                                .read(
-                                                    recentItemsProvider.notifier)
-                                                .track(entry.value[i]);
-                                          },
+                                          onAdd: () => _addOrConfigure(
+                                              context, entry.value[i]),
                                           onTap: () => ItemDetailSheet.show(
                                               context, entry.value[i]),
                                           onLongPress: _readOnly
@@ -1237,12 +1212,14 @@ class _RunningOrderCard extends StatelessWidget {
   final ServerOrder order;
   final String tableId;
   final bool cartIsEmpty;
+  final bool isWaiter;
   final VoidCallback onPrintSummary;
 
   const _RunningOrderCard({
     required this.order,
     required this.tableId,
     required this.cartIsEmpty,
+    required this.isWaiter,
     required this.onPrintSummary,
   });
 
@@ -1317,7 +1294,8 @@ class _RunningOrderCard extends StatelessWidget {
                 ),
               ],
             ],
-            if (cartIsEmpty) ...[
+            // Print Summary hidden for waiters (operator-only).
+            if (cartIsEmpty && !isWaiter) ...[
               const SizedBox(height: 10),
               const Divider(height: 1, thickness: 1, color: AppColors.terra200),
               const SizedBox(height: 8),
@@ -1365,9 +1343,9 @@ class _RunningOrderCard extends StatelessWidget {
 }
 
 // Returns true if the item requires user configuration before being added
-// to the cart — i.e. it has variations or required option groups.
-bool _itemNeedsSheet(MenuItem item) {
-  if (item.variations.isNotEmpty) return true;
+// to the cart — i.e. it has variations (when enabled) or required option groups.
+bool _itemNeedsSheet(MenuItem item, {bool variationsEnabled = true}) {
+  if (variationsEnabled && item.variations.isNotEmpty) return true;
   return item.optionGroups.any((g) => g.isRequired || g.minSelect > 0);
 }
 

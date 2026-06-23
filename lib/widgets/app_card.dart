@@ -1,5 +1,6 @@
 // Solid card surface — opaque, for dense content (per HIG).
 import 'package:flutter/material.dart';
+import '../motion/motion.dart';
 import '../theme/tokens.dart';
 
 class AppCard extends StatelessWidget {
@@ -46,13 +47,6 @@ class AppCard extends StatelessWidget {
       ),
     );
     if (onTap == null) return box;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: borderRadius,
-        onTap: onTap,
-        child: box,
-      ),
-    );
+    return Pressable(onTap: onTap, child: box);
   }
 }

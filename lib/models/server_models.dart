@@ -124,6 +124,7 @@ class ServerOrder {
   final String createdAt;
   final String? notes;
   final String? kotNumber;
+  final String? createdBy; // user id who created the order (for "my history")
   final List<ServerOrderItem> items;
 
   const ServerOrder({
@@ -140,6 +141,7 @@ class ServerOrder {
     required this.items,
     this.notes,
     this.kotNumber,
+    this.createdBy,
   });
 
   factory ServerOrder.fromMap(Map<String, dynamic> m) {
@@ -174,6 +176,7 @@ class ServerOrder {
       items: items,
       notes: m['notes']?.toString(),
       kotNumber: m['kot_number']?.toString(),
+      createdBy: m['created_by']?.toString() ?? m['operator_id']?.toString(),
     );
   }
 }

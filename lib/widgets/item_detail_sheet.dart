@@ -17,12 +17,14 @@ import '../widgets/liquid_chrome.dart';
 class ItemDetailSheet extends ConsumerStatefulWidget {
   final MenuItem item;
   final bool autoFocusNote;
-  const ItemDetailSheet({super.key, required this.item, this.autoFocusNote = false});
+  const ItemDetailSheet(
+      {super.key, required this.item, this.autoFocusNote = false});
 
   @override
   ConsumerState<ItemDetailSheet> createState() => _ItemDetailSheetState();
 
-  static Future<void> show(BuildContext context, MenuItem item, {bool autoFocusNote = false}) {
+  static Future<void> show(BuildContext context, MenuItem item,
+      {bool autoFocusNote = false}) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -42,17 +44,19 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
   final FocusNode _noteFocusNode = FocusNode();
 
   bool get _hasServerOptions => widget.item.optionGroups.isNotEmpty;
-  bool get _hasVariations => widget.item.variations.isNotEmpty;
+  // Variations are only offered when the feature flag is enabled for this restaurant.
+  bool get _variationsEnabled => ref.read(flagsProvider).itemVariations;
+  bool get _hasVariations =>
+      _variationsEnabled && widget.item.variations.isNotEmpty;
 
-  MenuItemVariation? get _selectedVariation =>
-      widget.item.variations
-          .where((v) => v.id == _selectedVariationId)
-          .firstOrNull;
+  MenuItemVariation? get _selectedVariation => widget.item.variations
+      .where((v) => v.id == _selectedVariationId)
+      .firstOrNull;
 
   @override
   void initState() {
     super.initState();
-    if (widget.item.variations.isNotEmpty) {
+    if (_hasVariations) {
       _selectedVariationId = widget.item.variations.first.id;
     }
     for (final group in widget.item.optionGroups) {
@@ -154,7 +158,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                   // Variations (size / variant) — shown when item has multiple options.
                   if (_hasVariations) ...[
                     Text('SIZE / VARIANT',
-                        style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
+                        style:
+                            AppTypography.micro.copyWith(letterSpacing: 1.4)),
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
@@ -175,10 +180,12 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                                 color: _selectedVariationId == variation.id
                                     ? AppColors.terra500.withValues(alpha: 0.10)
                                     : Colors.white.withValues(alpha: 0.6),
-                                borderRadius: const BorderRadius.all(AppRadii.sm),
+                                borderRadius:
+                                    const BorderRadius.all(AppRadii.sm),
                                 border: Border.all(
                                   color: _selectedVariationId == variation.id
-                                      ? AppColors.terra500.withValues(alpha: 0.5)
+                                      ? AppColors.terra500
+                                          .withValues(alpha: 0.5)
                                       : AppColors.ink10,
                                 ),
                               ),
@@ -340,9 +347,9 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                           selectedOpts.add(option);
                         }
 
-                        final variationPriceDiff = (_selectedVariation?.price ??
-                                widget.item.price) -
-                            widget.item.price;
+                        final variationPriceDiff =
+                            (_selectedVariation?.price ?? widget.item.price) -
+                                widget.item.price;
                         final allMods = [
                           if (_selectedVariation != null)
                             _selectedVariation!.name,
@@ -353,7 +360,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                               qty: _qty,
                               mods: allMods,
                               selectedOptions: selectedOpts,
-                              modsExtra: _serverOptionExtra + variationPriceDiff,
+                              modsExtra:
+                                  _serverOptionExtra + variationPriceDiff,
                               itemNote: _note,
                               variationId: _selectedVariationId,
                               variationName: _selectedVariation?.name,

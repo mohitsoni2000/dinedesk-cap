@@ -1,21 +1,19 @@
-// Liquid-glass surface primitive — iOS 26-accurate settings.
+// Frosted-glass surface primitive.
 //
-// Key changes from previous version:
-//   • blur 38 (was 20) — real frosted-glass needs heavy blur
-//   • thickness 20 (was 12) — depth for visible refraction
-//   • lightIntensity 0.55 (was 1.2) — overblown highlights killed the effect
-//   • ambientStrength 0.18 (was 0.55) — excessive ambient washed out refraction
-//   • refractiveIndex 1.35 — now has visible lens distortion
-//   • saturation 1.25 — vivid-through-glass look
-//   • glassColor alpha 0.08 (was 0.22) — nearly transparent = truer glass
-//   • specular sweep 0.18 max (was 0.41) — subtle iOS rim-light
+// Previously this used the experimental `liquid_glass_renderer` shader
+// (LiquidGlass.withOwnLayer). That shader fails on many Android GPUs
+// (notably Samsung/Mali + Impeller) and rendered solid black blobs over
+// every glass tile — keypad keys, banners, sheets, cards. This reimplementation
+// keeps the exact same public API but draws the frosted look with standard,
+// well-supported Flutter primitives (BackdropFilter blur + translucent tint +
+// hairline rim-light + soft shadow), so it renders correctly on every device.
 //
 // For solid surfaces (dense content), use AppCard — dense content stays opaque.
 
-import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 
+import '../motion/motion.dart';
 import '../theme/tokens.dart';
 
 enum LiquidGlassVariant { regular, strong, dark, terra }
@@ -25,11 +23,23 @@ class LiquidGlassSurface extends StatelessWidget {
   final BorderRadius borderRadius;
   final LiquidGlassVariant variant;
   final EdgeInsetsGeometry? padding;
+
+  /// Kept for API compatibility with the old shader implementation; unused.
   final double thickness;
+
+  /// Frosted-glass blur strength (in the old shader's units). Mapped to a
+  /// sensible BackdropFilter sigma below.
   final double blur;
   final List<BoxShadow>? shadow;
   final Color? tint;
   final VoidCallback? onTap;
+
+  /// PERF: skip the (expensive) BackdropFilter blur and use a slightly more
+  /// opaque tint instead. Set true for small tiles (keypad keys, chips, small
+  /// buttons) where a real blur is GPU-costly and visually indistinguishable.
+  /// Keep false for large surfaces (sheets, app bar, bottom nav) where the
+  /// frosted effect is visible.
+  final bool skipBlur;
 
   const LiquidGlassSurface({
     super.key,
@@ -37,24 +47,25 @@ class LiquidGlassSurface extends StatelessWidget {
     this.borderRadius = const BorderRadius.all(AppRadii.lg),
     this.variant = LiquidGlassVariant.regular,
     this.padding,
-    this.thickness = 20, // was 12 — needs 20+ for real refraction depth
-    this.blur = 38,      // was 20 — needs 38+ for iOS frosted look
+    this.thickness = 20,
+    this.blur = 38,
     this.shadow,
     this.tint,
     this.onTap,
+    this.skipBlur = false,
   });
 
   Color _tint() {
     if (tint != null) return tint!;
     switch (variant) {
       case LiquidGlassVariant.regular:
-        return Colors.white.withValues(alpha: 0.08); // was 0.22 — too opaque
+        return Colors.white.withValues(alpha: 0.14);
       case LiquidGlassVariant.strong:
-        return Colors.white.withValues(alpha: 0.16); // was 0.40
+        return Colors.white.withValues(alpha: 0.24);
       case LiquidGlassVariant.dark:
-        return Colors.black.withValues(alpha: 0.18); // was 0.28
+        return Colors.black.withValues(alpha: 0.20);
       case LiquidGlassVariant.terra:
-        return AppColors.terra400.withValues(alpha: 0.18); // was 0.32
+        return AppColors.terra400.withValues(alpha: 0.22);
     }
   }
 
@@ -63,56 +74,51 @@ class LiquidGlassSurface extends StatelessWidget {
     final tintColor = _tint();
     final isDark = variant == LiquidGlassVariant.dark;
 
-    // iOS-accurate specular values — subtle, not "AI glow"
-    final specularPeak = isDark ? 0.10 : 0.18;  // was 0.41 — way too bright
-    final specularMid  = isDark ? 0.04 : 0.08;  // was 0.21
-    final rimAlpha     = isDark ? 0.10 : 0.20;  // hairline border
+    // Hairline bright edge — the iOS-signature rim light that defines the shape.
+    final rimColor = Colors.white.withValues(alpha: isDark ? 0.14 : 0.55);
+    // Subtle top-left sheen so the surface reads as glass, not flat plastic.
+    final sheenTop = Colors.white.withValues(alpha: isDark ? 0.06 : 0.22);
 
     final effectiveShadow = shadow ?? AppShadows.glass;
+    // Map the legacy shader "blur" (≈38) onto a real BackdropFilter sigma.
+    final sigma = (blur / 3.2).clamp(6.0, 16.0);
 
-    Widget surface = LiquidGlass.withOwnLayer(
-      shape: LiquidRoundedSuperellipse(borderRadius: borderRadius.topLeft.x),
-      settings: LiquidGlassSettings(
-        thickness: thickness,
-        blur: blur,
-        glassColor: tintColor,
-        lightAngle: math.pi * 0.58, // ~105° — upper-left light source
-        lightIntensity: 0.55,        // was 1.2 — overblown
-        ambientStrength: 0.18,       // was 0.55 — washed out refraction
-        refractiveIndex: 1.35,       // visible lens effect (was 1.2 default)
-        saturation: 1.25,            // slightly vivid through glass (was 1.5)
-        chromaticAberration: 0.006,  // very subtle colour fringe
+    // Without a real backdrop blur, lift the tint a little so the tile still
+    // reads as a surface rather than washing out.
+    final fillColor = skipBlur
+        ? tintColor.withValues(alpha: (tintColor.a + 0.18).clamp(0.0, 1.0))
+        : tintColor;
+
+    Widget body = DecoratedBox(
+      // Top-left sheen drawn over the tint for a soft light-catch.
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [sheenTop, Colors.transparent],
+          stops: const [0.0, 0.55],
+        ),
       ),
       child: Container(
         padding: padding,
         decoration: BoxDecoration(
+          color: fillColor,
           borderRadius: borderRadius,
-          // Hairline rim-light — iOS signature thin bright edge
-          border: Border.all(
-            color: Colors.white.withValues(alpha: rimAlpha),
-            width: 0.5,
-          ),
-        ),
-        foregroundDecoration: BoxDecoration(
-          borderRadius: borderRadius,
-          // Inner specular sweep — diagonal light catch, now subtle
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white.withValues(alpha: specularPeak),
-              Colors.white.withValues(alpha: specularMid),
-              Colors.white.withValues(alpha: 0),
-            ],
-            stops: const [0.0, 0.15, 0.40],
-          ),
-          backgroundBlendMode: BlendMode.overlay,
+          border: Border.all(color: rimColor, width: 0.8),
         ),
         child: child,
       ),
     );
 
-    final wrapped = Container(
+    final surface = skipBlur
+        ? body
+        : BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+            child: body,
+          );
+
+    final wrapped = DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: borderRadius,
         boxShadow: effectiveShadow,
@@ -121,6 +127,11 @@ class LiquidGlassSurface extends StatelessWidget {
     );
 
     if (onTap == null) return wrapped;
-    return GestureDetector(onTap: onTap, child: wrapped);
+    // iOS press-scale on every tappable glass tile (keypads, chips, actions…).
+    return Pressable(
+      onTap: onTap,
+      pressedScale: 0.95,
+      child: wrapped,
+    );
   }
 }

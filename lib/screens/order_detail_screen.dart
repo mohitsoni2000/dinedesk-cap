@@ -161,6 +161,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               status: OrderStatus.cancelled,
               lines: o.lines,
               notes: o.notes,
+              createdBy: o.createdBy,
             )
           else
             o,
@@ -424,6 +425,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         order.status == OrderStatus.modified;
 
     return LiquidMeshBackground(
+      animate: false,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
@@ -573,8 +575,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                   const Expanded(
                                       child: Text('Service Charge',
                                           style: AppTypography.bodyMd)),
-                                  Text(
-                                      formatRupeesCompact(_billServiceCharge!),
+                                  Text(formatRupeesCompact(_billServiceCharge!),
                                       style: AppTypography.bodyMd),
                                 ],
                               ),
@@ -742,7 +743,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: Column(
                   children: [
-                    // Row 1: Reprint KOT + Cancel Order (existing)
+                    // Reprint / Cancel — only for active (sent/modified) orders.
+                    // Paid or cancelled orders are view-only: no actions shown.
+                    if (isSent) ...[
                     Row(
                       children: [
                         Expanded(
@@ -753,23 +756,30 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                 isCancelled ? null : () => _reprintKot(context),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: LiquidSecondaryButton(
-                            label: isCancelled ? 'Cancelled' : 'Cancel Order',
-                            leadingIcon: isCancelled
-                                ? Icons.block
-                                : Icons.cancel_outlined,
-                            onPressed: isCancelled
-                                ? null
-                                : () => _confirmCancel(context, order),
+                        // Cancel Order — hidden for waiters (operator-only).
+                        if (!ref.watch(isWaiterProvider)) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: LiquidSecondaryButton(
+                              label: isCancelled ? 'Cancelled' : 'Cancel Order',
+                              leadingIcon: isCancelled
+                                  ? Icons.block
+                                  : Icons.cancel_outlined,
+                              onPressed: isCancelled
+                                  ? null
+                                  : () => _confirmCancel(context, order),
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
+                    ],
 
-                    // Row 2: Discount + Generate Bill / Collect Payment
-                    if (isSent && !_paymentCollected) ...[
+                    // Row 2: Discount + Generate Bill / Collect Payment.
+                    // Hidden for waiters — billing/payment/discount is operator-only.
+                    if (isSent &&
+                        !_paymentCollected &&
+                        !ref.watch(isWaiterProvider)) ...[
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -825,9 +835,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                       ),
                     ],
 
-                    // Print Summary — sends print:bill for each bill to Desktop printer.
+                    // Print Summary — hidden for waiters (operator-only).
                     if (_billGenerated &&
-                        (_bills.isNotEmpty || _billId != null)) ...[
+                        (_bills.isNotEmpty || _billId != null) &&
+                        !ref.watch(isWaiterProvider)) ...[
                       const SizedBox(height: 8),
                       LiquidSecondaryButton(
                         label: _bills.length > 1

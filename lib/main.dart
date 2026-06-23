@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'motion/app_scroll_behavior.dart';
 import 'motion/motion.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
@@ -23,6 +24,8 @@ class RestroApp extends ConsumerWidget {
         title: 'Restro',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
+        // iOS rubber-band overscroll on every scrollable, every platform.
+        scrollBehavior: const AppScrollBehavior(),
         routerConfig: ref.watch(routerProvider),
       );
 }

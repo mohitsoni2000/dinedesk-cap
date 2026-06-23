@@ -30,6 +30,8 @@ class FeatureFlags {
   final bool waiterAssignment;
   final bool manualEntry;
   final bool kotEdit;
+  final bool kitchenDisplay;
+  final bool readyToServe;
 
   const FeatureFlags({
     this.discounts = true,
@@ -63,6 +65,8 @@ class FeatureFlags {
     this.waiterAssignment = false,
     this.manualEntry = false,
     this.kotEdit = false,
+    this.kitchenDisplay = false,
+    this.readyToServe = false,
   });
 
   factory FeatureFlags.fromMap(Map<String, dynamic> map) {
@@ -108,6 +112,8 @@ class FeatureFlags {
       waiterAssignment: flag('flag_waiter_assignment') || flag('waiter_assignment'),
       manualEntry: flag('flag_manual_entry') || flag('manual_entry'),
       kotEdit: flag('flag_kot_edit') || flag('kot_edit'),
+      kitchenDisplay: flag('flag_kitchen_display') || flag('kitchen_display'),
+      readyToServe: flag('flag_ready_to_serve') || flag('ready_to_serve'),
     );
   }
 }

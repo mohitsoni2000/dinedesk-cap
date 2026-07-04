@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/demo_data.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/session_service.dart';
@@ -76,6 +77,43 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
 
     final pin = _pin.join();
+    SessionService().getSavedPairing().then((pairing) {
+      if (pairing?.token == 'demo-token') {
+        _submitDemo();
+      } else {
+        _submitReal(pin);
+      }
+    });
+  }
+
+  // No admin desktop paired — accept any PIN and load fixture data instead
+  // of verifying over the socket. See qr_scan_screen.dart's "Try Demo".
+  Future<void> _submitDemo() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
+
+    ref.read(operatorProvider.notifier).state = const Operator(
+      name: 'Demo Waiter',
+      role: 'Waiter',
+      shift: 'Day',
+      username: 'op_demo',
+    );
+
+    final syncService = ref.read(syncServiceProvider);
+    await syncService.applyInitialSync(buildDemoSyncPayload());
+    syncService.unregisterListeners();
+    syncService.registerListeners();
+
+    ref.read(connectionProvider.notifier).state = ConnectionStatus(
+      online: true,
+      label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
+    );
+    ref.read(isAuthenticatedProvider.notifier).state = true;
+    if (mounted) context.go('/tables');
+  }
+
+  void _submitReal(String pin) {
     final socketService = ref.read(socketServiceProvider);
     final syncService = ref.read(syncServiceProvider);
 

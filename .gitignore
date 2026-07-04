@@ -49,3 +49,9 @@ app.*.map.json
 
 # Screenshots from UI audit
 screen_*.png
+
+# Android release signing — never commit
+/android-signing/
+android/key.properties
+*.jks
+*.keystore

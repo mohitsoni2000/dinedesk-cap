@@ -59,6 +59,12 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
       return;
     }
 
+    if (pairing.token == 'demo-token') {
+      debugPrint('[Connect] Demo pairing — skipping real socket handshake');
+      _runDemoStages();
+      return;
+    }
+
     debugPrint('[Connect] Pairing loaded: ${pairing.host}:${pairing.port}');
     final socketService = ref.read(socketServiceProvider);
 
@@ -95,6 +101,18 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
       if (mounted && _stage == 0) {
         // Stage 0 is already visible; socket state listener handles the rest.
       }
+    });
+  }
+
+  // Same stage timing as the real handshake, minus the actual socket connect.
+  void _runDemoStages() {
+    setState(() => _stage = 1);
+    _stageTimer = Timer(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      setState(() => _stage = 2);
+      _stageTimer = Timer(const Duration(milliseconds: 500), () {
+        if (mounted) context.go('/auth');
+      });
     });
   }
 

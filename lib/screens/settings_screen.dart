@@ -128,7 +128,7 @@ class SettingsScreen extends ConsumerWidget {
                       ListTile(
                         leading: const Icon(Icons.info_outline,
                             color: AppColors.ink70),
-                        title: const Text('About DineDesk Cap',
+                        title: const Text('About Command.Crew',
                             style: AppTypography.bodyMd),
                         subtitle: Text('v2.0 · $restaurantName',
                             style: AppTypography.caption),
@@ -241,7 +241,7 @@ class SettingsScreen extends ConsumerWidget {
           children: [
             const Text('Appearance', style: AppTypography.headline),
             const SizedBox(height: 4),
-            const Text('Customize how DineDesk Cap looks.',
+            const Text('Customize how Command.Crew looks.',
                 style: AppTypography.caption),
             const SizedBox(height: 24),
             AppCard(
@@ -314,7 +314,7 @@ class SettingsScreen extends ConsumerWidget {
                   color: Colors.white, size: 32),
             ),
             const SizedBox(height: 16),
-            const Text('DineDesk Cap', style: AppTypography.headline),
+            const Text('Command.Crew', style: AppTypography.headline),
             const SizedBox(height: 4),
             const Text('v2.0', style: AppTypography.caption),
             const SizedBox(height: 2),

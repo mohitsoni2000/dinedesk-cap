@@ -4,12 +4,12 @@
 // successful scan we navigate to /connecting which simulates the WS handshake
 // and then continues to /auth for username + PIN.
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/session_service.dart';
 import '../theme/tokens.dart';
@@ -106,6 +106,8 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
     });
   }
 
+  // Lets anyone without a paired admin desktop (most notably App Store /
+  // Play Store reviewers) explore the app on fixture data — see demo_data.dart.
   void _demoScan() {
     if (_processing) return;
     setState(() {
@@ -113,6 +115,12 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
       _error = null;
     });
     ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
+    ref.read(restaurantProvider.notifier).state = const RestaurantInfo(
+      name: 'Command.Crew Demo Kitchen',
+      address: 'MG Road, Bengaluru',
+      adminDeviceLabel: 'Demo Admin Desktop',
+      adminIp: '',
+    );
 
     SessionService()
         .savePairing(
@@ -279,11 +287,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                         setState(() => _torchOn = !_torchOn);
                       },
                     ),
-                    if (kDebugMode) ...[
-                      const SizedBox(width: 8),
-                      _GlassIcon(
-                          icon: Icons.touch_app_outlined, onTap: _demoScan),
-                    ],
                   ],
                 ),
               ),
@@ -374,6 +377,17 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                                     .copyWith(color: Colors.white)),
                           ],
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      // No admin desktop to pair with? Explore the app on
+                      // sample data instead (also used by App Store review).
+                      TextButton.icon(
+                        onPressed: _demoScan,
+                        icon: const Icon(Icons.touch_app_outlined,
+                            color: Colors.white70, size: 16),
+                        label: Text('Try Demo — no pairing needed',
+                            style: AppTypography.caption
+                                .copyWith(color: Colors.white70)),
                       ),
                     ],
                   ),

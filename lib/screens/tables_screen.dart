@@ -25,21 +25,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   bool _searchOpen = false;
   bool _openingTable = false;
   String? _openingTableId;
-  Timer? _timerTick;
-
-  @override
-  void initState() {
-    super.initState();
-    _timerTick = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _timerTick?.cancel();
-    super.dispose();
-  }
 
   void _onTableTap(RestaurantTable t) async {
     if (_openingTable) return;
@@ -145,11 +130,12 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
       });
     }
 
+    final query = _query.toLowerCase();
     final filtered = tables.where((t) {
       if (t.floor != activeFloor) return false;
-      if (_query.isEmpty) return true;
-      return t.id.toLowerCase().contains(_query.toLowerCase()) ||
-          (t.waiterName?.toLowerCase().contains(_query.toLowerCase()) ?? false);
+      if (query.isEmpty) return true;
+      return t.id.toLowerCase().contains(query) ||
+          (t.waiterName?.toLowerCase().contains(query) ?? false);
     }).toList();
 
     return Scaffold(
@@ -179,7 +165,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                   ),
                   IconButton(
                     icon: Icon(_searchOpen ? Icons.close : Icons.search,
-                        color: AppColors.ink70),
+                        color: context.palette.ink70),
                     onPressed: () => setState(() {
                       _searchOpen = !_searchOpen;
                       if (!_searchOpen) _query = '';
@@ -203,7 +189,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        Text(connOnline ? 'LIVE' : 'OFFLINE'),
+                        Text(connOnline ? 'ONLINE' : 'OFFLINE'),
                       ],
                     ),
                   ),
@@ -220,11 +206,11 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                   thickness: 10,
                   child: TextField(
                     autofocus: true,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       border: InputBorder.none,
                       hintText: 'Search table number or waiter…',
-                      icon:
-                          Icon(Icons.search, color: AppColors.ink50, size: 18),
+                      icon: Icon(Icons.search,
+                          color: context.palette.ink50, size: 18),
                     ),
                     onChanged: (v) => setState(() => _query = v),
                   ),
@@ -247,19 +233,19 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
             const SizedBox(height: 12),
             Expanded(
                 child: filtered.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Padding(
-                          padding: EdgeInsets.all(32),
+                          padding: const EdgeInsets.all(32),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.search_off,
-                                  color: AppColors.ink30, size: 48),
-                              SizedBox(height: 12),
-                              Text('No tables match',
+                                  color: context.palette.ink30, size: 48),
+                              const SizedBox(height: 12),
+                              const Text('No tables match',
                                   style: AppTypography.title),
-                              SizedBox(height: 4),
-                              Text('Try a different search or floor',
+                              const SizedBox(height: 4),
+                              const Text('Try a different search or floor',
                                   style: AppTypography.caption),
                             ],
                           ),
@@ -330,7 +316,8 @@ class _OnlineStrip extends StatelessWidget {
                         colors: [AppColors.terra300, AppColors.terra500],
                       ),
                       shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.paper, width: 2),
+                      border:
+                          Border.all(color: context.palette.surface, width: 2),
                     ),
                     child: Center(
                       child: Text(
@@ -398,8 +385,12 @@ class _FloorTabs extends StatelessWidget {
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color:
-                              Color.lerp(Colors.transparent, AppColors.ink, t),
+                          color: Color.lerp(
+                              Colors.transparent,
+                              context.palette.isDark
+                                  ? AppColors.terra600
+                                  : AppColors.ink,
+                              t),
                           borderRadius: const BorderRadius.all(AppRadii.xs),
                         ),
                         alignment: Alignment.center,
@@ -411,13 +402,70 @@ class _FloorTabs extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.micro.copyWith(
-                        color: value == f ? Colors.white : AppColors.ink70,
+                        color:
+                            value == f ? Colors.white : context.palette.ink70,
                       ),
                     ),
                   ),
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Occupied-since badge that keeps its own clock. Only this ~40px widget
+/// rebuilds each minute — previously the entire tables grid rebuilt on a
+/// screen-level Timer, freezing low-end devices once a minute.
+class _OccupancyBadge extends StatefulWidget {
+  final DateTime since;
+  const _OccupancyBadge({required this.since});
+
+  @override
+  State<_OccupancyBadge> createState() => _OccupancyBadgeState();
+}
+
+class _OccupancyBadgeState extends State<_OccupancyBadge> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final elapsed = DateTime.now().difference(widget.since);
+    final label = elapsed.inHours >= 1
+        ? '${elapsed.inHours}h ${elapsed.inMinutes.remainder(60)}m'
+        : '${elapsed.inMinutes}m';
+    final color = elapsed.inMinutes < 30
+        ? AppColors.success
+        : elapsed.inMinutes < 60
+            ? AppColors.warn
+            : AppColors.danger;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(AppRadiiValues.sm),
+      ),
+      child: Text(
+        label,
+        style: AppTypography.micro.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -438,33 +486,19 @@ class _TableCard extends ConsumerWidget {
     this.occupiedSince,
   });
 
-  String _timerLabel(DateTime since) {
-    final elapsed = DateTime.now().difference(since);
-    if (elapsed.inHours >= 1) {
-      return '${elapsed.inHours}h ${elapsed.inMinutes.remainder(60)}m';
-    }
-    return '${elapsed.inMinutes}m';
-  }
-
-  Color _timerColor(DateTime since) {
-    final elapsed = DateTime.now().difference(since);
-    if (elapsed.inMinutes < 30) return AppColors.success;
-    if (elapsed.inMinutes < 60) return AppColors.warn;
-    return AppColors.danger;
-  }
-
-  Color _bg() {
+  Color _bg(BuildContext context) {
+    final palette = context.palette;
     switch (table.state) {
       case TableState.mine:
-        return AppColors.tableMineBg;
+        return palette.tableMineBg;
       case TableState.other:
-        return AppColors.tableOtherBg;
+        return palette.tableOtherBg;
       case TableState.dirty:
-        return AppColors.tableDirtyBg;
+        return palette.tableDirtyBg;
       case TableState.reserved:
-        return AppColors.tableReservedBg;
+        return palette.tableReservedBg;
       case TableState.free:
-        return AppColors.tableFreeBg;
+        return palette.tableFreeBg;
     }
   }
 
@@ -484,7 +518,7 @@ class _TableCard extends ConsumerWidget {
   }
 
   String _stateLabel() {
-    if (table.activeBillCount > 0) return 'BILLED';
+    if (table.activeBillCount > 0) return 'BILL PENDING';
     switch (table.state) {
       case TableState.mine:
         return 'MINE';
@@ -515,14 +549,14 @@ class _TableCard extends ConsumerWidget {
       pressedScale: 0.97,
       child: Hero(
         tag: HeroTags.tableCard(table.serverId),
-        flightShuttleBuilder: (_, anim, __, ___, ____) {
+        flightShuttleBuilder: (flightContext, anim, __, ___, ____) {
           return AnimatedBuilder(
             animation: anim,
             builder: (_, __) => Material(
               color: Colors.transparent,
               child: Container(
                 decoration: BoxDecoration(
-                  color: _bg(),
+                  color: _bg(flightContext),
                   borderRadius: const BorderRadius.all(AppRadii.lg),
                   border: Border.all(color: _border(), width: 1),
                   boxShadow: AppShadows.terraGlow,
@@ -536,7 +570,7 @@ class _TableCard extends ConsumerWidget {
             Container(
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
-                color: _bg(),
+                color: _bg(context),
                 borderRadius: const BorderRadius.all(AppRadii.lg),
                 border: Border.all(color: _border(), width: 1),
                 boxShadow: table.state == TableState.mine
@@ -602,21 +636,7 @@ class _TableCard extends ConsumerWidget {
               Positioned(
                 right: 4,
                 bottom: 4,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _timerColor(occupiedSince!),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _timerLabel(occupiedSince!),
-                    style: AppTypography.micro.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+                child: _OccupancyBadge(since: occupiedSince!),
               ),
             if (isReady)
               Positioned(

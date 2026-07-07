@@ -14,6 +14,7 @@ import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
+import 'sheet_handle.dart';
 
 class KotEditSheet extends ConsumerStatefulWidget {
   final HistoryOrder order;
@@ -129,14 +130,7 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.ink30,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            const SheetHandle(),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Row(
@@ -148,7 +142,7 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
                 ],
               ),
             ),
-            const Divider(height: 1, color: AppColors.ink10),
+            Divider(height: 1, color: context.palette.ink10),
             Expanded(
               child: ListView(
                 controller: scroll,
@@ -162,7 +156,7 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
                       }),
                     ),
                     if (i < _lines.length - 1)
-                      const Divider(height: 1, color: AppColors.ink10),
+                      Divider(height: 1, color: context.palette.ink10),
                   ],
                   const SizedBox(height: 16),
                   Text('REASON FOR EDIT',
@@ -273,11 +267,12 @@ class _EditRow extends StatelessWidget {
               onTap: () {
                 if (line.currentQty > 0) onQtyChanged(line.currentQty - 1);
               },
-              child: const SizedBox(
+              child: SizedBox(
                 width: 36,
                 height: 36,
                 child: Center(
-                    child: Icon(Icons.remove, size: 16, color: AppColors.ink)),
+                    child: Icon(Icons.remove,
+                        size: 16, color: context.palette.ink)),
               ),
             ),
             SizedBox(
@@ -288,18 +283,19 @@ class _EditRow extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                           color: line.isModified
                               ? AppColors.warn
-                              : AppColors.ink)),
+                              : context.palette.ink)),
                 )),
             LiquidGlassSurface(
               borderRadius: BorderRadius.circular(18),
               blur: 14,
               thickness: 6,
               onTap: () => onQtyChanged(line.currentQty + 1),
-              child: const SizedBox(
+              child: SizedBox(
                 width: 36,
                 height: 36,
                 child: Center(
-                    child: Icon(Icons.add, size: 16, color: AppColors.ink)),
+                    child:
+                        Icon(Icons.add, size: 16, color: context.palette.ink)),
               ),
             ),
           ],

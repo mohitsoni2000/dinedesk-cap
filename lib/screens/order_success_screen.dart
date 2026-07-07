@@ -22,7 +22,10 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
   bool _showText = false;
   Timer? _autoNav;
   String? _tableDisplayName;
-  int _countdown = 20;
+  // 45s: waiters need time to note the KOT number mid-shift; 20s vanished
+  // under them and the number was lost.
+  static const int _autoNavSeconds = 45;
+  int _countdown = _autoNavSeconds;
 
   @override
   void initState() {
@@ -40,7 +43,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
   }
 
   void _startAutoNav() {
-    setState(() => _countdown = 20);
+    setState(() => _countdown = _autoNavSeconds);
     _autoNav?.cancel();
     _autoNav = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
@@ -137,7 +140,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text('Table ${_tableDisplayName ?? widget.tableId}',
-                              style: AppTypography.caption),
+                              style: context.palette.caption),
                         ],
                       ),
                       const SizedBox(height: 4),

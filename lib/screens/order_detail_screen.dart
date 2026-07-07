@@ -104,7 +104,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: AppColors.paper,
+        backgroundColor: context.palette.surface,
         title: Text('Cancel order ${order.id}?', style: AppTypography.title),
         content: const Text(
             'The kitchen will be notified to stop preparation. This cannot be undone.',
@@ -401,7 +401,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 ),
               ),
               const Spacer(),
-              const Icon(Icons.error_outline, color: AppColors.ink30, size: 48),
+              Icon(Icons.error_outline,
+                  color: context.palette.ink30, size: 48),
               const SizedBox(height: 12),
               const Text('Order not found', style: AppTypography.title),
               const SizedBox(height: 4),
@@ -454,7 +455,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
-                              color: AppColors.tableMineBg,
+                              color: context.palette.tableMineBg,
                               borderRadius: const BorderRadius.all(AppRadii.xs),
                               border: Border.all(
                                   color: AppColors.terra400
@@ -580,7 +581,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                 ],
                               ),
                             ],
-                            const Divider(height: 16, color: AppColors.ink10),
+                            Divider(height: 16, color: context.palette.ink10),
                             Row(
                               children: [
                                 const Text('Total', style: AppTypography.title),
@@ -661,7 +662,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                       width: 28,
                                       height: 28,
                                       decoration: BoxDecoration(
-                                        color: AppColors.ink05,
+                                        color: context.palette.ink05,
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Center(
@@ -687,8 +688,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                                 entry.value[i].mods.join(' · '),
                                                 style: AppTypography.caption
                                                     .copyWith(
-                                                        color:
-                                                            AppColors.ink70)),
+                                                        color: context
+                                                            .palette.ink70)),
                                           ],
                                         ],
                                       ),
@@ -703,8 +704,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                 ),
                               ),
                               if (i < entry.value.length - 1)
-                                const Divider(
-                                    height: 1, color: AppColors.ink10),
+                                Divider(
+                                    height: 1, color: context.palette.ink10),
                             ],
                           ],
                         ),
@@ -722,8 +723,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.sticky_note_2_outlined,
-                                color: AppColors.ink70, size: 18),
+                            Icon(Icons.sticky_note_2_outlined,
+                                color: context.palette.ink70, size: 18),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(order.notes!,
@@ -843,8 +844,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                       LiquidSecondaryButton(
                         label: _bills.length > 1
                             ? 'Print All Bills (${_bills.length})'
-                            : 'Print Summary',
-                        leadingIcon: Icons.summarize_outlined,
+                            : 'Print Bill',
+                        leadingIcon: Icons.receipt_long_outlined,
                         onPressed: () {
                           final socketService = ref.read(socketServiceProvider);
                           final billIds = _bills.isNotEmpty

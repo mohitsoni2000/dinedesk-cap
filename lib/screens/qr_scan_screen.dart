@@ -3,6 +3,12 @@
 // Operator scans the rotating pairing QR shown on the admin desktop. On a
 // successful scan we navigate to /connecting which simulates the WS handshake
 // and then continues to /auth for username + PIN.
+//
+// Design: "maître d' podium" — full-bleed camera under a cinematic vignette,
+// the scan frame biased upward with breathing ember brackets, and a glass
+// console anchored at the bottom carrying the serif welcome + the two
+// first-class actions (Help / Try Demo). Status (align hint, errors,
+// success) appears in a pill directly under the frame, where the eyes are.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -149,53 +155,30 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
             child: MobileScanner(
               controller: _controller,
               onDetect: _onDetect,
-              errorBuilder: (_, __) => Container(
-                color: AppColors.ink,
-                alignment: Alignment.center,
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.no_photography_outlined,
-                          color: Colors.white54, size: 52),
-                      const SizedBox(height: 20),
-                      Text('Camera unavailable',
-                          style: AppTypography.title
-                              .copyWith(color: Colors.white)),
-                      const SizedBox(height: 8),
-                      Text(
-                          'Allow camera access in Settings to pair this device.',
-                          textAlign: TextAlign.center,
-                          style: AppTypography.caption.copyWith(
-                              color: Colors.white.withValues(alpha: 0.6))),
-                    ],
-                  ),
-                ),
-              ),
+              errorBuilder: (_, __) => const _CameraUnavailable(),
             ),
           ),
 
-          // Cinematic vignette over camera
+          // Cinematic vignette — heavier at the bottom to seat the console.
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
-                    center: Alignment.center,
-                    radius: 0.85,
+                    center: const Alignment(0, -0.25),
+                    radius: 1.0,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withValues(alpha: 0.68),
+                      Colors.black.withValues(alpha: 0.72),
                     ],
-                    stops: const [0.45, 1.0],
+                    stops: const [0.42, 1.0],
                   ),
                 ),
               ),
             ),
           ),
 
-          // Animated scan target overlay with scan line
+          // Animated scan target overlay: cutout, brackets, sweep, status pill.
           Positioned.fill(
             child: AnimatedBuilder(
               animation: _entranceCtrl,
@@ -205,20 +188,22 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
               ),
               child: _ScanTargetOverlay(
                 processing: _processing,
-                hasError: _error != null,
+                errorLabel: _error != null ? _errorLabel(_error!) : null,
               ),
             ),
           ),
 
-          // Subtle mesh tint behind chrome
+          // Faint ember tint behind the chrome. Static — the drift would be
+          // invisible at 12% opacity, so don't pay for its controller.
           const IgnorePointer(
             child: Opacity(
               opacity: 0.12,
-              child: LiquidMeshBackground(dark: true, child: SizedBox.shrink()),
+              child: LiquidMeshBackground(
+                  dark: true, animate: false, child: SizedBox.shrink()),
             ),
           ),
 
-          // Top chrome — logo, title, torch
+          // Top chrome — logo + torch only; the title lives in the console.
           SafeArea(
             child: AnimatedBuilder(
               animation: _entranceCtrl,
@@ -253,30 +238,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Pair Device',
-                            style: TextStyle(
-                              fontFamily: AppTypography.cormorant,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 22,
-                              color: Colors.white,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          Text(
-                            'Scan the QR shown on admin desktop',
-                            style: AppTypography.caption.copyWith(
-                              color: Colors.white.withValues(alpha: 0.55),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    const Spacer(),
                     _GlassIcon(
                       icon: _torchOn
                           ? Icons.flash_on_rounded
@@ -310,12 +272,13 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                           height: 36,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation(AppColors.terra400),
+                            valueColor:
+                                AlwaysStoppedAnimation(AppColors.terra400),
                           ),
                         ),
                         const SizedBox(height: 14),
                         Text(
-                          'Connecting…',
+                          'Pairing…',
                           style: AppTypography.caption
                               .copyWith(color: Colors.white),
                         ),
@@ -326,70 +289,75 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
               ),
             ),
 
-          // Bottom chrome — error toast + help
+          // Bottom console — the "maître d' podium": serif welcome + actions.
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: SafeArea(
+              top: false,
               child: AnimatedBuilder(
                 animation: _entranceCtrl,
                 builder: (_, child) => Opacity(
                   opacity: _entranceCtrl.value,
                   child: Transform.translate(
-                    offset: Offset(0, 20 * (1 - _entranceCtrl.value)),
+                    offset: Offset(0, 28 * (1 - _entranceCtrl.value)),
                     child: child,
                   ),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Error toast
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 250),
-                        child: _error != null
-                            ? Padding(
-                                key: const ValueKey('err'),
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: _ErrorToast(label: _errorLabel(_error!)),
-                              )
-                            : const SizedBox(key: ValueKey('none')),
-                      ),
-                      // Help button
-                      LiquidGlassSurface(
-                        borderRadius: const BorderRadius.all(AppRadii.md),
-                        blur: 24,
-                        thickness: 12,
-                        tint: Colors.white.withValues(alpha: 0.06),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 12),
-                        onTap: () => HelpSheet.show(context),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: LiquidGlassSurface(
+                    borderRadius: const BorderRadius.all(AppRadii.xl),
+                    blur: 30,
+                    thickness: 14,
+                    tint: Colors.white.withValues(alpha: 0.07),
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Pair this device',
+                          style: TextStyle(
+                            fontFamily: AppTypography.cormorant,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 26,
+                            height: 1.1,
+                            color: Colors.white,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Scan the rotating QR on the admin desktop screen',
+                          style: AppTypography.caption.copyWith(
+                            color: Colors.white.withValues(alpha: 0.60),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
                           children: [
-                            const Icon(Icons.help_outline_rounded,
-                                color: Colors.white, size: 16),
-                            const SizedBox(width: 8),
-                            Text('Need help pairing?',
-                                style: AppTypography.caption
-                                    .copyWith(color: Colors.white)),
+                            Expanded(
+                              child: _ConsoleButton(
+                                icon: Icons.help_outline_rounded,
+                                label: 'Need help?',
+                                onTap: () => HelpSheet.show(context),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _ConsoleButton(
+                                icon: Icons.auto_awesome,
+                                label: 'Try demo',
+                                emphasis: true,
+                                onTap: _demoScan,
+                              ),
+                            ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      // No admin desktop to pair with? Explore the app on
-                      // sample data instead (also used by App Store review).
-                      TextButton.icon(
-                        onPressed: _demoScan,
-                        icon: const Icon(Icons.touch_app_outlined,
-                            color: Colors.white70, size: 16),
-                        label: Text('Try Demo — no pairing needed',
-                            style: AppTypography.caption
-                                .copyWith(color: Colors.white70)),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -402,12 +370,45 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Animated scan target with scan line + animated brackets
+// Camera-permission fallback
+
+class _CameraUnavailable extends StatelessWidget {
+  const _CameraUnavailable();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.ink,
+      alignment: Alignment.center,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.no_photography_outlined,
+                color: Colors.white54, size: 52),
+            const SizedBox(height: 20),
+            Text('Camera unavailable',
+                style: AppTypography.title.copyWith(color: Colors.white)),
+            const SizedBox(height: 8),
+            Text('Allow camera access in Settings to pair this device.',
+                textAlign: TextAlign.center,
+                style: AppTypography.caption
+                    .copyWith(color: Colors.white.withValues(alpha: 0.6))),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Animated scan target: cutout, breathing ember brackets, sweep, status pill
 
 class _ScanTargetOverlay extends StatefulWidget {
   final bool processing;
-  final bool hasError;
-  const _ScanTargetOverlay({this.processing = false, this.hasError = false});
+  final String? errorLabel;
+  const _ScanTargetOverlay({this.processing = false, this.errorLabel});
 
   @override
   State<_ScanTargetOverlay> createState() => _ScanTargetOverlayState();
@@ -426,19 +427,27 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
     super.dispose();
   }
 
+  bool get _hasError => widget.errorLabel != null;
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (_, c) {
       final size = c.maxWidth * 0.66;
-      final centerY = c.maxHeight / 2;
+      // Frame sits above centre so the bottom console gets breathing room.
+      final centerY = c.maxHeight * 0.40;
       final centerX = c.maxWidth / 2;
       final frameTop = centerY - size / 2;
 
-      final bracketColor = widget.hasError
+      final bracketColor = _hasError
           ? AppColors.danger
           : widget.processing
               ? AppColors.success
               : AppColors.terra400;
+
+      final frameCenter = Alignment(
+        0,
+        (centerY - c.maxHeight / 2) / (c.maxHeight / 2),
+      );
 
       return Stack(
         children: [
@@ -456,7 +465,8 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
                     backgroundBlendMode: BlendMode.dstOut,
                   ),
                 ),
-                Center(
+                Align(
+                  alignment: frameCenter,
                   child: Container(
                     width: size,
                     height: size,
@@ -470,8 +480,8 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
             ),
           ),
 
-          // Scan line — animated orange sweep
-          if (!widget.processing && !widget.hasError)
+          // Scan line — animated ember sweep
+          if (!widget.processing && !_hasError)
             AnimatedBuilder(
               animation: _scanCtrl,
               builder: (_, __) {
@@ -510,7 +520,8 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
 
           // Success glow when processing
           if (widget.processing)
-            Center(
+            Align(
+              alignment: frameCenter,
               child: Container(
                 width: size,
                 height: size,
@@ -531,32 +542,53 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
               ),
             ),
 
-          // Corner brackets with animated color
-          Center(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: size,
-              height: size,
-              child: CustomPaint(
-                painter: _BracketPainter(color: bracketColor),
+          // Corner brackets — breathing scale rides the same controller as
+          // the sweep, so the frame feels alive at zero extra cost.
+          Align(
+            alignment: frameCenter,
+            child: AnimatedBuilder(
+              animation: _scanCtrl,
+              builder: (_, child) {
+                final breath = widget.processing || _hasError
+                    ? 1.0
+                    : 1.0 + 0.012 * Curves.easeInOut.transform(_scanCtrl.value);
+                return Transform.scale(scale: breath, child: child);
+              },
+              child: SizedBox(
+                width: size,
+                height: size,
+                child: CustomPaint(
+                  painter: _BracketPainter(color: bracketColor),
+                ),
               ),
             ),
           ),
 
-          // Center hint text below frame
+          // Status pill under the frame — hint / error / success, in place.
           Positioned(
             left: 0,
             right: 0,
-            top: frameTop + size + 20,
+            top: frameTop + size + 18,
             child: Center(
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                child: widget.hasError
-                    ? const SizedBox.shrink()
+                duration: const Duration(milliseconds: 220),
+                child: _hasError
+                    ? _StatusPill(
+                        key: const ValueKey('err'),
+                        icon: Icons.error_outline_rounded,
+                        label: widget.errorLabel!,
+                        tint: AppColors.danger,
+                      )
                     : widget.processing
-                        ? const SizedBox.shrink()
+                        ? const _StatusPill(
+                            key: ValueKey('ok'),
+                            icon: Icons.check_circle_outline_rounded,
+                            label: 'Paired — connecting…',
+                            tint: AppColors.success,
+                          )
                         : Text(
                             'Align QR within the frame',
+                            key: const ValueKey('hint'),
                             style: AppTypography.caption.copyWith(
                               color: Colors.white.withValues(alpha: 0.5),
                               letterSpacing: 0.3,
@@ -577,6 +609,13 @@ class _BracketPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Soft ember glow pass under the crisp stroke.
+    final glow = Paint()
+      ..color = color.withValues(alpha: 0.45)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
@@ -587,37 +626,42 @@ class _BracketPainter extends CustomPainter {
     const r = 6.0; // inner corner radius
     final w = size.width, h = size.height;
 
-    // top-left
-    canvas.drawLine(Offset(0, arm), Offset(0, r), paint);
-    canvas.drawArc(
-        Rect.fromLTWH(0, 0, r * 2, r * 2), 3.14159, -1.5708, false, paint);
-    canvas.drawLine(Offset(r, 0), Offset(arm, 0), paint);
+    void drawBrackets(Paint p) {
+      // top-left
+      canvas.drawLine(Offset(0, arm), Offset(0, r), p);
+      canvas.drawArc(
+          Rect.fromLTWH(0, 0, r * 2, r * 2), 3.14159, -1.5708, false, p);
+      canvas.drawLine(Offset(r, 0), Offset(arm, 0), p);
 
-    // top-right
-    canvas.drawLine(Offset(w - arm, 0), Offset(w - r, 0), paint);
-    canvas.drawArc(
-        Rect.fromLTWH(w - r * 2, 0, r * 2, r * 2), 4.7124, -1.5708, false,
-        paint);
-    canvas.drawLine(Offset(w, r), Offset(w, arm), paint);
+      // top-right
+      canvas.drawLine(Offset(w - arm, 0), Offset(w - r, 0), p);
+      canvas.drawArc(
+          Rect.fromLTWH(w - r * 2, 0, r * 2, r * 2), 4.7124, -1.5708, false, p);
+      canvas.drawLine(Offset(w, r), Offset(w, arm), p);
 
-    // bottom-left
-    canvas.drawLine(Offset(0, h - arm), Offset(0, h - r), paint);
-    canvas.drawArc(
-        Rect.fromLTWH(0, h - r * 2, r * 2, r * 2), 1.5708, 1.5708, false,
-        paint);
-    canvas.drawLine(Offset(r, h), Offset(arm, h), paint);
+      // bottom-left
+      canvas.drawLine(Offset(0, h - arm), Offset(0, h - r), p);
+      canvas.drawArc(
+          Rect.fromLTWH(0, h - r * 2, r * 2, r * 2), 1.5708, 1.5708, false, p);
+      canvas.drawLine(Offset(r, h), Offset(arm, h), p);
 
-    // bottom-right
-    canvas.drawLine(Offset(w - arm, h), Offset(w - r, h), paint);
-    canvas.drawArc(
-        Rect.fromLTWH(w - r * 2, h - r * 2, r * 2, r * 2), 0, 1.5708, false,
-        paint);
-    canvas.drawLine(Offset(w, h - r), Offset(w, h - arm), paint);
+      // bottom-right
+      canvas.drawLine(Offset(w - arm, h), Offset(w - r, h), p);
+      canvas.drawArc(Rect.fromLTWH(w - r * 2, h - r * 2, r * 2, r * 2), 0,
+          1.5708, false, p);
+      canvas.drawLine(Offset(w, h - r), Offset(w, h - arm), p);
+    }
+
+    drawBrackets(glow);
+    drawBrackets(paint);
   }
 
   @override
   bool shouldRepaint(covariant _BracketPainter old) => old.color != color;
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Chrome pieces
 
 class _GlassIcon extends StatelessWidget {
   final IconData icon;
@@ -649,36 +693,89 @@ class _GlassIcon extends StatelessWidget {
         tint: active
             ? AppColors.amber.withValues(alpha: 0.22)
             : Colors.white.withValues(alpha: 0.08),
-        padding: const EdgeInsets.all(11),
+        padding: const EdgeInsets.all(13),
         onTap: onTap,
         child: Icon(icon,
-            color: active ? AppColors.amber : Colors.white, size: 20),
+            color: active ? AppColors.amber : Colors.white, size: 22),
       ),
     );
   }
 }
 
-class _ErrorToast extends StatelessWidget {
+/// Console action — ghost by default, ember-tinted when [emphasis] is set.
+class _ConsoleButton extends StatelessWidget {
+  final IconData icon;
   final String label;
-  const _ErrorToast({required this.label});
+  final bool emphasis;
+  final VoidCallback onTap;
+  const _ConsoleButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.emphasis = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return LiquidGlassSurface(
       borderRadius: const BorderRadius.all(AppRadii.md),
+      blur: 20,
+      thickness: 10,
+      skipBlur: true, // sits on the console's own blur — don't stack passes
+      tint: emphasis
+          ? AppColors.terra400.withValues(alpha: 0.30)
+          : Colors.white.withValues(alpha: 0.06),
+      padding: const EdgeInsets.symmetric(vertical: 13),
+      onTap: onTap,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon,
+              color: emphasis ? AppColors.terra100 : Colors.white, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: AppTypography.caption.copyWith(
+              color: emphasis ? AppColors.terra100 : Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color tint;
+  const _StatusPill({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.tint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LiquidGlassSurface(
+      borderRadius: const BorderRadius.all(AppRadii.pill),
       blur: 24,
       thickness: 12,
-      tint: AppColors.danger.withValues(alpha: 0.22),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      tint: tint.withValues(alpha: 0.24),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 16),
+          Icon(icon, color: Colors.white, size: 16),
           const SizedBox(width: 8),
           Flexible(
-            child: Text(label,
-                style: AppTypography.caption
-                    .copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+            child: Text(
+              label,
+              style: AppTypography.caption.copyWith(
+                  color: Colors.white, fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),

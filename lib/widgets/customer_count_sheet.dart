@@ -10,6 +10,7 @@ import '../data/providers.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_glass_surface.dart';
 import '../widgets/liquid_chrome.dart';
+import 'sheet_handle.dart';
 
 class CustomerCountSheet {
   static Future<int?> show(BuildContext context, RestaurantTable table) {
@@ -53,14 +54,7 @@ class _CustomerCountSheetState extends State<_CustomerCountSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.ink30,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            child: const SheetHandle(),
           ),
           const SizedBox(height: 16),
           Row(
@@ -69,7 +63,7 @@ class _CustomerCountSheetState extends State<_CustomerCountSheet> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: AppColors.tableFreeBg,
+                  color: context.palette.tableFreeBg,
                   borderRadius: const BorderRadius.all(AppRadii.xs),
                   border: Border.all(
                       color: AppColors.success.withValues(alpha: 0.32)),
@@ -103,7 +97,7 @@ class _CustomerCountSheetState extends State<_CustomerCountSheet> {
                   textAlign: TextAlign.center,
                   style: AppTypography.displayLg.copyWith(
                     fontSize: 56,
-                    color: overSeated ? AppColors.warn : AppColors.ink,
+                    color: overSeated ? AppColors.warn : context.palette.ink,
                   ),
                 ),
               ),
@@ -186,12 +180,12 @@ class _StepperBtn extends StatelessWidget {
               ? const LinearGradient(
                   colors: [AppColors.terra400, AppColors.terra600])
               : null,
-          color: enabled ? null : AppColors.ink05,
+          color: enabled ? null : context.palette.ink05,
           shape: BoxShape.circle,
           boxShadow: enabled ? AppShadows.terraGlow : null,
         ),
         child: Icon(icon,
-            color: enabled ? Colors.white : AppColors.ink30, size: 22),
+            color: enabled ? Colors.white : context.palette.ink30, size: 22),
       ),
     );
   }
@@ -205,19 +199,25 @@ class _Chip extends StatelessWidget {
       {required this.label, required this.selected, required this.onTap});
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final selectedFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? AppColors.ink : Colors.white.withValues(alpha: 0.6),
+          color: selected
+              ? selectedFill
+              : palette.isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.white.withValues(alpha: 0.6),
           borderRadius: const BorderRadius.all(AppRadii.pill),
-          border: Border.all(color: selected ? AppColors.ink : AppColors.ink10),
+          border: Border.all(color: selected ? selectedFill : palette.ink10),
         ),
         child: Text(label,
             style: AppTypography.bodyMd.copyWith(
-              color: selected ? Colors.white : AppColors.ink,
+              color: selected ? Colors.white : palette.ink,
               fontWeight: FontWeight.w600,
             )),
       ),

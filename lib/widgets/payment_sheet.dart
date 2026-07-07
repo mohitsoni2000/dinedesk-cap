@@ -15,6 +15,7 @@ import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
+import 'sheet_handle.dart';
 
 /// A single bill from the server's bill:generate response.
 class BillInfo {
@@ -338,13 +339,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
           controller: scrollCtrl,
           children: [
             Center(
-                child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: AppColors.ink30,
-                  borderRadius: BorderRadius.circular(2)),
-            )),
+                child: const SheetHandle()),
             const SizedBox(height: 16),
 
             // Header with multi-bill breakdown.
@@ -530,11 +525,11 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
             // Split payment section.
             if (isSplitMode) ...[
               const SizedBox(height: 12),
-              const Divider(color: AppColors.ink10),
+              Divider(color: context.palette.ink10),
               const SizedBox(height: 8),
               Row(children: [
-                const Icon(Icons.call_split_outlined,
-                    color: AppColors.ink70, size: 18),
+                Icon(Icons.call_split_outlined,
+                    color: context.palette.ink70, size: 18),
                 const SizedBox(width: 8),
                 const Text('Split Payment', style: AppTypography.bodyMd),
                 const Spacer(),
@@ -557,7 +552,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                     thickness: 8,
                     child: Row(children: [
                       Icon(_modeIcon(_splits[i].mode),
-                          size: 16, color: AppColors.ink70),
+                          size: 16, color: context.palette.ink70),
                       const SizedBox(width: 8),
                       Text(_modeLabel(_splits[i].mode),
                           style: AppTypography.bodyMd),
@@ -626,8 +621,8 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                   GestureDetector(
                     onTap: _selectedMode != null ? _addSplit : null,
                     child: Container(
-                      width: 44,
-                      height: 44,
+                      width: AppTouchTargets.control,
+                      height: AppTouchTargets.control,
                       decoration: BoxDecoration(
                         gradient: _selectedMode != null
                             ? const LinearGradient(colors: [
@@ -635,13 +630,15 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                                 AppColors.terra600
                               ])
                             : null,
-                        color: _selectedMode != null ? null : AppColors.ink05,
+                        color: _selectedMode != null
+                            ? null
+                            : context.palette.ink05,
                         borderRadius: const BorderRadius.all(AppRadii.sm),
                       ),
                       child: Icon(Icons.add,
                           color: _selectedMode != null
                               ? Colors.white
-                              : AppColors.ink30),
+                              : context.palette.ink30),
                     ),
                   ),
                 ]),
@@ -726,25 +723,31 @@ class _ModeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final selectedFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? AppColors.ink : Colors.white.withValues(alpha: 0.6),
+          color: selected
+              ? selectedFill
+              : palette.isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.white.withValues(alpha: 0.6),
           borderRadius: const BorderRadius.all(AppRadii.sm),
-          border: Border.all(color: selected ? AppColors.ink : AppColors.ink10),
+          border: Border.all(color: selected ? selectedFill : palette.ink10),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon,
-                size: 16, color: selected ? Colors.white : AppColors.ink70),
+                size: 16, color: selected ? Colors.white : palette.ink70),
             const SizedBox(width: 6),
             Text(label,
                 style: AppTypography.bodyMd.copyWith(
-                    color: selected ? Colors.white : AppColors.ink,
+                    color: selected ? Colors.white : palette.ink,
                     fontWeight: FontWeight.w600)),
           ],
         ),

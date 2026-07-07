@@ -33,7 +33,7 @@ class DisconnectedScreen extends ConsumerWidget {
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: IconButton(
-                      icon: const Icon(Icons.close, color: AppColors.ink70),
+                      icon: Icon(Icons.close, color: context.palette.ink70),
                       onPressed: () => context.pop(),
                     ),
                   ),
@@ -68,7 +68,7 @@ class DisconnectedScreen extends ConsumerWidget {
                           'Please scan the QR again to resume.',
                           textAlign: TextAlign.center,
                           style: AppTypography.bodyMd
-                              .copyWith(color: AppColors.ink70),
+                              .copyWith(color: context.palette.ink70),
                         ),
                         const SizedBox(height: 8),
                         Container(

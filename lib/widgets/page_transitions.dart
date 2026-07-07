@@ -19,6 +19,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/tokens.dart';
+
 /// A push (`fromBottom: false`) or modal present (`fromBottom: true`) page.
 Page<void> liquidPage({
   LocalKey? key,
@@ -53,7 +55,7 @@ class _ModalSheetPage<T> extends Page<T> {
       transitionDuration: duration,
       reverseTransitionDuration: const Duration(milliseconds: 280),
       opaque: false, // let the scaled-down page show through the corners
-      barrierColor: const Color(0x33000000),
+      barrierColor: AppColors.scrim,
       fullscreenDialog: true,
       pageBuilder: (_, __, ___) => child,
       transitionsBuilder: (_, animation, secondaryAnimation, page) {

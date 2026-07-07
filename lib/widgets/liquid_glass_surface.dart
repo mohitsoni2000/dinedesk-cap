@@ -55,13 +55,13 @@ class LiquidGlassSurface extends StatelessWidget {
     this.skipBlur = false,
   });
 
-  Color _tint() {
+  Color _tint(bool darkTheme) {
     if (tint != null) return tint!;
     switch (variant) {
       case LiquidGlassVariant.regular:
-        return Colors.white.withValues(alpha: 0.14);
+        return Colors.white.withValues(alpha: darkTheme ? 0.08 : 0.14);
       case LiquidGlassVariant.strong:
-        return Colors.white.withValues(alpha: 0.24);
+        return Colors.white.withValues(alpha: darkTheme ? 0.14 : 0.24);
       case LiquidGlassVariant.dark:
         return Colors.black.withValues(alpha: 0.20);
       case LiquidGlassVariant.terra:
@@ -71,8 +71,11 @@ class LiquidGlassSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tintColor = _tint();
-    final isDark = variant == LiquidGlassVariant.dark;
+    // In the dark theme, white tints and rim lights are dialed down so glass
+    // reads as smoked amber rather than glowing panels.
+    final darkTheme = context.palette.isDark;
+    final tintColor = _tint(darkTheme);
+    final isDark = variant == LiquidGlassVariant.dark || darkTheme;
 
     // Hairline bright edge — the iOS-signature rim light that defines the shape.
     final rimColor = Colors.white.withValues(alpha: isDark ? 0.14 : 0.55);

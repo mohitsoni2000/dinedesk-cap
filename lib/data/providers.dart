@@ -552,9 +552,33 @@ final isWaiterProvider = Provider<bool>((ref) {
   return role == 'waiter';
 });
 
-final operatorStatsProvider = StateProvider<OperatorStats>(
-  (_) => const OperatorStats(ordersToday: 0, tablesServed: 0, itemsSold: 0),
-);
+/// Derived from `historyProvider`, scoped to today + the logged-in operator's
+/// own orders. Previously an incremented counter — that let it drift after a
+/// reconnect/restart (resets to 0) and double-count every OTHER operator's
+/// orders too (order:created broadcasts to the whole restaurant, not just the
+/// creator). Deriving from history means it's always consistent with what the
+/// operator actually sees on their own History tab.
+final operatorStatsProvider = Provider<OperatorStats>((ref) {
+  final myId = ref.watch(operatorProvider)?.username ?? '';
+  final now = DateTime.now();
+  final today =
+      '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  final mine = ref
+      .watch(historyProvider)
+      .where((h) => h.date == today)
+      .where((h) => h.createdBy == null || h.createdBy == myId)
+      .where((h) => h.status != OrderStatus.cancelled)
+      .toList();
+
+  final tablesServed =
+      mine.where((h) => h.status == OrderStatus.paid).map((h) => h.tableId).toSet().length;
+
+  return OperatorStats(
+    ordersToday: mine.length,
+    tablesServed: tablesServed,
+    itemsSold: mine.fold<int>(0, (sum, h) => sum + h.itemCount),
+  );
+});
 
 final restaurantProvider = StateProvider<RestaurantInfo?>((_) => null);
 

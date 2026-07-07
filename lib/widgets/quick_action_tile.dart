@@ -20,14 +20,14 @@ class QuickActionTile extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: const BoxDecoration(
-          color: AppColors.ink05,
-          borderRadius: BorderRadius.all(AppRadii.sm),
+        decoration: BoxDecoration(
+          color: context.palette.ink05,
+          borderRadius: const BorderRadius.all(AppRadii.sm),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20, color: AppColors.ink70),
+            Icon(icon, size: 20, color: context.palette.ink70),
             const SizedBox(height: 6),
             Text(label, style: AppTypography.micro),
           ],

@@ -12,6 +12,7 @@ import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
+import 'sheet_handle.dart';
 
 class TableLinkSheet extends ConsumerStatefulWidget {
   final RestaurantTable origin;
@@ -111,6 +112,8 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final selectedFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     final tables = ref.watch(tablesProvider);
     final linkGroups = ref.watch(linkGroupsProvider);
     final currentGroupId = _currentGroupId(linkGroups);
@@ -147,14 +150,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.ink30,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            const SheetHandle(),
             const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
@@ -190,7 +186,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            const Divider(height: 1, color: AppColors.ink10),
+            Divider(height: 1, color: palette.ink10),
 
             // Current links section — shown only if linked.
             if (isLinked && linkedPeers.isNotEmpty) ...[
@@ -251,7 +247,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                     ),
                   ),
                 ),
-              const Divider(height: 1, color: AppColors.ink10),
+              Divider(height: 1, color: palette.ink10),
             ],
 
             // Candidates list.
@@ -296,14 +292,17 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                                     horizontal: 16, vertical: 14),
                                 decoration: BoxDecoration(
                                   color: on
-                                      ? AppColors.ink
-                                      : Colors.white.withValues(alpha: 0.6),
+                                      ? selectedFill
+                                      : palette.isDark
+                                          ? Colors.white
+                                              .withValues(alpha: 0.08)
+                                          : Colors.white
+                                              .withValues(alpha: 0.6),
                                   borderRadius:
                                       const BorderRadius.all(AppRadii.md),
                                   border: Border.all(
-                                      color: on
-                                          ? AppColors.ink
-                                          : AppColors.ink10),
+                                      color:
+                                          on ? selectedFill : palette.ink10),
                                 ),
                                 child: Row(
                                   children: [
@@ -336,7 +335,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                                                   .copyWith(
                                                 color: on
                                                     ? Colors.white
-                                                    : AppColors.ink,
+                                                    : palette.ink,
                                                 fontWeight: FontWeight.w600,
                                               )),
                                           Text(
@@ -346,7 +345,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                                                 color: on
                                                     ? Colors.white
                                                         .withValues(alpha: 0.7)
-                                                    : AppColors.ink70,
+                                                    : palette.ink70,
                                               )),
                                         ],
                                       ),
@@ -356,7 +355,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                                           ? Icons.check_circle
                                           : Icons.radio_button_unchecked,
                                       color:
-                                          on ? Colors.white : AppColors.ink30,
+                                          on ? Colors.white : palette.ink30,
                                     ),
                                   ],
                                 ),

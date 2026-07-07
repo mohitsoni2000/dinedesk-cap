@@ -164,7 +164,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: AppColors.paper,
+        backgroundColor: context.palette.surface,
         title: const Text('Cancel pairing?', style: AppTypography.title),
         content: const Text('You\'ll need to scan the QR again to reconnect.',
             style: AppTypography.bodyMd),
@@ -281,14 +281,14 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                       const SizedBox(height: 18),
 
                       // Headline: big Cormorant serif — feels editorial & premium
-                      const Text(
+                      Text(
                         'Welcome back',
                         style: TextStyle(
                           fontFamily: AppTypography.cormorant,
                           fontWeight: FontWeight.w600,
                           fontSize: 36,
                           height: 1.05,
-                          color: AppColors.ink,
+                          color: context.palette.ink,
                           letterSpacing: -0.5,
                         ),
                       ),
@@ -297,7 +297,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                         'Enter your PIN to start your shift',
                         style: AppTypography.caption.copyWith(
                           fontSize: 13,
-                          color: AppColors.ink50,
+                          color: context.palette.ink50,
                         ),
                       ),
 
@@ -325,9 +325,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                     : Color.lerp(Colors.transparent,
                                         AppColors.terra500, t)!;
                                 final borderColor = isError
-                                    ? Color.lerp(AppColors.ink10,
+                                    ? Color.lerp(context.palette.ink10,
                                         AppColors.danger, t)!
-                                    : Color.lerp(AppColors.ink30,
+                                    : Color.lerp(context.palette.ink30,
                                         AppColors.terra500, t)!;
                                 return AnimatedContainer(
                                   duration: const Duration(milliseconds: 120),
@@ -384,7 +384,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                   '4-DIGIT PIN',
                                   style: AppTypography.micro.copyWith(
                                     letterSpacing: 2.0,
-                                    color: AppColors.ink30,
+                                    color: context.palette.ink30,
                                   ),
                                 ),
                               ),
@@ -409,7 +409,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                             icon: const Icon(Icons.link_off_rounded, size: 15),
                             label: const Text('Cancel pairing'),
                             style: TextButton.styleFrom(
-                              foregroundColor: AppColors.ink50,
+                              foregroundColor: context.palette.ink50,
                               textStyle: AppTypography.caption,
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 4),
@@ -421,7 +421,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                 size: 15),
                             label: const Text('Help'),
                             style: TextButton.styleFrom(
-                              foregroundColor: AppColors.ink50,
+                              foregroundColor: context.palette.ink50,
                               textStyle: AppTypography.caption,
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 4),

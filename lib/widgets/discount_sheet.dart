@@ -14,6 +14,7 @@ import '../theme/tokens.dart';
 import '../utils/socket_helpers.dart';
 import 'liquid_glass_surface.dart';
 import 'liquid_chrome.dart';
+import 'sheet_handle.dart';
 
 class DiscountSheet {
   /// Shows the discount bottom sheet.
@@ -170,14 +171,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
           children: [
             // Drag handle
             Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.ink30,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+              child: const SheetHandle(),
             ),
             const SizedBox(height: 16),
 
@@ -311,8 +305,8 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                     prefixStyle: AppTypography.headline,
                     suffixText:
                         _customType == _DiscountType.percent ? '%' : null,
-                    suffixStyle:
-                        AppTypography.headline.copyWith(color: AppColors.ink50),
+                    suffixStyle: AppTypography.headline
+                        .copyWith(color: context.palette.ink50),
                   ),
                 ),
               ),
@@ -432,28 +426,34 @@ class _TabChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final selectedFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? AppColors.ink : Colors.white.withValues(alpha: 0.6),
+          color: selected
+              ? selectedFill
+              : palette.isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.white.withValues(alpha: 0.6),
           borderRadius: const BorderRadius.all(AppRadii.sm),
-          border: Border.all(color: selected ? AppColors.ink : AppColors.ink10),
+          border: Border.all(color: selected ? selectedFill : palette.ink10),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon,
-                size: 16, color: selected ? Colors.white : AppColors.ink70),
+                size: 16, color: selected ? Colors.white : palette.ink70),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
                 label,
                 style: AppTypography.bodyMd.copyWith(
-                  color: selected ? Colors.white : AppColors.ink,
+                  color: selected ? Colors.white : palette.ink,
                   fontWeight: FontWeight.w600,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -488,10 +488,12 @@ class _PresetChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected
               ? AppColors.terra500.withValues(alpha: 0.14)
-              : Colors.white.withValues(alpha: 0.6),
+              : context.palette.isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.white.withValues(alpha: 0.6),
           borderRadius: const BorderRadius.all(AppRadii.sm),
           border: Border.all(
-            color: selected ? AppColors.terra500 : AppColors.ink10,
+            color: selected ? AppColors.terra500 : context.palette.ink10,
             width: selected ? 1.5 : 1.0,
           ),
         ),
@@ -502,12 +504,14 @@ class _PresetChip extends StatelessWidget {
             Text(name,
                 style: AppTypography.bodyMd.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: selected ? AppColors.terra600 : AppColors.ink,
+                  color:
+                      selected ? AppColors.terra600 : context.palette.ink,
                 )),
             const SizedBox(height: 2),
             Text(value,
                 style: AppTypography.caption.copyWith(
-                  color: selected ? AppColors.terra500 : AppColors.ink70,
+                  color:
+                      selected ? AppColors.terra500 : context.palette.ink70,
                 )),
           ],
         ),

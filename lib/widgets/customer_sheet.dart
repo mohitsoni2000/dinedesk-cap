@@ -15,6 +15,7 @@ import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_glass_surface.dart';
+import 'sheet_handle.dart';
 
 class CustomerSheet {
   /// Opens the customer search/create bottom sheet.
@@ -163,14 +164,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.ink30,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            const SheetHandle(),
             const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
@@ -192,11 +186,11 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
                     child: TextField(
                       controller: _search,
                       textInputAction: TextInputAction.search,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         border: InputBorder.none,
                         hintText: 'Name or phone number...',
                         icon: Icon(Icons.search,
-                            color: AppColors.ink50, size: 20),
+                            color: context.palette.ink50, size: 20),
                         isDense: true,
                       ),
                       onChanged: _onSearchChanged,
@@ -206,7 +200,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            const Divider(height: 1, color: AppColors.ink10),
+            Divider(height: 1, color: context.palette.ink10),
             Expanded(
               child: _showCreate
                   ? _buildCreateForm(scroll)
@@ -270,16 +264,17 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
     }
 
     if (_search.text.trim().isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.person_search_outlined,
-                  color: AppColors.ink30, size: 40),
-              SizedBox(height: 12),
-              Text('Search for a customer', style: AppTypography.caption),
+                  color: context.palette.ink30, size: 40),
+              const SizedBox(height: 12),
+              const Text('Search for a customer',
+                  style: AppTypography.caption),
             ],
           ),
         ),
@@ -293,7 +288,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.search_off, color: AppColors.ink30, size: 40),
+              Icon(Icons.search_off, color: context.palette.ink30, size: 40),
               const SizedBox(height: 12),
               Text('No results for "${_search.text.trim()}"',
                   style: AppTypography.caption),
@@ -460,7 +455,7 @@ class _FormField extends StatelessWidget {
         decoration: InputDecoration(
           border: InputBorder.none,
           hintText: label,
-          icon: Icon(icon, color: AppColors.ink50, size: 20),
+          icon: Icon(icon, color: context.palette.ink50, size: 20),
           isDense: true,
         ),
       ),

@@ -11,6 +11,7 @@ import '../data/currency.dart';
 import '../theme/tokens.dart';
 import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
+import 'sheet_handle.dart';
 
 class PackageSheet extends ConsumerWidget {
   const PackageSheet({super.key});
@@ -49,14 +50,7 @@ class PackageSheet extends ConsumerWidget {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.ink30,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            const SheetHandle(),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Row(
@@ -71,19 +65,20 @@ class PackageSheet extends ConsumerWidget {
                 ],
               ),
             ),
-            const Divider(height: 1, color: AppColors.ink10),
+            Divider(height: 1, color: context.palette.ink10),
             Expanded(
               child: packages.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.inventory_2_outlined,
-                              color: AppColors.ink30, size: 48),
-                          SizedBox(height: 12),
-                          Text('No packages', style: AppTypography.title),
-                          SizedBox(height: 4),
-                          Text('Combo packages are created on the Desktop',
+                              color: context.palette.ink30, size: 48),
+                          const SizedBox(height: 12),
+                          const Text('No packages', style: AppTypography.title),
+                          const SizedBox(height: 4),
+                          const Text(
+                              'Combo packages are created on the Desktop',
                               style: AppTypography.caption),
                         ],
                       ),
@@ -174,7 +169,7 @@ class _PackageCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppColors.paper,
+          color: context.palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.md),
           border: Border.all(color: AppColors.violet.withValues(alpha: 0.2)),
           boxShadow: AppShadows.card,
@@ -182,8 +177,8 @@ class _PackageCard extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: AppControlSizes.iconTile,
+              height: AppControlSizes.iconTile,
               decoration: BoxDecoration(
                 color: AppColors.violet.withValues(alpha: 0.1),
                 borderRadius: const BorderRadius.all(AppRadii.sm),

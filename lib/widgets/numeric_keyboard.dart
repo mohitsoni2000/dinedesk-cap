@@ -58,7 +58,7 @@ class NumericKeyboard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 children: [
-                  for (final k in row) Expanded(child: _key(k)),
+                  for (final k in row) Expanded(child: _key(context, k)),
                 ],
               ),
             ),
@@ -97,7 +97,7 @@ class NumericKeyboard extends StatelessWidget {
     );
   }
 
-  Widget _key(String k) {
+  Widget _key(BuildContext context, String k) {
     if (k.isEmpty) return const SizedBox(height: 56);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -109,7 +109,7 @@ class NumericKeyboard extends StatelessWidget {
         onTap: () => _press(k),
         child: Center(
           child: k == 'del'
-              ? const Icon(Icons.backspace_outlined, color: AppColors.ink)
+              ? Icon(Icons.backspace_outlined, color: context.palette.ink)
               : Text(
                   k,
                   style: AppTypography.headline

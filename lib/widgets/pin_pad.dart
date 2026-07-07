@@ -45,7 +45,7 @@ class PinPad extends StatelessWidget {
             padding: EdgeInsets.symmetric(vertical: rowVerticalPadding),
             child: Row(
               children: [
-                for (final k in row) Expanded(child: _buildKey(k)),
+                for (final k in row) Expanded(child: _buildKey(context, k)),
               ],
             ),
           ),
@@ -53,7 +53,7 @@ class PinPad extends StatelessWidget {
     );
   }
 
-  Widget _buildKey(String k) {
+  Widget _buildKey(BuildContext context, String k) {
     if (k == 'submit') {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -75,8 +75,8 @@ class PinPad extends StatelessWidget {
           borderRadius: const BorderRadius.all(AppRadii.md),
           padding: EdgeInsets.symmetric(vertical: keyVerticalPadding),
           onTap: onDelete,
-          child: const Center(
-            child: Icon(Icons.backspace_outlined, color: AppColors.ink),
+          child: Center(
+            child: Icon(Icons.backspace_outlined, color: context.palette.ink),
           ),
         ),
       );

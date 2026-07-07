@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
 import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
+import 'sheet_handle.dart';
 
 class HelpSheet {
   static Future<void> show(BuildContext context) {
@@ -38,14 +39,7 @@ class _HelpSheet extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.ink30,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            const SheetHandle(),
             const SizedBox(height: 12),
             Expanded(
               child: ListView(
@@ -194,7 +188,7 @@ class _Tip extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.circle, size: 6, color: AppColors.ink50),
+          Icon(Icons.circle, size: 6, color: context.palette.ink50),
           const SizedBox(width: 12),
           Expanded(child: Text(label, style: AppTypography.bodyMd)),
         ],
@@ -212,13 +206,15 @@ class _ContactRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.5),
+        color: context.palette.isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : Colors.white.withValues(alpha: 0.5),
         borderRadius: const BorderRadius.all(AppRadii.sm),
-        border: Border.all(color: AppColors.ink10),
+        border: Border.all(color: context.palette.ink10),
       ),
       child: Row(
         children: [
-          Icon(icon, color: AppColors.ink70, size: 18),
+          Icon(icon, color: context.palette.ink70, size: 18),
           const SizedBox(width: 10),
           Text(label, style: AppTypography.bodyMd),
         ],

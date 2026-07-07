@@ -11,6 +11,7 @@ import '../data/providers.dart';
 import '../theme/tokens.dart';
 import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
+import 'sheet_handle.dart';
 
 class CouponSheet extends ConsumerStatefulWidget {
   final String orderId;
@@ -94,14 +95,7 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.ink30,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            const SheetHandle(),
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Row(
@@ -113,7 +107,7 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
                 ],
               ),
             ),
-            const Divider(height: 1, color: AppColors.ink10),
+            Divider(height: 1, color: context.palette.ink10),
             Expanded(
               child: ListView(
                 controller: scroll,
@@ -128,11 +122,11 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
                     child: TextField(
                       controller: _code,
                       textCapitalization: TextCapitalization.characters,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         border: InputBorder.none,
                         hintText: 'Enter coupon code',
                         icon: Icon(Icons.confirmation_number_outlined,
-                            color: AppColors.ink50),
+                            color: context.palette.ink50),
                       ),
                       onChanged: (_) {
                         if (_error != null) setState(() => _error = null);

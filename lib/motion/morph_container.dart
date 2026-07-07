@@ -6,7 +6,7 @@ class RestroMorph extends StatelessWidget {
   const RestroMorph({
     required this.closedBuilder,
     required this.openBuilder,
-    this.closedColor = const Color(0x00000000),
+    this.closedColor = Colors.transparent,
     this.closedShape = const RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(14)),
     ),

@@ -12,6 +12,7 @@ import '../theme/tokens.dart';
 import 'kot_edit_sheet.dart';
 import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
+import 'sheet_handle.dart';
 
 class KotHistorySheet extends ConsumerWidget {
   final String tableServerId;
@@ -71,19 +72,12 @@ class KotHistorySheet extends ConsumerWidget {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.ink30,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            const SheetHandle(),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Row(
                 children: [
-                  const Icon(Icons.history, color: AppColors.ink70, size: 20),
+                  Icon(Icons.history, color: context.palette.ink70, size: 20),
                   const SizedBox(width: 8),
                   Text('KOT History · $tableDisplay',
                       style: AppTypography.title),
@@ -93,19 +87,20 @@ class KotHistorySheet extends ConsumerWidget {
                 ],
               ),
             ),
-            const Divider(height: 1, color: AppColors.ink10),
+            Divider(height: 1, color: context.palette.ink10),
             Expanded(
               child: tableOrders.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.receipt_long,
-                              color: AppColors.ink30, size: 48),
-                          SizedBox(height: 12),
-                          Text('No orders yet', style: AppTypography.title),
-                          SizedBox(height: 4),
-                          Text('KOTs sent to this table will appear here',
+                              color: context.palette.ink30, size: 48),
+                          const SizedBox(height: 12),
+                          const Text('No orders yet',
+                              style: AppTypography.title),
+                          const SizedBox(height: 4),
+                          const Text('KOTs sent to this table will appear here',
                               style: AppTypography.caption),
                         ],
                       ),
@@ -167,9 +162,9 @@ class _KotCard extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.paper,
+        color: context.palette.surface,
         borderRadius: const BorderRadius.all(AppRadii.md),
-        border: Border.all(color: AppColors.ink10),
+        border: Border.all(color: context.palette.ink10),
         boxShadow: AppShadows.card,
       ),
       child: Column(
@@ -222,7 +217,7 @@ class _KotCard extends ConsumerWidget {
           ),
           if (order.lines.isNotEmpty) ...[
             const SizedBox(height: 8),
-            const Divider(height: 1, color: AppColors.ink10),
+            Divider(height: 1, color: context.palette.ink10),
             const SizedBox(height: 8),
             for (final line in order.lines.take(5))
               Padding(
@@ -246,11 +241,12 @@ class _KotCard extends ConsumerWidget {
               ),
             if (order.lines.length > 5)
               Text('+${order.lines.length - 5} more items',
-                  style: AppTypography.micro.copyWith(color: AppColors.ink50)),
+                  style: AppTypography.micro
+                      .copyWith(color: context.palette.ink50)),
           ],
           if (canEdit) ...[
             const SizedBox(height: 10),
-            const Divider(height: 1, color: AppColors.ink10),
+            Divider(height: 1, color: context.palette.ink10),
             const SizedBox(height: 6),
             GestureDetector(
               onTap: () => KotEditSheet.show(context, order),

@@ -15,7 +15,7 @@ import '../widgets/quick_action_tile.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_mesh_background.dart';
 import '../widgets/order_submitting_overlay.dart';
-import '../widgets/liquid_glass_surface.dart';
+import '../widgets/stepper_button.dart';
 
 class OrderReviewScreen extends ConsumerStatefulWidget {
   final String tableId;
@@ -169,6 +169,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     required bool generateBill,
     required bool collectPayment,
     String quickSettleMode = 'cash',
+    bool printKot = true,
   }) async {
     final cart = ref.read(cartProvider);
     final socketService = ref.read(socketServiceProvider);
@@ -214,7 +215,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         ref.read(cartProvider.notifier).setSyncStatusFailed();
         return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.kotSend,
-          errorMessage: 'KOT timed out — please retry',
+          errorMessage:
+              'KOT timed out — your items are saved. Tap Retry (it won\'t duplicate the KOT).',
         );
       } catch (_) {
         ref.read(cartProvider.notifier).setSyncStatusFailed();
@@ -240,7 +242,10 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       // Physically print the KOT on the kitchen printer. kot:send only creates
       // the KOT record on the desktop; the desktop renderer prints on print:kot
       // (same path as the reprint button). Without this the KOT never printed.
-      socketService.emit('print:kot', <String, dynamic>{'order_id': orderId});
+      // "Only KOT" passes printKot=false to send to the kitchen without paper.
+      if (printKot) {
+        socketService.emit('print:kot', <String, dynamic>{'order_id': orderId});
+      }
     }
 
     if (!generateBill) return const _OrderFlowStepResult();
@@ -304,6 +309,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     required bool generateBill,
     required bool collectPayment,
     String quickSettleMode = 'cash',
+    bool printKot = true,
+    bool returnToBuilder = false,
   }) async {
     if (_running) return;
     _running = true;
@@ -317,6 +324,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         generateBill: generateBill,
         collectPayment: collectPayment,
         quickSettleMode: quickSettleMode,
+        printKot: printKot,
       );
       unawaited(runningFlow.then((result) {
         if (!completer.isCompleted) completer.complete(result.isSuccess);
@@ -330,6 +338,18 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         _kotSentOrderId = null; // OR2: reset so next order starts fresh
         ref.read(cartProvider.notifier).clear();
         ref.read(orderNotesProvider.notifier).state = '';
+        if (returnToBuilder) {
+          // Only KOT: skip the celebration screen — go back to the order
+          // screen so the captain can keep taking items for this table.
+          final kotLabel = ref.read(lastKotIdProvider);
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(SnackBar(
+              content: Text('KOT $kotLabel sent to kitchen — not printed'),
+            ));
+          context.go('/order/${widget.tableId}');
+          return;
+        }
         context.go('/order/${widget.tableId}/success');
         return;
       }
@@ -363,6 +383,90 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     }
   }
 
+  /// Only KOT: send the KOT to the kitchen WITHOUT printing it, then return
+  /// to the order screen instead of the success celebration — mirrors the
+  /// desktop "Only KOT" (Direct KOT) button. Gated by flag_direct_kot.
+  Future<void> _submitOnlyKot() async {
+    final pinOk = await requirePinIfNeeded(context, ref, 'kot');
+    if (!pinOk || !mounted) return;
+    await _submitWithFlow(
+      generateBill: false,
+      collectPayment: false,
+      printKot: false,
+      returnToBuilder: true,
+    );
+  }
+
+  /// Hold: save the order as a draft (no KOT sent) and reserve the table —
+  /// mirrors the desktop Hold button (order → DRAFT, table → RESERVED).
+  Future<void> _holdOrder() async {
+    final pinOk = await requirePinIfNeeded(context, ref, 'hold');
+    if (!pinOk || !mounted) return;
+    if (_running) return;
+    _running = true;
+
+    try {
+      ref.read(feedbackServiceProvider).fire(const FeedbackHeavy());
+      ref.read(orderNotesProvider.notifier).state = _notes.text;
+      final messenger = ScaffoldMessenger.of(context);
+
+      final cart = ref.read(cartProvider);
+      final orderResponse = await _createOrUpdateOrder(
+        items: _itemsPayload(cart),
+        notes: _notes.text,
+      );
+      if (orderResponse['kind'] == 'error') {
+        messenger
+          ..clearSnackBars()
+          ..showSnackBar(const SnackBar(
+              content: Text('Could not save order — please retry')));
+        return;
+      }
+      ref
+          .read(syncServiceProvider)
+          .applyOrderAck(orderResponse, includeHistory: true);
+
+      final orderId = _orderIdFromResponse(
+        orderResponse,
+        fallback: _activeOrderIdForTable(),
+      );
+      if (orderId == null || orderId.isEmpty) {
+        messenger
+          ..clearSnackBars()
+          ..showSnackBar(const SnackBar(
+              content: Text('Order saved but ID not returned — please retry')));
+        return;
+      }
+
+      final holdResponse = await ref
+          .read(socketServiceProvider)
+          .emitAck('order:hold', <String, dynamic>{'order_id': orderId});
+      if (holdResponse['kind'] == 'error') {
+        messenger
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(
+              content: Text(holdResponse['message']?.toString() ??
+                  'Could not hold order — please retry')));
+        return;
+      }
+      ref
+          .read(syncServiceProvider)
+          .applyOrderAck(holdResponse, includeHistory: true);
+
+      if (!mounted) return;
+      _submitted = true;
+      ref.read(cartProvider.notifier).clear();
+      ref.read(orderNotesProvider.notifier).state = '';
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+            const SnackBar(content: Text('Order held — table reserved')));
+      context.go('/tables');
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
   /// KOT + Bill: create order → send KOT → generate bill in one action.
   Future<void> _submitKotAndBill() async {
     final pinOk = await requirePinIfNeeded(context, ref, 'kot_and_bill');
@@ -387,7 +491,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.paper,
+        backgroundColor: ctx.palette.surface,
         shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(AppRadii.lg)),
         title: const Text('Payment Mode', style: AppTypography.title),
@@ -400,7 +504,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               'card': (Icons.credit_card_outlined, 'Card'),
             }.entries)
               ListTile(
-                leading: Icon(entry.value.$1, color: AppColors.ink70),
+                leading: Icon(entry.value.$1, color: ctx.palette.ink70),
                 title: Text(entry.value.$2, style: AppTypography.bodyMd),
                 onTap: () => Navigator.of(ctx).pop(entry.key),
                 shape: const RoundedRectangleBorder(
@@ -417,7 +521,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.paper,
+        backgroundColor: ctx.palette.surface,
         title: const Text('Item Note', style: AppTypography.title),
         content: TextField(
           controller: controller,
@@ -451,7 +555,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.paper,
+      backgroundColor: context.palette.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: AppRadii.lg),
       ),
@@ -691,7 +795,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                         : Icons.person_add_outlined,
                                     color: _customer != null
                                         ? AppColors.terra600
-                                        : AppColors.ink70,
+                                        : context.palette.ink70,
                                     size: 20,
                                   ),
                                   const SizedBox(width: 10),
@@ -730,16 +834,16 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                     GestureDetector(
                                       onTap: () =>
                                           setState(() => _customer = null),
-                                      child: const Icon(
+                                      child: Icon(
                                         Icons.close,
-                                        color: AppColors.ink50,
+                                        color: context.palette.ink50,
                                         size: 18,
                                       ),
                                     )
                                   else
-                                    const Icon(
+                                    Icon(
                                       Icons.chevron_right,
-                                      color: AppColors.ink30,
+                                      color: context.palette.ink30,
                                       size: 20,
                                     ),
                                 ],
@@ -815,9 +919,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                     ),
                                   ),
                                   if (i < cart.length - 1)
-                                    const Divider(
+                                    Divider(
                                       height: 1,
-                                      color: AppColors.ink10,
+                                      color: context.palette.ink10,
                                     ),
                                 ],
                               ],
@@ -850,9 +954,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                     lines: byKitchen.values.elementAt(i),
                                   ),
                                   if (i < byKitchen.entries.length - 1)
-                                    const Divider(
+                                    Divider(
                                       height: 1,
-                                      color: AppColors.ink10,
+                                      color: context.palette.ink10,
                                     ),
                                 ],
                               ],
@@ -974,9 +1078,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                       style: AppTypography.caption,
                                       textAlign: TextAlign.right,
                                     ),
-                                    const Divider(
+                                    Divider(
                                       height: 16,
-                                      color: AppColors.ink10,
+                                      color: context.palette.ink10,
                                     ),
                                     Row(
                                       children: [
@@ -992,7 +1096,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                             child: KineticRupeeCounter(
                                               amount: total,
                                               fontSize: 24,
-                                              color: AppColors.ink,
+                                              color: context.palette.ink,
                                             ),
                                           ),
                                         ),
@@ -1030,12 +1134,19 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: _orderType == _OrderType.dineIn
-                                      ? AppColors.ink
-                                      : Colors.white.withValues(alpha: 0.5),
+                                      ? (context.palette.isDark
+                                          ? AppColors.terra600
+                                          : AppColors.ink)
+                                      : (context.palette.isDark
+                                          ? Colors.white
+                                              .withValues(alpha: 0.08)
+                                          : Colors.white
+                                              .withValues(alpha: 0.5)),
                                   borderRadius: const BorderRadius.horizontal(
                                     left: AppRadii.sm,
                                   ),
-                                  border: Border.all(color: AppColors.ink10),
+                                  border:
+                                      Border.all(color: context.palette.ink10),
                                 ),
                                 alignment: Alignment.center,
                                 child: Row(
@@ -1046,7 +1157,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                       size: 16,
                                       color: _orderType == _OrderType.dineIn
                                           ? Colors.white
-                                          : AppColors.ink70,
+                                          : context.palette.ink70,
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
@@ -1054,7 +1165,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                       style: AppTypography.caption.copyWith(
                                         color: _orderType == _OrderType.dineIn
                                             ? Colors.white
-                                            : AppColors.ink,
+                                            : context.palette.ink,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -1077,12 +1188,19 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: _orderType == _OrderType.takeaway
-                                      ? AppColors.ink
-                                      : Colors.white.withValues(alpha: 0.5),
+                                      ? (context.palette.isDark
+                                          ? AppColors.terra600
+                                          : AppColors.ink)
+                                      : (context.palette.isDark
+                                          ? Colors.white
+                                              .withValues(alpha: 0.08)
+                                          : Colors.white
+                                              .withValues(alpha: 0.5)),
                                   borderRadius: const BorderRadius.horizontal(
                                     right: AppRadii.sm,
                                   ),
-                                  border: Border.all(color: AppColors.ink10),
+                                  border:
+                                      Border.all(color: context.palette.ink10),
                                 ),
                                 alignment: Alignment.center,
                                 child: Row(
@@ -1093,7 +1211,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                       size: 16,
                                       color: _orderType == _OrderType.takeaway
                                           ? Colors.white
-                                          : AppColors.ink70,
+                                          : context.palette.ink70,
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
@@ -1101,7 +1219,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                       style: AppTypography.caption.copyWith(
                                         color: _orderType == _OrderType.takeaway
                                             ? Colors.white
-                                            : AppColors.ink,
+                                            : context.palette.ink,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -1132,6 +1250,31 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                           leadingIcon: Icons.restaurant_menu,
                           onPressed: _submit,
                         ),
+                      ),
+                      // Hold / Only KOT — non-billing actions, visible to
+                      // waiters too. Only KOT is gated by flag_direct_kot,
+                      // matching the desktop order screen.
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: LiquidSecondaryButton(
+                              label: 'Hold',
+                              leadingIcon: Icons.pause_circle_outline,
+                              onPressed: _holdOrder,
+                            ),
+                          ),
+                          if (flags.directKot) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: LiquidSecondaryButton(
+                                label: 'Only KOT',
+                                leadingIcon: Icons.print_disabled_outlined,
+                                onPressed: _submitOnlyKot,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       // Billing/payment actions — hidden for waiters (they can
                       // only send KOT; billing is operator-only, also server-enforced).
@@ -1167,7 +1310,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                         Text(
                           'Bill already generated — go back to collect payment',
                           style: AppTypography.caption.copyWith(
-                            color: AppColors.ink50,
+                            color: context.palette.ink50,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -1210,7 +1353,7 @@ class _CartRow extends ConsumerWidget {
                   Text(
                     line.mods.join(' · '),
                     style: AppTypography.caption.copyWith(
-                      color: AppColors.ink70,
+                      color: context.palette.ink70,
                     ),
                   ),
                 ],
@@ -1232,8 +1375,11 @@ class _CartRow extends ConsumerWidget {
               ],
             ),
           ),
-          _Step(
+          StepperButton(
             icon: Icons.remove,
+            glass: true,
+            repeatOnHold: true,
+            haptics: false, // feedback service below covers it
             onTap: () {
               ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
               ref.read(cartProvider.notifier).setQtyAt(index, line.qty - 1);
@@ -1250,8 +1396,11 @@ class _CartRow extends ConsumerWidget {
               ),
             ),
           ),
-          _Step(
+          StepperButton(
             icon: Icons.add,
+            glass: true,
+            repeatOnHold: true,
+            haptics: false, // feedback service below covers it
             onTap: () {
               ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
               ref.read(cartProvider.notifier).setQtyAt(index, line.qty + 1);
@@ -1286,66 +1435,6 @@ class _CartRow extends ConsumerWidget {
       ),
     );
   }
-}
-
-/// Qty stepper with hold-to-repeat: tap = single step, long-press = rapid fire.
-/// 500ms threshold before repeat starts, 150ms interval.
-class _Step extends StatefulWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _Step({required this.icon, required this.onTap});
-  @override
-  State<_Step> createState() => _StepState();
-}
-
-class _StepState extends State<_Step> {
-  Timer? _timer;
-
-  void _startRepeat() {
-    widget.onTap();
-    _timer = Timer(const Duration(milliseconds: 500), () {
-      _timer = Timer.periodic(const Duration(milliseconds: 150), (_) {
-        widget.onTap();
-      });
-    });
-  }
-
-  void _stopRepeat() {
-    _timer?.cancel();
-    _timer = null;
-  }
-
-  @override
-  void dispose() {
-    _stopRepeat();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTap: widget.onTap,
-        onLongPressStart: (_) => _startRepeat(),
-        onLongPressEnd: (_) => _stopRepeat(),
-        onLongPressCancel: _stopRepeat,
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Center(
-            child: LiquidGlassSurface(
-              borderRadius: BorderRadius.circular(14),
-              blur: 14,
-              thickness: 6,
-              child: SizedBox(
-                width: 28,
-                height: 28,
-                child: Center(
-                    child: Icon(widget.icon, size: 14, color: AppColors.ink)),
-              ),
-            ),
-          ),
-        ),
-      );
 }
 
 class _KotRow extends StatelessWidget {
@@ -1392,7 +1481,7 @@ class _KotRow extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.ink05,
+              color: context.palette.ink05,
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
@@ -1425,9 +1514,9 @@ class _EmptyCartGuard extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.shopping_basket_outlined,
-              color: AppColors.ink30,
+              color: context.palette.ink30,
               size: 48,
             ),
             const SizedBox(height: 12),

@@ -11,6 +11,7 @@ import '../data/providers.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_glass_surface.dart';
 import '../widgets/pin_pad.dart';
+import 'sheet_handle.dart';
 
 class PinVerifySheet {
   /// Opens the PIN verification bottom sheet.
@@ -106,14 +107,7 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.ink30,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            child: const SheetHandle(),
           ),
           const SizedBox(height: 16),
 
@@ -153,7 +147,8 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
                   shape: BoxShape.circle,
                   color: filled ? AppColors.terra500 : Colors.transparent,
                   border: Border.all(
-                    color: filled ? AppColors.terra500 : AppColors.ink30,
+                    color:
+                        filled ? AppColors.terra500 : context.palette.ink30,
                     width: 1.5,
                   ),
                 ),
@@ -187,7 +182,8 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text('Cancel',
-                  style: AppTypography.bodyMd.copyWith(color: AppColors.ink70)),
+                  style: AppTypography.bodyMd
+                      .copyWith(color: context.palette.ink70)),
             ),
           ),
         ],

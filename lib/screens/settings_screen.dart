@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/providers.dart';
+import '../theme/theme_mode_provider.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/liquid_chrome.dart';
@@ -91,8 +92,8 @@ class SettingsScreen extends ConsumerWidget {
                     child: Column(children: [
                       // Notifications.
                       ListTile(
-                        leading: const Icon(Icons.notifications_outlined,
-                            color: AppColors.ink70),
+                        leading: Icon(Icons.notifications_outlined,
+                            color: context.palette.ink70),
                         title: const Text('Notifications',
                             style: AppTypography.bodyMd),
                         subtitle: Text(
@@ -106,34 +107,39 @@ class SettingsScreen extends ConsumerWidget {
                           style: AppTypography.caption,
                         ),
                         trailing:
-                            const Icon(Icons.chevron_right, color: AppColors.ink30),
+                            Icon(Icons.chevron_right, color: context.palette.ink30),
                         onTap: () =>
                             _showNotificationsSheet(context, ref, settings),
                       ),
-                      const Divider(height: 1, color: AppColors.ink10),
+                      Divider(height: 1, color: context.palette.ink10),
                       // Appearance.
                       ListTile(
-                        leading: const Icon(Icons.palette_outlined,
-                            color: AppColors.ink70),
+                        leading: Icon(Icons.palette_outlined,
+                            color: context.palette.ink70),
                         title: const Text('Appearance',
                             style: AppTypography.bodyMd),
-                        subtitle: const Text('Light theme · Dark mode coming soon',
+                        subtitle: Text(
+                            switch (ref.watch(themeModeProvider)) {
+                              ThemeMode.system => 'System · follows device',
+                              ThemeMode.light => 'Light theme',
+                              ThemeMode.dark => 'Dark theme',
+                            },
                             style: AppTypography.caption),
                         trailing:
-                            const Icon(Icons.chevron_right, color: AppColors.ink30),
+                            Icon(Icons.chevron_right, color: context.palette.ink30),
                         onTap: () => _showAppearanceSheet(context),
                       ),
-                      const Divider(height: 1, color: AppColors.ink10),
+                      Divider(height: 1, color: context.palette.ink10),
                       // About.
                       ListTile(
-                        leading: const Icon(Icons.info_outline,
-                            color: AppColors.ink70),
+                        leading: Icon(Icons.info_outline,
+                            color: context.palette.ink70),
                         title: const Text('About Command.Crew',
                             style: AppTypography.bodyMd),
                         subtitle: Text('v2.0 · $restaurantName',
                             style: AppTypography.caption),
                         trailing:
-                            const Icon(Icons.chevron_right, color: AppColors.ink30),
+                            Icon(Icons.chevron_right, color: context.palette.ink30),
                         onTap: () => _showAboutSheet(context, restaurantName),
                       ),
                     ]),
@@ -171,7 +177,7 @@ class SettingsScreen extends ConsumerWidget {
                                         'Connected · ${restaurant?.name ?? 'Restaurant'}');
                           },
                         ),
-                        const Divider(height: 1, color: AppColors.ink10),
+                        Divider(height: 1, color: context.palette.ink10),
                         ListTile(
                           leading: const Icon(Icons.wifi_off_rounded,
                               color: AppColors.warn),
@@ -180,11 +186,11 @@ class SettingsScreen extends ConsumerWidget {
                                   .copyWith(color: AppColors.warn)),
                           subtitle: const Text('Preview the timeout state',
                               style: AppTypography.caption),
-                          trailing: const Icon(Icons.chevron_right,
-                              color: AppColors.ink30),
+                          trailing: Icon(Icons.chevron_right,
+                              color: context.palette.ink30),
                           onTap: () => context.push('/disconnected'),
                         ),
-                        const Divider(height: 1, color: AppColors.ink10),
+                        Divider(height: 1, color: context.palette.ink10),
                         ListTile(
                           leading: const Icon(Icons.power_off_rounded,
                               color: AppColors.danger),
@@ -194,8 +200,8 @@ class SettingsScreen extends ConsumerWidget {
                           subtitle: const Text(
                               'Preview the kicked-device blocker',
                               style: AppTypography.caption),
-                          trailing: const Icon(Icons.chevron_right,
-                              color: AppColors.ink30),
+                          trailing: Icon(Icons.chevron_right,
+                              color: context.palette.ink30),
                           onTap: () => context.push('/force-disconnected'),
                         ),
                       ]),
@@ -216,7 +222,7 @@ class SettingsScreen extends ConsumerWidget {
       BuildContext context, WidgetRef ref, _SettingsState settings) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.paper,
+      backgroundColor: context.palette.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: AppRadii.lg),
       ),
@@ -229,7 +235,7 @@ class SettingsScreen extends ConsumerWidget {
   void _showAppearanceSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.paper,
+      backgroundColor: context.palette.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: AppRadii.lg),
       ),
@@ -244,32 +250,59 @@ class SettingsScreen extends ConsumerWidget {
             const Text('Customize how Command.Crew looks.',
                 style: AppTypography.caption),
             const SizedBox(height: 24),
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.light_mode_outlined,
-                        color: AppColors.terra500),
-                    title: const Text('Light', style: AppTypography.bodyMd),
-                    subtitle: const Text('Current theme', style: AppTypography.caption),
-                    trailing: const Icon(Icons.check_circle,
-                        color: AppColors.terra500, size: 20),
-                    onTap: () {},
-                  ),
-                  const Divider(height: 1, color: AppColors.ink10),
-                  ListTile(
-                    leading: const Icon(Icons.dark_mode_outlined,
-                        color: AppColors.ink30),
-                    title: Text('Dark',
-                        style: AppTypography.bodyMd
-                            .copyWith(color: AppColors.ink30)),
-                    subtitle: const Text('Coming soon', style: AppTypography.caption),
-                    onTap: () {},
-                  ),
-                ],
-              ),
-            ),
+            Consumer(builder: (context, ref, _) {
+              final mode = ref.watch(themeModeProvider);
+              Widget option({
+                required ThemeMode value,
+                required IconData icon,
+                required String label,
+                required String subtitle,
+              }) {
+                final selected = mode == value;
+                return ListTile(
+                  leading: Icon(icon,
+                      color: selected
+                          ? AppColors.terra500
+                          : context.palette.ink70),
+                  title: Text(label, style: AppTypography.bodyMd),
+                  subtitle: Text(subtitle, style: AppTypography.caption),
+                  trailing: selected
+                      ? const Icon(Icons.check_circle,
+                          color: AppColors.terra500, size: 20)
+                      : null,
+                  onTap: () =>
+                      ref.read(themeModeProvider.notifier).set(value),
+                );
+              }
+
+              return AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    option(
+                      value: ThemeMode.system,
+                      icon: Icons.brightness_auto_outlined,
+                      label: 'System',
+                      subtitle: 'Follow device setting',
+                    ),
+                    Divider(height: 1, color: context.palette.ink10),
+                    option(
+                      value: ThemeMode.light,
+                      icon: Icons.light_mode_outlined,
+                      label: 'Light',
+                      subtitle: 'Warm cream · daytime shifts',
+                    ),
+                    Divider(height: 1, color: context.palette.ink10),
+                    option(
+                      value: ThemeMode.dark,
+                      icon: Icons.dark_mode_outlined,
+                      label: 'Dark',
+                      subtitle: 'Midnight tandoor · evening service',
+                    ),
+                  ],
+                ),
+              );
+            }),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
@@ -290,7 +323,7 @@ class SettingsScreen extends ConsumerWidget {
   void _showAboutSheet(BuildContext context, String restaurantName) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.paper,
+      backgroundColor: context.palette.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: AppRadii.lg),
       ),
@@ -330,13 +363,13 @@ class SettingsScreen extends ConsumerWidget {
                     label: 'Platform',
                     value: 'Mobile Waiter App',
                   ),
-                  const Divider(height: 1, color: AppColors.ink10),
+                  Divider(height: 1, color: context.palette.ink10),
                   _AboutRow(
                     icon: Icons.shield_outlined,
                     label: 'Security',
                     value: 'PIN-protected sessions',
                   ),
-                  const Divider(height: 1, color: AppColors.ink10),
+                  Divider(height: 1, color: context.palette.ink10),
                   _AboutRow(
                     icon: Icons.sync_outlined,
                     label: 'Sync',
@@ -407,14 +440,14 @@ class _NotificationsSheetState extends State<_NotificationsSheet> {
                       const Text('Sound effects', style: AppTypography.bodyMd),
                   subtitle: const Text('KOT send, item add chimes',
                       style: AppTypography.caption),
-                  secondary: const Icon(Icons.volume_up_outlined,
-                      color: AppColors.ink70),
+                  secondary: Icon(Icons.volume_up_outlined,
+                      color: context.palette.ink70),
                   onChanged: (v) {
                     setState(() => _sound = v);
                     widget.ref.read(_settingsProvider.notifier).setSoundEnabled(v);
                   },
                 ),
-                const Divider(height: 1, color: AppColors.ink10),
+                Divider(height: 1, color: context.palette.ink10),
                 SwitchListTile(
                   value: _haptic,
                   activeThumbColor: AppColors.terra500,
@@ -422,8 +455,8 @@ class _NotificationsSheetState extends State<_NotificationsSheet> {
                       style: AppTypography.bodyMd),
                   subtitle: const Text('Vibrations on button press',
                       style: AppTypography.caption),
-                  secondary: const Icon(Icons.vibration_outlined,
-                      color: AppColors.ink70),
+                  secondary: Icon(Icons.vibration_outlined,
+                      color: context.palette.ink70),
                   onChanged: (v) {
                     setState(() => _haptic = v);
                     widget.ref

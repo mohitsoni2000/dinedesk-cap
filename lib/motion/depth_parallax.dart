@@ -47,12 +47,29 @@ class _DepthParallaxStackState extends State<DepthParallaxStack>
   double _currentY = 0;
 
   static const double _decay = 0.92;
+  // Below this, treat the effect as settled and stop the ticker entirely so
+  // the frame pipeline can go idle (battery + jank on low-end devices).
+  static const double _settleEpsilon = 0.0005;
 
   @override
   void initState() {
     super.initState();
-    _sub = gyroscopeEventStream().listen(_onGyro);
-    _ticker = createTicker(_onTick)..start();
+    _ticker = createTicker(_onTick);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // With reduced motion the build renders a static stack — don't burn the
+    // gyroscope (50-100Hz) for an effect that is never shown.
+    final reducedMotion = MediaQuery.of(context).disableAnimations;
+    if (reducedMotion) {
+      _sub?.cancel();
+      _sub = null;
+      _ticker.stop();
+    } else {
+      _sub ??= gyroscopeEventStream().listen(_onGyro);
+    }
   }
 
   void _onGyro(GyroscopeEvent e) {
@@ -60,6 +77,11 @@ class _DepthParallaxStackState extends State<DepthParallaxStack>
     _targetY += e.x * 0.05;
     _targetX = _targetX.clamp(-1.0, 1.0);
     _targetY = _targetY.clamp(-1.0, 1.0);
+    // Wake the ticker only while there is motion to animate.
+    if (!_ticker.isActive &&
+        (_targetX.abs() > _settleEpsilon || _targetY.abs() > _settleEpsilon)) {
+      _ticker.start();
+    }
   }
 
   void _onTick(Duration _) {
@@ -67,6 +89,16 @@ class _DepthParallaxStackState extends State<DepthParallaxStack>
     _targetY *= _decay;
     _currentX += (_targetX - _currentX) * widget.smoothing;
     _currentY += (_targetY - _currentY) * widget.smoothing;
+    if (_targetX.abs() < _settleEpsilon &&
+        _targetY.abs() < _settleEpsilon &&
+        _currentX.abs() < _settleEpsilon &&
+        _currentY.abs() < _settleEpsilon) {
+      _currentX = 0;
+      _currentY = 0;
+      _offset.value = Offset.zero;
+      _ticker.stop();
+      return;
+    }
     final next = Offset(_currentX, _currentY);
     // ValueNotifier skips notification when value hasn't changed (settled state).
     if (_offset.value != next) _offset.value = next;

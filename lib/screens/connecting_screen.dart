@@ -179,7 +179,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                       ),
                     ),
                     const SizedBox(height: 24),
-                    const Text('Connecting to', style: AppTypography.caption),
+                    Text('Connecting to', style: context.palette.caption),
                     const SizedBox(height: 4),
                     Text(name,
                         style: AppTypography.displayMd,
@@ -188,7 +188,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 4),
                     Text(deviceLabel,
-                        style: AppTypography.caption,
+                        style: context.palette.caption,
                         textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
@@ -291,7 +291,7 @@ class _StageRow extends StatelessWidget {
                 ? AppColors.success
                 : active
                     ? AppColors.terra400.withValues(alpha: 0.18)
-                    : AppColors.ink05,
+                    : context.palette.ink05,
           ),
           child: done
               ? const Icon(Icons.check, size: 12, color: Colors.white)
@@ -313,7 +313,7 @@ class _StageRow extends StatelessWidget {
           child: Text(
             label,
             style: AppTypography.bodyMd.copyWith(
-              color: done ? AppColors.ink70 : AppColors.ink,
+              color: done ? context.palette.ink70 : context.palette.ink,
               fontWeight: active ? FontWeight.w600 : FontWeight.w400,
             ),
             maxLines: 1,

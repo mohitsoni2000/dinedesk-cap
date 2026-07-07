@@ -67,6 +67,121 @@ class AppColors {
   static const meshDark1 = Color(0xFF2A1A10);
   static const meshDark2 = Color(0xFF1C130C);
   static const meshDark3 = Color(0xFF14100C);
+
+  // 20% black scrim — modal barriers, banner shadows
+  static const scrim = Color(0x33000000);
+
+  // Kinetic counter digit background (warm paper tone)
+  static const counterPaper = Color(0xFFF4EDE0);
+}
+
+/// Brightness-resolved palette — THE way to color widgets that must adapt
+/// to dark mode. Resolve with `context.palette` (never cache across builds).
+///
+/// `AppColors` remains the raw light-mode constant set (usable in const
+/// expressions); anything user-visible that isn't brand/semantic color
+/// should read from the palette instead.
+class AppPalette {
+  final Brightness brightness;
+
+  // Text / foreground ("ink" in light, warm candlelight cream in dark)
+  final Color ink;
+  final Color ink70;
+  final Color ink50;
+  final Color ink30;
+  final Color ink10;
+  final Color ink05;
+
+  // Surfaces
+  final Color surface; // solid card / sheet / dialog background
+  final Color surfaceWarm; // warmer secondary surface
+  final Color counterPaper; // kinetic counter digit background
+
+  // Table states
+  final Color tableMineBg;
+  final Color tableOtherBg;
+  final Color tableDirtyBg;
+  final Color tableReservedBg;
+  final Color tableFreeBg;
+
+  // View-only banner
+  final Color readOnlyBannerBg;
+  final Color readOnlyBannerText;
+
+  const AppPalette._({
+    required this.brightness,
+    required this.ink,
+    required this.ink70,
+    required this.ink50,
+    required this.ink30,
+    required this.ink10,
+    required this.ink05,
+    required this.surface,
+    required this.surfaceWarm,
+    required this.counterPaper,
+    required this.tableMineBg,
+    required this.tableOtherBg,
+    required this.tableDirtyBg,
+    required this.tableReservedBg,
+    required this.tableFreeBg,
+    required this.readOnlyBannerBg,
+    required this.readOnlyBannerText,
+  });
+
+  bool get isDark => brightness == Brightness.dark;
+
+  /// Muted text styles — hierarchy variants of the (color-free) base styles.
+  TextStyle get caption => AppTypography.caption.copyWith(color: ink70);
+  TextStyle get micro => AppTypography.micro.copyWith(color: ink70);
+
+  static const light = AppPalette._(
+    brightness: Brightness.light,
+    ink: AppColors.ink,
+    ink70: AppColors.ink70,
+    ink50: AppColors.ink50,
+    ink30: AppColors.ink30,
+    ink10: AppColors.ink10,
+    ink05: AppColors.ink05,
+    surface: AppColors.paper,
+    surfaceWarm: AppColors.paperWarm,
+    counterPaper: AppColors.counterPaper,
+    tableMineBg: AppColors.tableMineBg,
+    tableOtherBg: AppColors.tableOtherBg,
+    tableDirtyBg: AppColors.tableDirtyBg,
+    tableReservedBg: AppColors.tableReservedBg,
+    tableFreeBg: AppColors.tableFreeBg,
+    readOnlyBannerBg: AppColors.readOnlyBannerBg,
+    readOnlyBannerText: AppColors.readOnlyBannerText,
+  );
+
+  /// "Midnight tandoor" — warm ember darkness matched to the dark mesh
+  /// (meshDark1-3), candlelight-cream ink, same terra brand accents.
+  static const dark = AppPalette._(
+    brightness: Brightness.dark,
+    ink: Color(0xFFF5EEE3),
+    ink70: Color(0xB3F5EEE3),
+    ink50: Color(0x80F5EEE3),
+    ink30: Color(0x4DF5EEE3),
+    ink10: Color(0x1AF5EEE3),
+    ink05: Color(0x0DF5EEE3),
+    surface: Color(0xFF281E14),
+    surfaceWarm: Color(0xFF2F2418),
+    counterPaper: Color(0xFF2F2418),
+    tableMineBg: Color(0xFF3D2417),
+    tableOtherBg: Color(0xFF1D2B3D),
+    tableDirtyBg: Color(0xFF3A2C12),
+    tableReservedBg: Color(0xFF2C2140),
+    tableFreeBg: Color(0xFF1C3024),
+    readOnlyBannerBg: Color(0xFF3B2F10),
+    readOnlyBannerText: Color(0xFFFCD34D),
+  );
+
+  static AppPalette of(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? dark : light;
+}
+
+extension AppPaletteX on BuildContext {
+  AppPalette get palette => AppPalette.of(this);
 }
 
 class AppRadii {
@@ -89,6 +204,10 @@ class AppSpacing {
   static const xxl = 32.0;
 }
 
+// NOTE: styles are deliberately COLOR-FREE so text inherits the ambient
+// DefaultTextStyle (driven per-brightness by AppTheme's textTheme). For the
+// muted 70% hierarchy use `context.palette.caption` / `context.palette.micro`
+// or `.copyWith(color: context.palette.ink70)`.
 class AppTypography {
   AppTypography._();
 
@@ -100,7 +219,6 @@ class AppTypography {
     fontWeight: FontWeight.w500,
     fontSize: 36,
     height: 1.1,
-    color: AppColors.ink,
     letterSpacing: -0.4,
   );
 
@@ -109,7 +227,6 @@ class AppTypography {
     fontWeight: FontWeight.w500,
     fontSize: 28,
     height: 1.15,
-    color: AppColors.ink,
     letterSpacing: -0.3,
   );
 
@@ -118,7 +235,6 @@ class AppTypography {
     fontWeight: FontWeight.w700,
     fontSize: 22,
     height: 1.2,
-    color: AppColors.ink,
     letterSpacing: -0.2,
   );
 
@@ -127,7 +243,6 @@ class AppTypography {
     fontWeight: FontWeight.w600,
     fontSize: 17,
     height: 1.25,
-    color: AppColors.ink,
   );
 
   static const TextStyle body = TextStyle(
@@ -135,7 +250,6 @@ class AppTypography {
     fontWeight: FontWeight.w400,
     fontSize: 15,
     height: 1.4,
-    color: AppColors.ink,
   );
 
   static const TextStyle bodyMd = TextStyle(
@@ -143,7 +257,6 @@ class AppTypography {
     fontWeight: FontWeight.w500,
     fontSize: 15,
     height: 1.4,
-    color: AppColors.ink,
   );
 
   static const TextStyle caption = TextStyle(
@@ -151,16 +264,15 @@ class AppTypography {
     fontWeight: FontWeight.w500,
     fontSize: 12,
     height: 1.3,
-    color: AppColors.ink70,
     letterSpacing: 0.1,
   );
 
+  // 11px: readable in dim restaurant lighting on small phones.
   static const TextStyle micro = TextStyle(
     fontFamily: inter,
     fontWeight: FontWeight.w600,
-    fontSize: 10,
+    fontSize: 11,
     height: 1.2,
-    color: AppColors.ink50,
     letterSpacing: 0.6,
   );
 
@@ -168,7 +280,6 @@ class AppTypography {
     fontFamily: 'monospace',
     fontWeight: FontWeight.w500,
     fontSize: 14,
-    color: AppColors.ink,
   );
 }
 
@@ -296,6 +407,22 @@ class AppTouchTargets {
 
   /// Large CTA button (primary action)
   static const double cta = 56;
+}
+
+/// Fixed element sizes — non-interactive visual dimensions.
+/// (Interactive hit areas belong in AppTouchTargets.)
+class AppControlSizes {
+  AppControlSizes._();
+
+  /// Bottom-sheet drag handle
+  static const double sheetHandleWidth = 40;
+  static const double sheetHandleHeight = 4;
+
+  /// Rounded icon square in list rows / sheets
+  static const double iconTile = 44;
+
+  /// Avatar circle / keypad key
+  static const double avatar = 56;
 }
 
 /// Icon sizes for consistent visual hierarchy.

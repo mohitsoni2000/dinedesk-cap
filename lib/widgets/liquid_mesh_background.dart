@@ -20,12 +20,15 @@ import '../theme/tokens.dart';
 
 class LiquidMeshBackground extends StatefulWidget {
   final Widget child;
-  final bool dark;
+
+  /// Force the dark mesh. When null (default) it follows the app theme —
+  /// screens that are always dark regardless of theme (splash etc.) pass true.
+  final bool? dark;
   final bool animate;
   const LiquidMeshBackground({
     super.key,
     required this.child,
-    this.dark = false,
+    this.dark,
     this.animate = true,
   });
 
@@ -69,12 +72,13 @@ class _LiquidMeshBackgroundState extends State<LiquidMeshBackground>
 
   @override
   Widget build(BuildContext context) {
+    final bool dark = widget.dark ?? context.palette.isDark;
     final Widget background = _ctrl == null
         ? CustomPaint(
             size: Size.infinite,
             isComplex: true,
             willChange: false,
-            painter: _MeshPainter(t: 0.5, dark: widget.dark),
+            painter: _MeshPainter(t: 0.5, dark: dark),
           )
         : AnimatedBuilder(
             animation: _ctrl!,
@@ -82,7 +86,7 @@ class _LiquidMeshBackgroundState extends State<LiquidMeshBackground>
               size: Size.infinite,
               isComplex: true,
               willChange: true,
-              painter: _MeshPainter(t: _ctrl!.value, dark: widget.dark),
+              painter: _MeshPainter(t: _ctrl!.value, dark: dark),
             ),
           );
 

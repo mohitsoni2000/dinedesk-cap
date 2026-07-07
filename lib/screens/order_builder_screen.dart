@@ -195,40 +195,13 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     }
   }
 
-  Future<bool> _confirmKotBanner(int itemCount) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.paper,
-        title: const Text('Send KOT to kitchen now?', style: AppTypography.title),
-        content: Text(
-          '$itemCount ${itemCount == 1 ? "item" : "items"} ready to fire. '
-          'You can keep editing before sending from the review screen.',
-          style: AppTypography.bodyMd,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Keep editing'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Send',
-                style: TextStyle(color: AppColors.terra500)),
-          ),
-        ],
-      ),
-    );
-    return ok ?? false;
-  }
-
   Future<bool> _confirmDiscard() async {
     final cart = ref.read(cartProvider);
     if (cart.isEmpty) return true;
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: AppColors.paper,
+        backgroundColor: context.palette.surface,
         title: const Text('Discard draft?', style: AppTypography.title),
         content: Text(
             '${cart.length} unsent ${cart.length == 1 ? "item" : "items"} will be lost. '
@@ -256,7 +229,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: AppColors.paper,
+        backgroundColor: context.palette.surface,
         title: const Text('Clear cart?', style: AppTypography.title),
         content: Text(
           '${cart.length} ${cart.length == 1 ? "item" : "items"} will be removed.',
@@ -285,7 +258,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.paper,
+        backgroundColor: ctx.palette.surface,
         title: const Text('Order note', style: AppTypography.title),
         content: TextField(
           controller: controller,
@@ -320,6 +293,20 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   /// item needs a variation (when enabled) or required-option choice. This is the
   /// single routing point for every quick-add entry point (rows, fast-add, recents).
   void _addOrConfigure(BuildContext context, MenuItem item, {bool track = true}) {
+    if (_readOnly) {
+      // Silent dead taps read as "app is broken" — say why nothing happens.
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(
+          backgroundColor: AppColors.ink,
+          content: Text(
+            'Another waiter is editing this table — view only right now.',
+            style: AppTypography.bodyMd.copyWith(color: Colors.white),
+          ),
+          duration: const Duration(seconds: 2),
+        ));
+      return;
+    }
     final variationsEnabled = ref.read(flagsProvider).itemVariations;
     if (_itemNeedsSheet(item, variationsEnabled: variationsEnabled)) {
       ItemDetailSheet.show(context, item);
@@ -334,7 +321,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.paper,
+      backgroundColor: context.palette.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: AppRadii.lg),
       ),
@@ -438,19 +425,19 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                 if (_readOnly)
                   Container(
                     width: double.infinity,
-                    color: AppColors.readOnlyBannerBg,
+                    color: context.palette.readOnlyBannerBg,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Row(
                       children: [
-                        const Icon(Icons.lock_outline,
-                            size: 16, color: AppColors.readOnlyBannerText),
+                        Icon(Icons.lock_outline,
+                            size: 16, color: context.palette.readOnlyBannerText),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '$_holderName is working on this table. View-only mode.',
-                            style: const TextStyle(
+                            '$_holderName is editing this table — view only. Try again shortly.',
+                            style: TextStyle(
                               fontSize: 12,
-                              color: AppColors.readOnlyBannerText,
+                              color: context.palette.readOnlyBannerText,
                             ),
                           ),
                         ),
@@ -477,7 +464,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: AppColors.tableMineBg,
+                          color: context.palette.tableMineBg,
                           borderRadius: const BorderRadius.all(AppRadii.xs),
                           border: Border.all(
                               color: AppColors.terra400.withValues(alpha: 0.4)),
@@ -490,15 +477,15 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     const SizedBox(width: 8),
                     IconButton(
                       icon: Icon(_searchOpen ? Icons.close : Icons.search,
-                          color: AppColors.ink70),
+                          color: context.palette.ink70),
                       onPressed: () => setState(() {
                         _searchOpen = !_searchOpen;
                         if (!_searchOpen) _query = '';
                       }),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.receipt_long,
-                          color: AppColors.ink70),
+                      icon: Icon(Icons.receipt_long,
+                          color: context.palette.ink70),
                       tooltip: 'KOT History',
                       onPressed: () =>
                           KotHistorySheet.show(context, widget.tableId),
@@ -524,7 +511,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                         return const SizedBox.shrink();
                       }
                       return PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert, color: AppColors.ink70),
+                        icon: Icon(Icons.more_vert,
+                            color: context.palette.ink70),
                         tooltip: 'More',
                         onSelected: (action) {
                           switch (action) {
@@ -552,8 +540,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               value: 'shift',
                               child: Row(
                                 children: [
-                                  const Icon(Icons.swap_horiz,
-                                      size: 18, color: AppColors.ink70),
+                                  Icon(Icons.swap_horiz,
+                                      size: 18, color: ctx.palette.ink70),
                                   const SizedBox(width: 8),
                                   Text(
                                     isLinked ? 'Unlink Table' : 'Shift Table',
@@ -567,8 +555,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               value: 'link',
                               child: Row(
                                 children: [
-                                  const Icon(Icons.link,
-                                      size: 18, color: AppColors.ink70),
+                                  Icon(Icons.link,
+                                      size: 18, color: ctx.palette.ink70),
                                   const SizedBox(width: 8),
                                   Text('Link Table', style: AppTypography.bodyMd),
                                 ],
@@ -579,8 +567,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               value: 'packages',
                               child: Row(
                                 children: [
-                                  const Icon(Icons.inventory_2_outlined,
-                                      size: 18, color: AppColors.ink70),
+                                  Icon(Icons.inventory_2_outlined,
+                                      size: 18, color: ctx.palette.ink70),
                                   const SizedBox(width: 8),
                                   Text('Packages', style: AppTypography.bodyMd),
                                 ],
@@ -607,16 +595,16 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     }),
                     IconButton(
                       icon: _isSaving
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: AppColors.ink70,
+                                color: context.palette.ink70,
                               ),
                             )
-                          : const Icon(Icons.bookmark_border,
-                              color: AppColors.ink70),
+                          : Icon(Icons.bookmark_border,
+                              color: context.palette.ink70),
                       tooltip: 'Save & exit',
                       onPressed: _isSaving
                           ? null
@@ -641,11 +629,11 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       thickness: 10,
                       child: TextField(
                         autofocus: true,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           border: InputBorder.none,
                           hintText: 'Search menu…',
                           icon: Icon(Icons.search,
-                              color: AppColors.ink50, size: 18),
+                              color: context.palette.ink50, size: 18),
                         ),
                         onChanged: (v) => setState(() => _query = v),
                       ),
@@ -721,7 +709,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           alignment: Alignment.center,
                           child: Text('⚡ FAST ADD',
                               style: AppTypography.micro.copyWith(
-                                  color: AppColors.ink50, letterSpacing: 1.0)),
+                                  color: context.palette.ink50,
+                                  letterSpacing: 1.0)),
                         ),
                         for (final item in merged)
                           Padding(
@@ -732,15 +721,26 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
+                                  // Pinned chip: ember tint that keeps the
+                                  // inherited text color readable in BOTH
+                                  // themes (terra50 + cream text was
+                                  // invisible in dark).
                                   color: pinnedIds.contains(item.id)
-                                      ? AppColors.terra50
-                                      : Colors.white.withValues(alpha: 0.6),
+                                      ? (context.palette.isDark
+                                          ? AppColors.terra600
+                                              .withValues(alpha: 0.28)
+                                          : AppColors.terra50)
+                                      : context.palette.isDark
+                                          ? Colors.white
+                                              .withValues(alpha: 0.08)
+                                          : Colors.white
+                                              .withValues(alpha: 0.6),
                                   borderRadius:
                                       const BorderRadius.all(AppRadii.pill),
                                   border: Border.all(
                                     color: pinnedIds.contains(item.id)
                                         ? AppColors.terra200
-                                        : AppColors.ink10,
+                                        : context.palette.ink10,
                                     style: pinnedIds.contains(item.id)
                                         ? BorderStyle.solid
                                         : BorderStyle.none,
@@ -798,7 +798,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           alignment: Alignment.center,
                           child: Text('RECENT',
                               style: AppTypography.micro.copyWith(
-                                  color: AppColors.ink50, letterSpacing: 1.0)),
+                                  color: context.palette.ink50,
+                                  letterSpacing: 1.0)),
                         ),
                         for (final item in recent)
                           Padding(
@@ -809,7 +810,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: AppColors.terra50,
+                                  color: context.palette.isDark
+                                      ? AppColors.terra600
+                                          .withValues(alpha: 0.28)
+                                      : AppColors.terra50,
                                   borderRadius:
                                       const BorderRadius.all(AppRadii.pill),
                                   border: Border.all(color: AppColors.terra200),
@@ -867,8 +871,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.restaurant_menu,
-                                      color: AppColors.ink30, size: 48),
+                                  Icon(Icons.restaurant_menu,
+                                      color: context.palette.ink30, size: 48),
                                   const SizedBox(height: 12),
                                   Text(
                                     _query.isNotEmpty
@@ -937,8 +941,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                         ),
                                       ),
                                       if (i < entry.value.length - 1)
-                                        const Divider(
-                                            height: 1, color: AppColors.ink10),
+                                        Divider(
+                                            height: 1,
+                                            color: context.palette.ink10),
                                     ],
                                   ],
                                 ),
@@ -982,23 +987,17 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             child: Text(
                               '$itemCount items ready — send KOT now?',
                               style: AppTypography.caption.copyWith(
-                                  color: AppColors.ink,
+                                  color: context.palette.ink,
                                   fontWeight: FontWeight.w600),
                             ),
                           ),
                           GestureDetector(
+                            // Goes straight to review — the actual send still
+                            // happens there, so no confirmation dialog needed.
                             onTap: _readOnly
                                 ? null
-                                : () async {
-                                    final confirmed =
-                                        await _confirmKotBanner(itemCount);
-                                    if (confirmed) {
-                                      if (context.mounted) {
-                                        context.push(
-                                            '/order/${widget.tableId}/review');
-                                      }
-                                    }
-                                  },
+                                : () => context.push(
+                                    '/order/${widget.tableId}/review'),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 4),
@@ -1123,6 +1122,8 @@ class _SectionChip extends StatelessWidget {
       {required this.label, required this.selected, required this.onTap});
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final fillTarget = palette.isDark ? AppColors.terra600 : AppColors.ink;
     return GestureDetector(
       onTap: onTap,
       child: SpringBuilder(
@@ -1133,11 +1134,15 @@ class _SectionChip extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
               color: Color.lerp(
-                  Colors.white.withValues(alpha: 0.6), AppColors.ink, t),
+                  palette.isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : Colors.white.withValues(alpha: 0.6),
+                  fillTarget,
+                  t),
               borderRadius: const BorderRadius.all(AppRadii.pill),
               border: Border.all(
-                  color: Color.lerp(AppColors.ink10, AppColors.ink, t) ??
-                      AppColors.ink10),
+                  color: Color.lerp(palette.ink10, fillTarget, t) ??
+                      palette.ink10),
             ),
             child: child,
           );
@@ -1145,7 +1150,7 @@ class _SectionChip extends StatelessWidget {
         child: Center(
           child: Text(label,
               style: AppTypography.caption.copyWith(
-                color: selected ? Colors.white : AppColors.ink,
+                color: selected ? Colors.white : palette.ink,
                 fontWeight: FontWeight.w600,
               )),
         ),
@@ -1169,11 +1174,15 @@ class _OrderNoteRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: hasNote
-              ? AppColors.terra50
-              : Colors.white.withValues(alpha: 0.5),
+              ? (context.palette.isDark
+                  ? AppColors.terra600.withValues(alpha: 0.28)
+                  : AppColors.terra50)
+              : context.palette.isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.white.withValues(alpha: 0.5),
           borderRadius: const BorderRadius.all(AppRadii.sm),
           border: Border.all(
-            color: hasNote ? AppColors.terra200 : AppColors.ink10,
+            color: hasNote ? AppColors.terra200 : context.palette.ink10,
           ),
         ),
         child: Row(
@@ -1181,14 +1190,15 @@ class _OrderNoteRow extends StatelessWidget {
             Icon(
               hasNote ? Icons.notes : Icons.add_comment_outlined,
               size: 15,
-              color: hasNote ? AppColors.terra600 : AppColors.ink30,
+              color: hasNote ? AppColors.terra600 : context.palette.ink30,
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 hasNote ? note : 'Add order note…',
                 style: AppTypography.caption.copyWith(
-                  color: hasNote ? AppColors.ink : AppColors.ink30,
+                  color:
+                      hasNote ? context.palette.ink : context.palette.ink30,
                   fontWeight:
                       hasNote ? FontWeight.w600 : FontWeight.w400,
                 ),
@@ -1199,7 +1209,7 @@ class _OrderNoteRow extends StatelessWidget {
             Icon(
               Icons.edit_outlined,
               size: 13,
-              color: AppColors.ink30,
+              color: context.palette.ink30,
             ),
           ],
         ),
@@ -1228,7 +1238,7 @@ class _RunningOrderCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: AppCard(
-        background: AppColors.paper.withValues(alpha: 0.92),
+        background: context.palette.surface.withValues(alpha: 0.92),
         border: Border.all(color: AppColors.terra200),
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -1257,7 +1267,7 @@ class _RunningOrderCard extends StatelessWidget {
               Text(
                 '${order.itemCount} ${order.itemCount == 1 ? "item" : "items"} already sent',
                 style: AppTypography.caption.copyWith(
-                  color: AppColors.ink70,
+                  color: context.palette.ink70,
                   fontWeight: FontWeight.w600,
                 ),
               )
@@ -1323,8 +1333,8 @@ class _RunningOrderCard extends StatelessWidget {
                       icon: const Icon(Icons.history_outlined, size: 14),
                       label: const Text('KOT History'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.ink70,
-                        side: const BorderSide(color: AppColors.ink30),
+                        foregroundColor: context.palette.ink70,
+                        side: BorderSide(color: context.palette.ink30),
                         textStyle: AppTypography.caption
                             .copyWith(fontWeight: FontWeight.w600),
                         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1520,7 +1530,9 @@ class _ItemRow extends StatelessWidget {
                         width: 32,
                         height: 32,
                         decoration: BoxDecoration(
-                          color: AppColors.ink,
+                          color: context.palette.isDark
+                              ? AppColors.terra600
+                              : AppColors.ink,
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: const Icon(Icons.add,
@@ -1602,10 +1614,10 @@ class _SkeletonRowState extends State<_SkeletonRow>
             gradient: LinearGradient(
               begin: Alignment(-1.0 + _anim.value, 0),
               end: Alignment(_anim.value, 0),
-              colors: const [
-                AppColors.ink05,
-                AppColors.ink10,
-                AppColors.ink05,
+              colors: [
+                context.palette.ink05,
+                context.palette.ink10,
+                context.palette.ink05,
               ],
             ),
           ),
@@ -1616,7 +1628,7 @@ class _SkeletonRowState extends State<_SkeletonRow>
                 width: 14,
                 height: 14,
                 decoration: BoxDecoration(
-                  color: AppColors.ink10,
+                  color: context.palette.ink10,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1629,7 +1641,7 @@ class _SkeletonRowState extends State<_SkeletonRow>
                       height: 14,
                       width: 120,
                       decoration: BoxDecoration(
-                        color: AppColors.ink10,
+                        color: context.palette.ink10,
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -1638,7 +1650,7 @@ class _SkeletonRowState extends State<_SkeletonRow>
                       height: 10,
                       width: 60,
                       decoration: BoxDecoration(
-                        color: AppColors.ink05,
+                        color: context.palette.ink05,
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -1649,7 +1661,7 @@ class _SkeletonRowState extends State<_SkeletonRow>
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: AppColors.ink10,
+                  color: context.palette.ink10,
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),

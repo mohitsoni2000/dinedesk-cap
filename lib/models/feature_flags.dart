@@ -10,6 +10,7 @@ class FeatureFlags {
   final bool customers;
   final bool inventory;
   final bool kotPrinting;
+  final bool directKot;
   final bool packages;
   final bool multiFloor;
   final bool operatorPinAuth;
@@ -23,6 +24,9 @@ class FeatureFlags {
   final bool operatorPinCancelOrder;
   final bool operatorPinKotEdit;
   final bool operatorPinQuickSettle;
+  final bool operatorPinRenameTable;
+  final bool operatorPinKotReprint;
+  final bool operatorPinBillReprint;
   final bool autoKot;
   final int autoKotThreshold;
   final bool predictiveMotion;
@@ -32,6 +36,46 @@ class FeatureFlags {
   final bool kotEdit;
   final bool kitchenDisplay;
   final bool readyToServe;
+
+  // Added for full parity with restro-desktop's feature flags — these were
+  // reaching the phone in the raw sync payload already (every flag_*/
+  // operator_pin_* DB column is sent generically) but silently dropped
+  // because this model didn't have a field for them yet.
+  final bool cashOnlyDiscounts;
+  final bool reports;
+  final bool advancedReports;
+  final bool multiTerminal;
+  final bool takeaway;
+  final bool billPrinting;
+  final bool tableReservationAlerts;
+  final bool customerCredit;
+  final bool companyBill;
+  final bool tableMerge;
+  final bool shiftManagement;
+  final bool tableZones;
+  final bool floorSeparateRevenue;
+  final bool floorCapacityLimit;
+  final bool auditTrail;
+  final bool secureSearch;
+  final bool twoFactorAuth;
+  final bool onlineOrders;
+  final bool onlineWebview;
+  final bool zomatoIntegration;
+  final bool swiggyIntegration;
+  final bool onlineBrandSelection;
+  final bool rooms;
+  final bool printGroups;
+  final bool itemScheduling;
+  final bool kotEditSkipPrint;
+  final bool kotEditReasonOptional;
+  final bool favouriteItems;
+  final bool tempTable;
+  final bool kotReprint;
+  final bool billReprint;
+  final bool customPrintLayouts;
+  final bool offers;
+  final bool menuAccessGroups;
+  final bool weighedItems;
 
   const FeatureFlags({
     this.discounts = true,
@@ -45,6 +89,7 @@ class FeatureFlags {
     this.customers = false,
     this.inventory = false,
     this.kotPrinting = true,
+    this.directKot = false,
     this.packages = false,
     this.multiFloor = false,
     this.operatorPinAuth = true,
@@ -58,6 +103,9 @@ class FeatureFlags {
     this.operatorPinCancelOrder = false,
     this.operatorPinKotEdit = false,
     this.operatorPinQuickSettle = false,
+    this.operatorPinRenameTable = false,
+    this.operatorPinKotReprint = false,
+    this.operatorPinBillReprint = false,
     this.autoKot = false,
     this.autoKotThreshold = 5,
     this.predictiveMotion = false,
@@ -67,6 +115,41 @@ class FeatureFlags {
     this.kotEdit = false,
     this.kitchenDisplay = false,
     this.readyToServe = false,
+    this.cashOnlyDiscounts = false,
+    this.reports = false,
+    this.advancedReports = false,
+    this.multiTerminal = false,
+    this.takeaway = false,
+    this.billPrinting = false,
+    this.tableReservationAlerts = false,
+    this.customerCredit = false,
+    this.companyBill = false,
+    this.tableMerge = false,
+    this.shiftManagement = false,
+    this.tableZones = false,
+    this.floorSeparateRevenue = false,
+    this.floorCapacityLimit = false,
+    this.auditTrail = false,
+    this.secureSearch = false,
+    this.twoFactorAuth = false,
+    this.onlineOrders = false,
+    this.onlineWebview = false,
+    this.zomatoIntegration = false,
+    this.swiggyIntegration = false,
+    this.onlineBrandSelection = false,
+    this.rooms = false,
+    this.printGroups = false,
+    this.itemScheduling = false,
+    this.kotEditSkipPrint = false,
+    this.kotEditReasonOptional = false,
+    this.favouriteItems = false,
+    this.tempTable = false,
+    this.kotReprint = false,
+    this.billReprint = false,
+    this.customPrintLayouts = false,
+    this.offers = false,
+    this.menuAccessGroups = false,
+    this.weighedItems = false,
   });
 
   factory FeatureFlags.fromMap(Map<String, dynamic> map) {
@@ -91,6 +174,7 @@ class FeatureFlags {
       customers: flag('flag_customers'),
       inventory: flag('flag_inventory'),
       kotPrinting: flag('flag_kot_printing', true),
+      directKot: flag('flag_direct_kot'),
       packages: flag('flag_packages'),
       multiFloor: flag('flag_multi_floor'),
       operatorPinAuth: flag('flag_operator_pin_auth', true),
@@ -105,6 +189,9 @@ class FeatureFlags {
       operatorPinCancelOrder: flag('operator_pin_cancel_order'),
       operatorPinKotEdit: flag('operator_pin_kot_edit'),
       operatorPinQuickSettle: flag('operator_pin_quick_settle'),
+      operatorPinRenameTable: flag('operator_pin_rename_table'),
+      operatorPinKotReprint: flag('operator_pin_kot_reprint'),
+      operatorPinBillReprint: flag('operator_pin_bill_reprint'),
       autoKot: flag('flag_auto_kot'),
       autoKotThreshold: int.tryParse('${map['auto_kot_threshold']}') ?? 5,
       predictiveMotion: flag('flag_predictive_motion'),
@@ -114,6 +201,41 @@ class FeatureFlags {
       kotEdit: flag('flag_kot_edit') || flag('kot_edit'),
       kitchenDisplay: flag('flag_kitchen_display') || flag('kitchen_display'),
       readyToServe: flag('flag_ready_to_serve') || flag('ready_to_serve'),
+      cashOnlyDiscounts: flag('flag_cash_only_discounts'),
+      reports: flag('flag_reports', true),
+      advancedReports: flag('flag_advanced_reports'),
+      multiTerminal: flag('flag_multi_terminal'),
+      takeaway: flag('flag_takeaway', true),
+      billPrinting: flag('flag_bill_printing', true),
+      tableReservationAlerts: flag('flag_table_reservation_alerts'),
+      customerCredit: flag('flag_customer_credit'),
+      companyBill: flag('flag_company_bill'),
+      tableMerge: flag('flag_table_merge', true),
+      shiftManagement: flag('flag_shift_management'),
+      tableZones: flag('flag_table_zones'),
+      floorSeparateRevenue: flag('flag_floor_separate_revenue'),
+      floorCapacityLimit: flag('flag_floor_capacity_limit'),
+      auditTrail: flag('flag_audit_trail'),
+      secureSearch: flag('flag_secure_search'),
+      twoFactorAuth: flag('flag_two_factor_auth'),
+      onlineOrders: flag('flag_online_orders'),
+      onlineWebview: flag('flag_online_webview'),
+      zomatoIntegration: flag('flag_zomato_integration', true),
+      swiggyIntegration: flag('flag_swiggy_integration', true),
+      onlineBrandSelection: flag('flag_online_brand_selection', true),
+      rooms: flag('flag_rooms'),
+      printGroups: flag('flag_print_groups'),
+      itemScheduling: flag('flag_item_scheduling'),
+      kotEditSkipPrint: flag('flag_kot_edit_skip_print'),
+      kotEditReasonOptional: flag('flag_kot_edit_reason_optional'),
+      favouriteItems: flag('flag_favourite_items'),
+      tempTable: flag('flag_temp_table'),
+      kotReprint: flag('flag_kot_reprint'),
+      billReprint: flag('flag_bill_reprint'),
+      customPrintLayouts: flag('flag_custom_print_layouts'),
+      offers: flag('flag_offers'),
+      menuAccessGroups: flag('flag_menu_access_groups'),
+      weighedItems: flag('flag_weighed_items'),
     );
   }
 }

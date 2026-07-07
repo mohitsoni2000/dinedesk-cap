@@ -1,36 +1,50 @@
 // Material ThemeData wired up from design tokens.
+//
+// AppTypography styles are color-free; the color enters HERE, per brightness,
+// via textTheme (Material's DefaultTextStyle = textTheme.bodyMedium). That is
+// what makes every un-annotated Text flip correctly between light and dark.
 import 'package:flutter/material.dart';
 import 'tokens.dart';
 
 class AppTheme {
   AppTheme._();
 
-  static ThemeData light() {
-    final base = ThemeData.light(useMaterial3: true);
+  static ThemeData light() => _build(AppPalette.light);
+
+  /// "Midnight tandoor" — warm ember dark, cream ink, same terra brand.
+  static ThemeData dark() => _build(AppPalette.dark);
+
+  static ThemeData _build(AppPalette p) {
+    final base = p.isDark
+        ? ThemeData.dark(useMaterial3: true)
+        : ThemeData.light(useMaterial3: true);
+    TextStyle inked(TextStyle s) => s.copyWith(color: p.ink);
     return base.copyWith(
       scaffoldBackgroundColor: Colors.transparent,
-      colorScheme: const ColorScheme.light(
+      colorScheme: ColorScheme(
+        brightness: p.brightness,
         primary: AppColors.terra500,
         onPrimary: Colors.white,
         secondary: AppColors.violet,
         onSecondary: Colors.white,
-        surface: AppColors.paper,
-        onSurface: AppColors.ink,
+        surface: p.surface,
+        onSurface: p.ink,
         error: AppColors.danger,
         onError: Colors.white,
       ),
       textTheme: base.textTheme.copyWith(
-        displayLarge: AppTypography.displayLg,
-        displayMedium: AppTypography.displayMd,
-        headlineMedium: AppTypography.headline,
-        titleMedium: AppTypography.title,
-        bodyLarge: AppTypography.body,
-        bodyMedium: AppTypography.body,
-        labelLarge: AppTypography.bodyMd,
-        labelMedium: AppTypography.caption,
-        labelSmall: AppTypography.micro,
+        displayLarge: inked(AppTypography.displayLg),
+        displayMedium: inked(AppTypography.displayMd),
+        headlineMedium: inked(AppTypography.headline),
+        titleMedium: inked(AppTypography.title),
+        bodyLarge: inked(AppTypography.body),
+        bodyMedium: inked(AppTypography.body),
+        labelLarge: inked(AppTypography.bodyMd),
+        labelMedium: AppTypography.caption.copyWith(color: p.ink70),
+        labelSmall: AppTypography.micro.copyWith(color: p.ink70),
       ),
-      iconTheme: const IconThemeData(color: AppColors.ink, size: 22),
+      iconTheme: IconThemeData(color: p.ink, size: 22),
+      dividerColor: p.ink10,
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
       // Any Material route that doesn't go through liquidPage still gets the

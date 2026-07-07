@@ -67,14 +67,9 @@ class SyncService {
       final env = BroadcastEnvelope(_toMap(data));
       final orderMap = env.orderMap;
       if (orderMap != null) {
-        final parsed = ServerOrder.fromMap(orderMap);
+        // operatorStatsProvider derives from historyProvider (see providers.dart),
+        // so populating history here is enough — no manual counter to update.
         applyOrderAck({'order': orderMap}, includeHistory: true);
-        final stats = _ref.read(operatorStatsProvider);
-        _ref.read(operatorStatsProvider.notifier).state = OperatorStats(
-          ordersToday: stats.ordersToday + 1,
-          tablesServed: stats.tablesServed,
-          itemsSold: stats.itemsSold + parsed.itemCount,
-        );
       }
       _applyTablesFromEnvelope(env);
     });
@@ -190,13 +185,8 @@ class SyncService {
             else
               h,
         ];
-        // Increment tablesServed stat for this operator session.
-        final stats = _ref.read(operatorStatsProvider);
-        _ref.read(operatorStatsProvider.notifier).state = OperatorStats(
-          ordersToday: stats.ordersToday,
-          tablesServed: stats.tablesServed + 1,
-          itemsSold: stats.itemsSold,
-        );
+        // tablesServed is derived from historyProvider (see operatorStatsProvider
+        // in providers.dart) — marking the entry `paid` above is enough.
         // Clear any ready-to-serve tickets for this paid/closed order.
         _ref.read(readyOrdersProvider.notifier).state =
             _ref.read(readyOrdersProvider).where((t) => t.orderId != id).toList();
@@ -464,7 +454,20 @@ class SyncService {
         }
       }
       _ref.read(activeOrdersProvider.notifier).state = rawOrders;
-      _ref.read(historyProvider.notifier).state = historyEntries;
+      // Merge, don't replace: this runs on every reconnect (operator:resync),
+      // not just cold login. `active_orders` is the server's currently-open
+      // orders only, so a wholesale replace would erase this device's memory
+      // of already-settled (paid/cancelled) orders from earlier in the shift
+      // every time the app reconnects on flaky venue WiFi — making History
+      // flicker/lose entries. Keep any previously-known entry that isn't in
+      // the fresh active list (it's settled, not gone) alongside the fresh
+      // active ones (which get up-to-date status/totals).
+      final freshIds = historyEntries.map((h) => h.orderId).toSet();
+      final settledEntries = _ref
+          .read(historyProvider)
+          .where((h) => !freshIds.contains(h.orderId))
+          .toList();
+      _ref.read(historyProvider.notifier).state = [...historyEntries, ...settledEntries];
       debugPrint('$_tag   Active orders: ${rawOrders.length}');
     }
 

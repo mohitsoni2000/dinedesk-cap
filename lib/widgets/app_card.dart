@@ -6,7 +6,10 @@ import '../theme/tokens.dart';
 class AppCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
-  final Color background;
+
+  /// Explicit background; when null, resolves to the theme surface
+  /// (cream paper in light, warm ember in dark).
+  final Color? background;
   final BorderRadius borderRadius;
   final Border? border;
   final List<BoxShadow>? shadow;
@@ -16,7 +19,7 @@ class AppCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(AppSpacing.lg),
-    this.background = AppColors.paper,
+    this.background,
     this.borderRadius = const BorderRadius.all(AppRadii.lg),
     this.border,
     this.shadow,
@@ -25,6 +28,7 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final box = Container(
       decoration: BoxDecoration(
         borderRadius: borderRadius,
@@ -38,9 +42,9 @@ class AppCard extends StatelessWidget {
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
-            color: background,
+            color: background ?? palette.surface,
             borderRadius: borderRadius,
-            border: border ?? Border.all(color: AppColors.ink10, width: 0.5),
+            border: border ?? Border.all(color: palette.ink10, width: 0.5),
           ),
           child: child,
         ),

@@ -13,6 +13,8 @@ import '../data/currency.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_glass_surface.dart';
 import '../widgets/liquid_chrome.dart';
+import 'sheet_handle.dart';
+import 'stepper_button.dart';
 
 class ItemDetailSheet extends ConsumerStatefulWidget {
   final MenuItem item;
@@ -119,14 +121,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.ink30,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            const SheetHandle(),
             const SizedBox(height: 12),
             Expanded(
               child: ListView(
@@ -179,14 +174,16 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                               decoration: BoxDecoration(
                                 color: _selectedVariationId == variation.id
                                     ? AppColors.terra500.withValues(alpha: 0.10)
-                                    : Colors.white.withValues(alpha: 0.6),
+                                    : context.palette.isDark
+                                        ? Colors.white.withValues(alpha: 0.08)
+                                        : Colors.white.withValues(alpha: 0.6),
                                 borderRadius:
                                     const BorderRadius.all(AppRadii.sm),
                                 border: Border.all(
                                   color: _selectedVariationId == variation.id
                                       ? AppColors.terra500
                                           .withValues(alpha: 0.5)
-                                      : AppColors.ink10,
+                                      : context.palette.ink10,
                                 ),
                               ),
                               child: Row(
@@ -216,7 +213,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                       ],
                     ),
                     const SizedBox(height: 20),
-                    const Divider(height: 1, color: AppColors.ink10),
+                    Divider(height: 1, color: context.palette.ink10),
                     const SizedBox(height: 20),
                   ],
 
@@ -227,7 +224,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                           style:
                               AppTypography.micro.copyWith(letterSpacing: 1.2)),
                       const Spacer(),
-                      _StepBtn(
+                      StepperButton(
                           icon: Icons.remove,
                           onTap: () {
                             if (_qty > 1) setState(() => _qty--);
@@ -239,12 +236,12 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                             child: Text('$_qty', style: AppTypography.headline),
                           )),
                       const SizedBox(width: 16),
-                      _StepBtn(
+                      StepperButton(
                           icon: Icons.add, onTap: () => setState(() => _qty++)),
                     ],
                   ),
                   const SizedBox(height: 20),
-                  const Divider(height: 1, color: AppColors.ink10),
+                  Divider(height: 1, color: context.palette.ink10),
                   const SizedBox(height: 20),
 
                   if (_hasServerOptions) ...[
@@ -380,38 +377,6 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
   }
 }
 
-class _StepBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _StepBtn({required this.icon, required this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onTap();
-      },
-      behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: 44,
-        height: 44,
-        child: Center(
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.ink10),
-            ),
-            child: Icon(icon, size: 18, color: AppColors.ink),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _OptionTile extends StatelessWidget {
   final String label;
   final double priceModifier;
@@ -444,12 +409,14 @@ class _OptionTile extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected
                 ? AppColors.terra500.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.6),
+                : context.palette.isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.white.withValues(alpha: 0.6),
             borderRadius: const BorderRadius.all(AppRadii.sm),
             border: Border.all(
               color: selected
                   ? AppColors.terra500.withValues(alpha: 0.5)
-                  : AppColors.ink10,
+                  : context.palette.ink10,
             ),
           ),
           child: Row(
@@ -463,7 +430,8 @@ class _OptionTile extends StatelessWidget {
                   shape: multiSelect ? BoxShape.rectangle : BoxShape.circle,
                   borderRadius: multiSelect ? BorderRadius.circular(4) : null,
                   border: Border.all(
-                    color: selected ? AppColors.terra500 : AppColors.ink30,
+                    color:
+                        selected ? AppColors.terra500 : context.palette.ink30,
                     width: 1.5,
                   ),
                 ),

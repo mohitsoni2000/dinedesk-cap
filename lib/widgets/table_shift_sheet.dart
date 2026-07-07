@@ -12,6 +12,7 @@ import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
+import 'sheet_handle.dart';
 
 class TableShiftSheet extends ConsumerStatefulWidget {
   final RestaurantTable origin;
@@ -72,6 +73,8 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final selectedFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     final tables = ref.watch(tablesProvider);
     final candidates = tables
         .where((t) =>
@@ -92,14 +95,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.ink30,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            const SheetHandle(),
             const SizedBox(height: 12),
             Padding(
               padding:
@@ -129,7 +125,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            const Divider(height: 1, color: AppColors.ink10),
+            Divider(height: 1, color: palette.ink10),
             Expanded(
               child: candidates.isEmpty
                   ? const Center(
@@ -162,14 +158,14 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                 horizontal: 16, vertical: 14),
                             decoration: BoxDecoration(
                               color: on
-                                  ? AppColors.ink
-                                  : Colors.white.withValues(alpha: 0.6),
+                                  ? selectedFill
+                                  : palette.isDark
+                                      ? Colors.white.withValues(alpha: 0.08)
+                                      : Colors.white.withValues(alpha: 0.6),
                               borderRadius:
                                   const BorderRadius.all(AppRadii.md),
                               border: Border.all(
-                                  color: on
-                                      ? AppColors.ink
-                                      : AppColors.ink10),
+                                  color: on ? selectedFill : palette.ink10),
                             ),
                             child: Row(
                               children: [
@@ -202,7 +198,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                               .copyWith(
                                             color: on
                                                 ? Colors.white
-                                                : AppColors.ink,
+                                                : palette.ink,
                                             fontWeight: FontWeight.w600,
                                           )),
                                       Text(
@@ -212,7 +208,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                             color: on
                                                 ? Colors.white
                                                     .withValues(alpha: 0.7)
-                                                : AppColors.ink70,
+                                                : palette.ink70,
                                           )),
                                     ],
                                   ),
@@ -222,7 +218,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                       ? Icons.check_circle
                                       : Icons.radio_button_unchecked,
                                   color:
-                                      on ? Colors.white : AppColors.ink30,
+                                      on ? Colors.white : palette.ink30,
                                 ),
                               ],
                             ),

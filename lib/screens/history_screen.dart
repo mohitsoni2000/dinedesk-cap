@@ -46,6 +46,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   /// Build status chips with counts from the date-scoped subset.
   List<Widget> _buildStatusChips(List<HistoryOrder> allOrders) {
     final scoped = _dateScoped(allOrders);
+    // Single pass over the orders instead of one .where() scan per chip.
+    final counts = <OrderStatus, int>{};
+    for (final o in scoped) {
+      counts[o.status] = (counts[o.status] ?? 0) + 1;
+    }
     return [
       _StatusChip(
         label: 'All',
@@ -57,7 +62,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       _StatusChip(
         label: 'Sent',
         color: AppColors.success,
-        count: scoped.where((o) => o.status == OrderStatus.sent).length,
+        count: counts[OrderStatus.sent] ?? 0,
         selected: _statusFilter == OrderStatus.sent,
         onTap: () => setState(() => _statusFilter = OrderStatus.sent),
       ),
@@ -65,7 +70,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       _StatusChip(
         label: 'Modified',
         color: AppColors.warn,
-        count: scoped.where((o) => o.status == OrderStatus.modified).length,
+        count: counts[OrderStatus.modified] ?? 0,
         selected: _statusFilter == OrderStatus.modified,
         onTap: () => setState(() => _statusFilter = OrderStatus.modified),
       ),
@@ -73,7 +78,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       _StatusChip(
         label: 'Cancelled',
         color: AppColors.danger,
-        count: scoped.where((o) => o.status == OrderStatus.cancelled).length,
+        count: counts[OrderStatus.cancelled] ?? 0,
         selected: _statusFilter == OrderStatus.cancelled,
         onTap: () => setState(() => _statusFilter = OrderStatus.cancelled),
       ),
@@ -81,7 +86,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       _StatusChip(
         label: 'Paid',
         color: AppColors.teal,
-        count: scoped.where((o) => o.status == OrderStatus.paid).length,
+        count: counts[OrderStatus.paid] ?? 0,
         selected: _statusFilter == OrderStatus.paid,
         onTap: () => setState(() => _statusFilter = OrderStatus.paid),
       ),
@@ -141,7 +146,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             ),
             // Status filter chips.
             SizedBox(
-              height: 44,
+              height: AppTouchTargets.chip,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -160,8 +165,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.receipt_long,
-                                color: AppColors.ink30, size: 48),
+                            Icon(Icons.receipt_long,
+                                color: context.palette.ink30, size: 48),
                             const SizedBox(height: 12),
                             Text(
                                 _dateScope == _DateScope.yesterday
@@ -173,7 +178,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                                 _statusFilter == null
                                     ? 'Orders you send will appear here'
                                     : 'No orders match this filter',
-                                style: AppTypography.caption,
+                                style: context.palette.caption,
                                 textAlign: TextAlign.center),
                           ],
                         ),
@@ -220,14 +225,16 @@ class _DateTab extends StatelessWidget {
           duration: const Duration(milliseconds: 220),
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
-            color: selected ? AppColors.ink : Colors.transparent,
+            color: selected
+                ? (context.palette.isDark ? AppColors.terra600 : AppColors.ink)
+                : Colors.transparent,
             borderRadius: const BorderRadius.all(AppRadii.xs),
           ),
           alignment: Alignment.center,
           child: Text(
             label,
             style: AppTypography.micro.copyWith(
-              color: selected ? Colors.white : AppColors.ink70,
+              color: selected ? Colors.white : context.palette.ink70,
             ),
           ),
         ),
@@ -251,6 +258,11 @@ class _StatusChip extends StatelessWidget {
   });
   @override
   Widget build(BuildContext context) {
+    final selectedBg =
+        context.palette.isDark ? AppColors.terra600 : AppColors.ink;
+    final unselectedBg = context.palette.isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.white.withValues(alpha: 0.6);
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
@@ -260,9 +272,10 @@ class _StatusChip extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? AppColors.ink : Colors.white.withValues(alpha: 0.6),
+          color: selected ? selectedBg : unselectedBg,
           borderRadius: const BorderRadius.all(AppRadii.pill),
-          border: Border.all(color: selected ? AppColors.ink : AppColors.ink10),
+          border: Border.all(
+              color: selected ? selectedBg : context.palette.ink10),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -277,7 +290,7 @@ class _StatusChip extends StatelessWidget {
             ],
             Text(label,
                 style: AppTypography.caption.copyWith(
-                  color: selected ? Colors.white : AppColors.ink,
+                  color: selected ? Colors.white : context.palette.ink,
                   fontWeight: FontWeight.w600,
                 )),
             const SizedBox(width: 6),
@@ -285,7 +298,7 @@ class _StatusChip extends StatelessWidget {
                 style: AppTypography.caption.copyWith(
                   color: selected
                       ? Colors.white.withValues(alpha: 0.7)
-                      : AppColors.ink50,
+                      : context.palette.ink50,
                   fontWeight: FontWeight.w500,
                 )),
           ],
@@ -334,7 +347,7 @@ class _OrderTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '${order.tableId} · ${order.time} · ${order.itemCount} items',
-                  style: AppTypography.caption,
+                  style: context.palette.caption,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -347,7 +360,8 @@ class _OrderTile extends StatelessWidget {
               Text(formatRupeesCompact(order.total),
                   style: AppTypography.headline),
               const SizedBox(height: 2),
-              const Icon(Icons.chevron_right, color: AppColors.ink30, size: 18),
+              Icon(Icons.chevron_right,
+                  color: context.palette.ink30, size: 18),
             ],
           ),
         ],

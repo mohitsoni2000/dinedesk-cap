@@ -11,6 +11,7 @@ import '../widgets/liquid_chrome.dart';
 import '../widgets/liquid_glass_surface.dart';
 import '../widgets/liquid_mesh_background.dart';
 import '../widgets/numeric_keyboard.dart';
+import '../widgets/sheet_handle.dart';
 
 enum _Step { current, fresh, confirm }
 
@@ -127,12 +128,7 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
         borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: AppColors.ink30,
-                  borderRadius: BorderRadius.circular(2))),
+          const SheetHandle(),
           const SizedBox(height: 16),
           Container(
             width: 56,
@@ -147,8 +143,8 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
           const SizedBox(height: 12),
           const Text('PIN updated', style: AppTypography.title),
           const SizedBox(height: 4),
-          const Text('Use your new PIN next sign-in.',
-              style: AppTypography.caption),
+          Text('Use your new PIN next sign-in.',
+              style: context.palette.caption),
           const SizedBox(height: 16),
           LiquidPrimaryButton(
             label: 'Done',
@@ -195,11 +191,12 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
                             width: 18,
                             height: 18,
                             decoration: BoxDecoration(
-                              color:
-                                  filled ? AppColors.ink : Colors.transparent,
+                              color: filled
+                                  ? context.palette.ink
+                                  : Colors.transparent,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                  color: AppColors.ink30, width: 1.5),
+                                  color: context.palette.ink30, width: 1.5),
                             ),
                           );
                         }),

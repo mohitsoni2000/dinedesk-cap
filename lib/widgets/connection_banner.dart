@@ -163,7 +163,7 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
                                       fontWeight: FontWeight.w600)),
                               Text(_label,
                                   style: AppTypography.micro
-                                      .copyWith(color: AppColors.ink70)),
+                                      .copyWith(color: context.palette.ink70)),
                             ],
                           )),
                           // Countdown ring.
@@ -180,7 +180,7 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
                                     strokeWidth: 2.5,
                                     value: _remaining / 120,
                                     color: AppColors.danger,
-                                    backgroundColor: AppColors.ink10,
+                                    backgroundColor: context.palette.ink10,
                                   ),
                                 ),
                                 Text(

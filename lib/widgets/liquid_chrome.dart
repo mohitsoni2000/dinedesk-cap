@@ -59,6 +59,10 @@ class LiquidBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    // Active pill: ink reads as near-black in light mode but vanishes against
+    // dark surfaces — use terra as the active fill in dark (white fg works on both).
+    final activeFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: LiquidGlassSurface(
@@ -80,7 +84,7 @@ class LiquidBottomNav extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         decoration: BoxDecoration(
                           color:
-                              Color.lerp(Colors.transparent, AppColors.ink, t),
+                              Color.lerp(Colors.transparent, activeFill, t),
                           borderRadius: const BorderRadius.all(AppRadii.sm),
                         ),
                         child: child,
@@ -93,7 +97,7 @@ class LiquidBottomNav extends StatelessWidget {
                           size: 22,
                           color: i == currentIndex
                               ? Colors.white
-                              : AppColors.ink70,
+                              : palette.ink70,
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -101,7 +105,7 @@ class LiquidBottomNav extends StatelessWidget {
                           style: AppTypography.micro.copyWith(
                             color: i == currentIndex
                                 ? Colors.white
-                                : AppColors.ink50,
+                                : palette.ink50,
                             decoration: TextDecoration.none,
                           ),
                         ),
@@ -136,6 +140,7 @@ class LiquidPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       blur: 18,
       thickness: 8,
+      skipBlur: true, // chip-sized — real backdrop blur is GPU cost for nothing
       tint: tint,
       child: DefaultTextStyle.merge(
         style: AppTypography.caption.copyWith(fontWeight: FontWeight.w600),
@@ -192,7 +197,7 @@ class _LiquidPrimaryButtonState extends State<LiquidPrimaryButton> {
                     colors: [AppColors.terra400, AppColors.terra600],
                   )
                 : null,
-            color: enabled ? null : AppColors.ink10,
+            color: enabled ? null : context.palette.ink10,
             borderRadius: const BorderRadius.all(AppRadii.md),
             boxShadow: enabled ? AppShadows.terraGlow : null,
           ),
@@ -203,7 +208,8 @@ class _LiquidPrimaryButtonState extends State<LiquidPrimaryButton> {
             children: [
               if (widget.leadingIcon != null) ...[
                 Icon(widget.leadingIcon,
-                    color: enabled ? Colors.white : AppColors.ink30, size: 20),
+                    color: enabled ? Colors.white : context.palette.ink30,
+                    size: 20),
                 const SizedBox(width: 8),
               ],
               Flexible(
@@ -211,7 +217,7 @@ class _LiquidPrimaryButtonState extends State<LiquidPrimaryButton> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.bodyMd.copyWith(
-                        color: enabled ? Colors.white : AppColors.ink30,
+                        color: enabled ? Colors.white : context.palette.ink30,
                         fontWeight: FontWeight.w600)),
               ),
             ],
@@ -261,11 +267,12 @@ class _LiquidSecondaryButtonState extends State<LiquidSecondaryButton> {
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           blur: 16,
           thickness: 8,
+          skipBlur: true, // button-sized — skip the saveLayer-forcing blur
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (widget.leadingIcon != null) ...[
-                Icon(widget.leadingIcon, color: AppColors.ink, size: 20),
+                Icon(widget.leadingIcon, color: context.palette.ink, size: 20),
                 const SizedBox(width: 8),
               ],
               Flexible(

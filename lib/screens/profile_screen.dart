@@ -66,7 +66,7 @@ class ProfileScreen extends ConsumerWidget {
                               Text(opName, style: AppTypography.title),
                               const SizedBox(height: 2),
                               Text('@$opUsername · $opRole',
-                                  style: AppTypography.caption),
+                                  style: context.palette.caption),
                               const SizedBox(height: 4),
                               Text(opShift,
                                   style: AppTypography.caption.copyWith(
@@ -82,7 +82,8 @@ class ProfileScreen extends ConsumerWidget {
 
                   // Today's KPIs.
                   Text("TODAY'S SHIFT",
-                      style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
+                      style:
+                          context.palette.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -112,7 +113,8 @@ class ProfileScreen extends ConsumerWidget {
 
                   // Restaurant + connection info.
                   Text('PAIRED WITH',
-                      style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
+                      style:
+                          context.palette.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 8),
                   AppCard(
                     child: Column(
@@ -140,9 +142,10 @@ class ProfileScreen extends ConsumerWidget {
                           ],
                         ),
                         const SizedBox(height: 6),
-                        Text(restaurantAddress, style: AppTypography.caption),
+                        Text(restaurantAddress,
+                            style: context.palette.caption),
                         const SizedBox(height: 10),
-                        const Divider(height: 1, color: AppColors.ink10),
+                        Divider(height: 1, color: context.palette.ink10),
                         const SizedBox(height: 10),
                         _InfoRow(
                             icon: Icons.computer,
@@ -162,25 +165,25 @@ class ProfileScreen extends ConsumerWidget {
                   AppCard(
                     padding: EdgeInsets.zero,
                     child: Column(children: [
-                      const ListTile(
+                      ListTile(
                         leading: Icon(Icons.admin_panel_settings_outlined,
-                            color: AppColors.ink70),
-                        title: Text('PIN managed on desktop',
+                            color: context.palette.ink70),
+                        title: const Text('PIN managed on desktop',
                             style: AppTypography.bodyMd),
                         subtitle: Text('Ask an admin to reset operator PIN',
-                            style: AppTypography.caption),
+                            style: context.palette.caption),
                       ),
-                      const Divider(height: 1, color: AppColors.ink10),
+                      Divider(height: 1, color: context.palette.ink10),
                       ListTile(
-                        leading: const Icon(Icons.qr_code_scanner,
-                            color: AppColors.ink70),
+                        leading: Icon(Icons.qr_code_scanner,
+                            color: context.palette.ink70),
                         title: const Text('Re-pair this device',
                             style: AppTypography.bodyMd),
-                        subtitle: const Text(
+                        subtitle: Text(
                             'Scan a fresh QR from the admin desktop',
-                            style: AppTypography.caption),
-                        trailing: const Icon(Icons.chevron_right,
-                            color: AppColors.ink30),
+                            style: context.palette.caption),
+                        trailing: Icon(Icons.chevron_right,
+                            color: context.palette.ink30),
                         onTap: () => context.go('/scan'),
                       ),
                     ]),
@@ -206,8 +209,8 @@ class ProfileScreen extends ConsumerWidget {
                   const SizedBox(height: 16),
                   Center(
                     child: Text('RestroApp v1.0.0',
-                        style:
-                            AppTypography.micro.copyWith(letterSpacing: 1.0)),
+                        style: context.palette.micro
+                            .copyWith(letterSpacing: 1.0)),
                   ),
                 ],
               ),
@@ -238,7 +241,7 @@ class _Kpi extends StatelessWidget {
           const SizedBox(height: 8),
           Text(value, style: AppTypography.displayMd),
           const SizedBox(height: 2),
-          Text(label, style: AppTypography.caption),
+          Text(label, style: context.palette.caption),
         ],
       ),
     );
@@ -255,9 +258,10 @@ class _InfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: AppColors.ink50, size: 16),
+        Icon(icon, color: context.palette.ink50, size: 16),
         const SizedBox(width: 8),
-        SizedBox(width: 90, child: Text(label, style: AppTypography.caption)),
+        SizedBox(
+            width: 90, child: Text(label, style: context.palette.caption)),
         Expanded(
           child: Text(value,
               style: AppTypography.bodyMd

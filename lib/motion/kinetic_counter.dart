@@ -71,18 +71,22 @@ class KineticRupeeCounter extends StatelessWidget {
   const KineticRupeeCounter({
     required this.amount,
     this.fontSize = 36,
-    this.color = const Color(0xFFF4EDE0),
+    this.color,
     this.duration = const Duration(milliseconds: 600),
     super.key,
   });
 
   final double amount;
   final double fontSize;
-  final Color color;
+
+  /// Digit color. Defaults to the brightness-resolved counter-paper tone
+  /// (a const constructor default can't read the theme, hence nullable).
+  final Color? color;
   final Duration duration;
 
   @override
   Widget build(BuildContext context) {
+    final Color resolvedColor = color ?? context.palette.counterPaper;
     final NumberFormat fmt = NumberFormat.decimalPattern('en_IN');
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: amount),
@@ -96,7 +100,7 @@ class KineticRupeeCounter extends StatelessWidget {
             fontFamily: AppTypography.cormorant,
             fontWeight: axes.weight >= 500 ? FontWeight.w600 : FontWeight.w500,
             fontSize: fontSize,
-            color: color,
+            color: resolvedColor,
             height: 1.0,
             letterSpacing: 0,
             fontStyle:

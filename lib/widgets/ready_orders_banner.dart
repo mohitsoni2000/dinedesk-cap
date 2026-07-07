@@ -70,7 +70,7 @@ class _ReadyCard extends StatelessWidget {
             borderRadius: BorderRadius.all(AppRadii.md),
             boxShadow: [
               BoxShadow(
-                color: Color(0x33000000),
+                color: AppColors.scrim,
                 blurRadius: 12,
                 offset: Offset(0, 4),
               ),

@@ -1,7 +1,4 @@
-// Confetti burst — pure CustomPainter, no plugin.
-//
-// Spawns N particles from a single emit point, each with a random angle/velocity,
-// gravity-pulled downward, fades + spins. Drops itself when the controller ends.
+
 
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -78,7 +75,7 @@ class _ConfettiBurstState extends State<ConfettiBurst>
 class _Particle {
   final Color color;
   final double vx, vy, spin, size, seed;
-  final int shape; // 0 rect, 1 circle, 2 streamer
+  final int shape;
   _Particle({
     required this.color,
     required this.vx,
@@ -101,13 +98,12 @@ class _ConfettiPainter extends CustomPainter {
     const gravity = 720.0;
 
     for (final p in particles) {
-      // Position via projectile motion
-      final time = t * 1.6; // s
+
+      final time = t * 1.6;
       final dx = p.vx * time;
       final dy = p.vy * time + 0.5 * gravity * time * time;
       final pos = origin + Offset(dx, dy);
 
-      // Fade out in last 30%
       final fade = t < 0.7 ? 1.0 : (1.0 - (t - 0.7) / 0.3);
       if (fade <= 0) continue;
 

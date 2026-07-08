@@ -33,7 +33,7 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() => _showLogo = true);
-      // Staggered reveal
+
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) setState(() => _showWordmark = true);
       });
@@ -70,12 +70,11 @@ class _SplashScreenState extends State<SplashScreen>
       dark: true,
       child: Stack(
         children: [
-          // Grain texture overlay
+
           const Positioned.fill(
             child: IgnorePointer(child: _GrainOverlay()),
           ),
 
-          // Radial vignette — darkens edges for cinematic depth
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
@@ -94,7 +93,6 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           ),
 
-          // Center content
           DepthParallaxStack(
             maxOffset: 8,
             layers: [
@@ -105,7 +103,7 @@ class _SplashScreenState extends State<SplashScreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Logo with pulsing glow ring
+
                       AnimatedBuilder(
                         animation: _pulseCtrl,
                         builder: (_, child) {
@@ -113,7 +111,7 @@ class _SplashScreenState extends State<SplashScreen>
                           return Stack(
                             alignment: Alignment.center,
                             children: [
-                              // Outer glow ring
+
                               Container(
                                 width: 110,
                                 height: 110,
@@ -169,7 +167,6 @@ class _SplashScreenState extends State<SplashScreen>
 
                       const SizedBox(height: 28),
 
-                      // Wordmark — slides up from below
                       SpringBuilder(
                         from: 0.0,
                         to: _showWordmark ? 1.0 : 0.0,
@@ -190,7 +187,6 @@ class _SplashScreenState extends State<SplashScreen>
 
                       const SizedBox(height: 14),
 
-                      // OPERATOR label — fine line above/below
                       SpringBuilder(
                         from: 0.0,
                         to: _showOperator ? 1.0 : 0.0,
@@ -233,7 +229,6 @@ class _SplashScreenState extends State<SplashScreen>
             ],
           ),
 
-          // Version label — bottom right
           Positioned(
             right: 20,
             bottom: 20,
@@ -262,7 +257,6 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-/// Fine photographic grain — adds premium texture without hurting perf.
 class _GrainOverlay extends StatefulWidget {
   const _GrainOverlay();
   @override

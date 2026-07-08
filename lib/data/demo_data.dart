@@ -1,9 +1,4 @@
-// Fixture payload for the "Try Demo" pairing bypass (see qr_scan_screen.dart).
-//
-// Lets anyone without a paired admin desktop — most notably App Store /
-// Play Store reviewers — explore the full operator flow. Shape matches
-// exactly what SyncService.applyInitialSync expects from a real server
-// payload, so it flows through the same parsing path as a live connection.
+
 
 Map<String, dynamic> buildDemoSyncPayload() {
   final now = DateTime.now();

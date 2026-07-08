@@ -1,8 +1,4 @@
-// Discount Sheet — bottom sheet for applying discounts before billing.
-//
-// Two sections:
-//   1. Preset discounts from server (shown as chips)
-//   2. Custom discount (% or flat amount) with optional label
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,8 +13,7 @@ import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
 class DiscountSheet {
-  /// Shows the discount bottom sheet.
-  /// Returns a discount map on success, or null if cancelled.
+
   static Future<Map<String, dynamic>?> show(
     BuildContext context, {
     required String orderId,
@@ -45,17 +40,15 @@ class _DiscountSheet extends ConsumerStatefulWidget {
 }
 
 class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
-  // Preset selection
+
   String? _selectedPresetId;
 
-  // Custom discount
   _DiscountType _customType = _DiscountType.percent;
   final _valueController = TextEditingController();
   final _labelController = TextEditingController();
 
   bool _submitting = false;
 
-  // Track which tab: 'preset' or 'custom'
   bool _showCustom = false;
 
   double? get _customValue => double.tryParse(_valueController.text.trim());
@@ -127,7 +120,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       }
     });
 
-    // Timeout fallback
     scheduleSocketTimeout(
       duration: const Duration(seconds: 10),
       isMounted: () => mounted,
@@ -169,13 +161,12 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
         child: ListView(
           controller: scrollCtrl,
           children: [
-            // Drag handle
+
             Center(
               child: const SheetHandle(),
             ),
             const SizedBox(height: 16),
 
-            // Header
             Row(
               children: [
                 const Icon(Icons.discount_outlined,
@@ -189,7 +180,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
             ),
             const SizedBox(height: 20),
 
-            // Tab toggle (if presets exist)
             if (hasPresets) ...[
               Row(
                 children: [
@@ -218,7 +208,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
               const SizedBox(height: 16),
             ],
 
-            // Preset discounts section
             if (!_showCustom && hasPresets) ...[
               Text('AVAILABLE DISCOUNTS',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
@@ -244,7 +233,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
               const SizedBox(height: 16),
             ],
 
-            // Custom discount section
             if (_showCustom || !hasPresets) ...[
               Text('DISCOUNT TYPE',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
@@ -278,7 +266,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
               ),
               const SizedBox(height: 16),
 
-              // Value input
               Text('VALUE',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 8),
@@ -311,7 +298,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                 ),
               ),
 
-              // Show computed discount amount for percentage
               if (_customType == _DiscountType.percent &&
                   _customValue != null &&
                   _customValue! > 0) ...[
@@ -325,7 +311,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                 ),
               ],
 
-              // Warn if percentage > 100
               if (_customType == _DiscountType.percent &&
                   _customValue != null &&
                   _customValue! > 100) ...[
@@ -337,7 +322,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                 ),
               ],
 
-              // Warn if flat > total
               if (_customType == _DiscountType.flat &&
                   _customValue != null &&
                   _customValue! > widget.orderTotal) ...[
@@ -351,7 +335,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
 
               const SizedBox(height: 12),
 
-              // Optional label
               Text('LABEL (OPTIONAL)',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 8),
@@ -376,7 +359,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
 
             const SizedBox(height: 8),
 
-            // CTA buttons
             Row(
               children: [
                 Expanded(

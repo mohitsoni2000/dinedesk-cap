@@ -1,7 +1,4 @@
-// History Screen — list of orders sent to kitchen during this shift.
-//
-// Filters by status (All / Sent / Modified / Cancelled) and date scope
-// (Today / Yesterday). Tap a row → /history/:orderId for full read-only view.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -28,7 +25,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   OrderStatus? _statusFilter;
   _DateScope _dateScope = _DateScope.today;
 
-  /// Date-scoped orders (before status filter).
   List<HistoryOrder> _dateScoped(List<HistoryOrder> orders) {
     final now = DateTime.now();
     final String targetDate;
@@ -43,10 +39,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     return orders.where((o) => o.date == targetDate).toList();
   }
 
-  /// Build status chips with counts from the date-scoped subset.
   List<Widget> _buildStatusChips(List<HistoryOrder> allOrders) {
     final scoped = _dateScoped(allOrders);
-    // Single pass over the orders instead of one .where() scan per chip.
+
     final counts = <OrderStatus, int>{};
     for (final o in scoped) {
       counts[o.status] = (counts[o.status] ?? 0) + 1;
@@ -96,8 +91,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final orders = ref.watch(historyProvider);
-    // "My history" — show only orders the logged-in user created (their own KOTs).
-    // Entries with an unknown creator are kept so nothing silently disappears.
+
     final myId = ref.watch(operatorProvider)?.username ?? '';
     final myOrders = myId.isEmpty
         ? orders
@@ -105,7 +99,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             .where((o) => o.createdBy == null || o.createdBy == myId)
             .toList();
 
-    // H1 fix: sort newest-first so the most recent orders appear at the top.
     final filtered = _dateScoped(myOrders).where((o) {
       if (_statusFilter != null && o.status != _statusFilter) return false;
       return true;
@@ -118,7 +111,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         child: Column(
           children: [
             const LiquidAppBar(title: 'History'),
-            // Date scope segmented control.
+
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: LiquidGlassSurface(
@@ -144,14 +137,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 ),
               ),
             ),
-            // Status filter chips.
+
             SizedBox(
               height: AppTouchTargets.chip,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 children: [
-                  // Compute counts from date-scoped list (H5 fix).
+
                   ..._buildStatusChips(myOrders),
                 ],
               ),

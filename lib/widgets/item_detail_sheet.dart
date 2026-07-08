@@ -1,8 +1,4 @@
-// Item Detail Sheet — qty + grouped modifiers + special note.
-//
-// Modifiers split into two groups (Indian POS pattern):
-//   • Spice level   — single-select (Mild / Medium / Spicy / Extra Spicy)
-//   • Add-ons       — multi-select with price impact (Extra Cheese +₹60, etc.)
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,12 +37,19 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
   int _qty = 1;
   final Map<String, String> _singleSelections = {};
   final Set<String> _multiSelections = {};
+
+  final Map<String, Set<String>> _addonSelections = {};
   String _note = '';
   String? _selectedVariationId;
   final FocusNode _noteFocusNode = FocusNode();
+  final TextEditingController _weightController = TextEditingController();
+
+  bool get _isWeighed => widget.item.isWeighed;
+  double? get _weight => double.tryParse(_weightController.text.trim());
 
   bool get _hasServerOptions => widget.item.optionGroups.isNotEmpty;
-  // Variations are only offered when the feature flag is enabled for this restaurant.
+  bool get _hasAddonGroups => widget.item.addonGroups.isNotEmpty;
+
   bool get _variationsEnabled => ref.read(flagsProvider).itemVariations;
   bool get _hasVariations =>
       _variationsEnabled && widget.item.variations.isNotEmpty;
@@ -77,6 +80,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
   @override
   void dispose() {
     _noteFocusNode.dispose();
+    _weightController.dispose();
     super.dispose();
   }
 
@@ -102,11 +106,40 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
     return selected;
   }
 
+  double get _addonExtra => _selectedAddonGroups.fold(
+        0,
+        (total, group) => total + group.extraPrice,
+      );
+
+  List<SelectedAddonGroup> get _selectedAddonGroups {
+    final result = <SelectedAddonGroup>[];
+    for (final group in widget.item.addonGroups) {
+      final chosenIds = _addonSelections[group.id] ?? const <String>{};
+      if (chosenIds.isEmpty) continue;
+      final choices = group.choices
+          .where((c) => chosenIds.contains(c.id))
+          .map((c) => SelectedAddonChoice(
+                choiceId: c.id,
+                name: c.name,
+                price: c.price,
+              ))
+          .toList();
+      if (choices.isEmpty) continue;
+      result.add(SelectedAddonGroup(
+        groupId: group.id,
+        groupName: group.name,
+        choices: choices,
+      ));
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     final basePrice = _selectedVariation?.price ?? widget.item.price;
-    final unit = basePrice + _serverOptionExtra;
-    final total = unit * _qty;
+    final unit = basePrice + _serverOptionExtra + _addonExtra;
+    final total = _isWeighed ? unit * (_weight ?? 0) : unit * _qty;
+    final canAdd = !_isWeighed || (_weight != null && _weight! > 0);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.82,
@@ -150,7 +183,6 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Variations (size / variant) — shown when item has multiple options.
                   if (_hasVariations) ...[
                     Text('SIZE / VARIANT',
                         style:
@@ -217,32 +249,101 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                     const SizedBox(height: 20),
                   ],
 
-                  // Qty.
-                  Row(
-                    children: [
-                      Text('QUANTITY',
-                          style:
-                              AppTypography.micro.copyWith(letterSpacing: 1.2)),
-                      const Spacer(),
-                      StepperButton(
-                          icon: Icons.remove,
-                          onTap: () {
-                            if (_qty > 1) setState(() => _qty--);
-                          }),
-                      const SizedBox(width: 16),
-                      SizedBox(
-                          width: 32,
-                          child: Center(
-                            child: Text('$_qty', style: AppTypography.headline),
-                          )),
-                      const SizedBox(width: 16),
-                      StepperButton(
-                          icon: Icons.add, onTap: () => setState(() => _qty++)),
-                    ],
-                  ),
+                  if (_isWeighed) ...[
+                    Text(
+                      'WEIGHT (${widget.item.measureUnit})',
+                      style: AppTypography.micro.copyWith(letterSpacing: 1.2),
+                    ),
+                    const SizedBox(height: 8),
+                    LiquidGlassSurface(
+                      borderRadius: const BorderRadius.all(AppRadii.sm),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      blur: 18,
+                      thickness: 8,
+                      child: TextField(
+                        controller: _weightController,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+                          hintText: 'e.g. 0.5',
+                          suffixText: widget.item.measureUnit,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                  ] else ...[
+
+                    Row(
+                      children: [
+                        Text('QUANTITY',
+                            style: AppTypography.micro
+                                .copyWith(letterSpacing: 1.2)),
+                        const Spacer(),
+                        StepperButton(
+                            icon: Icons.remove,
+                            onTap: () {
+                              if (_qty > 1) setState(() => _qty--);
+                            }),
+                        const SizedBox(width: 16),
+                        SizedBox(
+                            width: 32,
+                            child: Center(
+                              child: Text('$_qty',
+                                  style: AppTypography.headline),
+                            )),
+                        const SizedBox(width: 16),
+                        StepperButton(
+                            icon: Icons.add,
+                            onTap: () => setState(() => _qty++)),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   Divider(height: 1, color: context.palette.ink10),
                   const SizedBox(height: 20),
+
+                  if (_hasAddonGroups) ...[
+                    for (final group in widget.item.addonGroups) ...[
+                      Text(
+                        group.name.toUpperCase(),
+                        style: AppTypography.micro.copyWith(letterSpacing: 1.4),
+                      ),
+                      const SizedBox(height: 12),
+                      Column(
+                        children: [
+                          for (final choice in group.choices)
+                            _OptionTile(
+                              label: choice.name,
+                              priceModifier: choice.price,
+                              selected: (_addonSelections[group.id] ?? const {})
+                                  .contains(choice.id),
+                              multiSelect: group.selectionType == 'M',
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                setState(() {
+                                  final current = _addonSelections.putIfAbsent(
+                                      group.id, () => <String>{});
+                                  if (group.selectionType == 'M') {
+                                    if (current.contains(choice.id)) {
+                                      current.remove(choice.id);
+                                    } else if (current.length <
+                                        group.maxSelect) {
+                                      current.add(choice.id);
+                                    }
+                                  } else {
+                                    current
+                                      ..clear()
+                                      ..add(choice.id);
+                                  }
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ],
 
                   if (_hasServerOptions) ...[
                     for (final group in widget.item.optionGroups) ...[
@@ -288,7 +389,6 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                     ],
                   ],
 
-                  // Note.
                   Text('SPECIAL NOTE',
                       style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 8),
@@ -313,7 +413,6 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
               ),
             ),
 
-            // Footer CTA.
             Padding(
               padding: EdgeInsets.fromLTRB(
                   16, 8, 16, 16 + MediaQuery.of(context).viewPadding.bottom),
@@ -331,40 +430,53 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                   const SizedBox(width: 16),
                   Expanded(
                     child: LiquidPrimaryButton(
-                      label: 'Add to Order',
+                      label: _isWeighed && !canAdd
+                          ? 'Enter Weight'
+                          : 'Add to Order',
                       fullWidth: true,
                       leadingIcon: Icons.add,
-                      onPressed: () {
-                        HapticFeedback.mediumImpact();
-                        final modLabels = <String>[];
-                        final selectedOpts = <SelectedOption>[];
+                      onPressed: !canAdd
+                          ? null
+                          : () {
+                              HapticFeedback.mediumImpact();
+                              final modLabels = <String>[];
+                              final selectedOpts = <SelectedOption>[];
 
-                        for (final option in _selectedServerOptions) {
-                          modLabels.add(option.optionName);
-                          selectedOpts.add(option);
-                        }
+                              for (final option in _selectedServerOptions) {
+                                modLabels.add(option.optionName);
+                                selectedOpts.add(option);
+                              }
+                              final selectedAddonGroups = _selectedAddonGroups;
+                              for (final group in selectedAddonGroups) {
+                                for (final choice in group.choices) {
+                                  modLabels.add(choice.name);
+                                }
+                              }
 
-                        final variationPriceDiff =
-                            (_selectedVariation?.price ?? widget.item.price) -
-                                widget.item.price;
-                        final allMods = [
-                          if (_selectedVariation != null)
-                            _selectedVariation!.name,
-                          ...modLabels,
-                        ];
-                        ref.read(cartProvider.notifier).addCustom(
-                              item: widget.item,
-                              qty: _qty,
-                              mods: allMods,
-                              selectedOptions: selectedOpts,
-                              modsExtra:
-                                  _serverOptionExtra + variationPriceDiff,
-                              itemNote: _note,
-                              variationId: _selectedVariationId,
-                              variationName: _selectedVariation?.name,
-                            );
-                        Navigator.of(context).pop();
-                      },
+                              final variationPriceDiff =
+                                  (_selectedVariation?.price ??
+                                          widget.item.price) -
+                                      widget.item.price;
+                              final allMods = [
+                                if (_selectedVariation != null)
+                                  _selectedVariation!.name,
+                                ...modLabels,
+                              ];
+                              ref.read(cartProvider.notifier).addCustom(
+                                    item: widget.item,
+                                    qty: _qty,
+                                    mods: allMods,
+                                    selectedOptions: selectedOpts,
+                                    selectedAddons: selectedAddonGroups,
+                                    modsExtra:
+                                        _serverOptionExtra + variationPriceDiff,
+                                    itemNote: _note,
+                                    variationId: _selectedVariationId,
+                                    variationName: _selectedVariation?.name,
+                                    weight: _isWeighed ? _weight : null,
+                                  );
+                              Navigator.of(context).pop();
+                            },
                     ),
                   ),
                 ],

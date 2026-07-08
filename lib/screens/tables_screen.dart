@@ -20,7 +20,7 @@ class TablesScreen extends ConsumerStatefulWidget {
 }
 
 class _TablesScreenState extends ConsumerState<TablesScreen> {
-  String? _floor; // null = auto-select first floor
+  String? _floor;
   String _query = '';
   bool _searchOpen = false;
   bool _openingTable = false;
@@ -69,8 +69,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
       ref.read(syncServiceProvider).applyOrderAck(response);
     }
 
-    // KOT history seed: when opening an existing order, ensure historyProvider
-    // has an entry for this table so KotHistorySheet shows correctly.
     if (intent.action == TableOpenAction.openOrder) {
       final activeOrders = ref.read(activeOrdersProvider);
       final tableData = ref
@@ -119,11 +117,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
     final restaurantName = restaurant?.name ?? 'Restaurant';
     final activeOps = ref.watch(activeOperatorsProvider);
 
-    // Derive floors from actual table data.
     final allFloors = tables.map((t) => t.floor).toSet().toList();
     final floors = allFloors.isNotEmpty ? allFloors : ['Ground'];
     final activeFloor = _floor ?? floors.first;
-    // If the current floor is no longer in the list, snap to the first.
+
     if (!floors.contains(activeFloor) && floors.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() => _floor = floors.first);
@@ -216,7 +213,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                   ),
                 ),
               ),
-            // Multi-operator presence.
+
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: _OnlineStrip(operators: activeOps),
@@ -272,7 +269,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                               isLoading: _openingTable &&
                                   _openingTableId == t.serverId,
                               onTap: () => _onTableTap(t),
-                              // Table merge — disabled for waiters (operator-only).
+
                               onLongPress: ((t.state == TableState.mine ||
                                           t.state == TableState.other) &&
                                       !ref.watch(isWaiterProvider))
@@ -416,9 +413,6 @@ class _FloorTabs extends StatelessWidget {
   }
 }
 
-/// Occupied-since badge that keeps its own clock. Only this ~40px widget
-/// rebuilds each minute — previously the entire tables grid rebuilt on a
-/// screen-level Timer, freezing low-end devices once a minute.
 class _OccupancyBadge extends StatefulWidget {
   final DateTime since;
   const _OccupancyBadge({required this.since});

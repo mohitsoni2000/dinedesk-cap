@@ -1,7 +1,4 @@
-// KOT History Sheet — shows past KOT rounds for the current table.
-//
-// Opened from the order builder header. Displays all orders sent
-// from this table during the current session, grouped by time.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -38,11 +35,6 @@ class KotHistorySheet extends ConsumerWidget {
     final tableDisplay = table?.id ?? tableServerId;
     final activeOrderId = table?.activeOrderId;
 
-    // KOT history is for the table's CURRENT open session only — like the
-    // desktop POS, which shows the KOT rounds of the active order. Paid/cancelled
-    // orders belong to closed sessions and must NOT appear (a new order on the
-    // same table starts a fresh history). Match the active order, or any
-    // still-open order for this table; exclude paid/cancelled.
     final tableOrders = allOrders.where((o) {
       if (o.status == OrderStatus.paid || o.status == OrderStatus.cancelled) {
         return false;
@@ -53,7 +45,7 @@ class KotHistorySheet extends ConsumerWidget {
       return false;
     }).toList()
       ..sort((a, b) {
-        // Newest first: compare YYYY-MM-DDTHH:MM lexicographically.
+
         final aKey = '${a.date}T${a.time}';
         final bKey = '${b.date}T${b.time}';
         return bKey.compareTo(aKey);
@@ -155,7 +147,7 @@ class _KotCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Waiters can view KOT history but not edit — only operators edit KOTs.
+
     final canEdit = ref.watch(flagsProvider).kotEdit &&
         _isEditable &&
         !ref.watch(isWaiterProvider);

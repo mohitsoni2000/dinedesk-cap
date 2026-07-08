@@ -1,8 +1,4 @@
-// Connecting Screen — shown after QR scan during the pairing handshake.
-//
-// Cycles through stages: finding restaurant → verifying device → almost there.
-// On completion advances to /auth for PIN verification. The actual handshake
-// (Socket.IO connect + JWT pair) is driven by SocketService.
+
 
 import 'dart:async';
 
@@ -68,13 +64,12 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
     debugPrint('[Connect] Pairing loaded: ${pairing.host}:${pairing.port}');
     final socketService = ref.read(socketServiceProvider);
 
-    // Listen to socket state changes.
     _socketSub = socketService.stateStream.listen((state) {
       if (!mounted) return;
       debugPrint('[Connect] Socket state changed: $state');
       if (state == SocketState.connected) {
         debugPrint('[Connect] ✓ Connected → advancing stages then → /auth');
-        // Advance to stage 2 then navigate to /auth.
+
         setState(() => _stage = 1);
         _stageTimer = Timer(const Duration(milliseconds: 700), () {
           if (!mounted) return;
@@ -92,19 +87,16 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
       }
     });
 
-    // Start connection.
     debugPrint('[Connect] Starting socket connection...');
     socketService.connect(pairing.host, pairing.port, pairing.token);
 
-    // Advance stage 0 after a short delay for visual feedback.
     _stageTimer = Timer(const Duration(milliseconds: 600), () {
       if (mounted && _stage == 0) {
-        // Stage 0 is already visible; socket state listener handles the rest.
+
       }
     });
   }
 
-  // Same stage timing as the real handshake, minus the actual socket connect.
   void _runDemoStages() {
     setState(() => _stage = 1);
     _stageTimer = Timer(const Duration(milliseconds: 700), () {
@@ -145,7 +137,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Pulse + spinner.
+
                     Hero(
                       tag: HeroTags.pairingCore,
                       child: SizedBox(
@@ -201,7 +193,6 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                     ],
                     const SizedBox(height: 20),
 
-                    // Stage list with animated checkmarks.
                     Column(
                       children: [
                         for (int i = 0; i < _stages.length; i++) ...[

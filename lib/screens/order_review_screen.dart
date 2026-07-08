@@ -19,22 +19,22 @@ import '../widgets/stepper_button.dart';
 
 class OrderReviewScreen extends ConsumerStatefulWidget {
   final String tableId;
-  const OrderReviewScreen({super.key, required this.tableId});
+
+  final bool isRoom;
+  const OrderReviewScreen(
+      {super.key, required this.tableId, this.isRoom = false});
   @override
   ConsumerState<OrderReviewScreen> createState() => _OrderReviewScreenState();
 }
 
 enum _OrderType { dineIn, takeaway }
 
-/// Step identifier for per-step error messages in order submission.
 enum _OrderFlowStep { orderCreate, kotSend, billGenerate, payment }
 
-/// Result of a single order submission step — carries step ID and user message.
 final class _OrderFlowStepResult {
-  /// Which step failed, or null if the flow succeeded.
+
   final _OrderFlowStep? failedStep;
 
-  /// Human-readable error message for display.
   final String? errorMessage;
 
   const _OrderFlowStepResult({this.failedStep, this.errorMessage});
@@ -42,6 +42,12 @@ final class _OrderFlowStepResult {
 }
 
 class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
+  String get _builderRoute => widget.isRoom
+      ? '/order/room/${widget.tableId}'
+      : '/order/${widget.tableId}';
+  String get _successRoute => widget.isRoom
+      ? '/order/room/${widget.tableId}/success'
+      : '/order/${widget.tableId}/success';
   final TextEditingController _notes = TextEditingController();
   Map<String, dynamic>? _customer;
   _OrderType _orderType = _OrderType.dineIn;
@@ -56,17 +62,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
   bool _submitted = false;
 
-  // OR2 fix: track the order ID for which KOT was already sent successfully.
-  // On retry after bill:generate failure, skip order:create/update + kot:send.
   String? _kotSentOrderId;
 
-  // Re-entry guard: prevents concurrent _runOrderFlow calls on double-tap.
   bool _running = false;
 
   @override
   void dispose() {
-    // Fix #8: Don't clear notes on back navigation — they should persist
-    // when user goes back to add more items. Only clear on successful submit.
+
     if (_submitted) {
       _notesNotifier?.state = '';
     }
@@ -102,12 +104,31 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               'quantity': l.qty,
               'selected_options':
                   l.selectedOptions.map((o) => o.toJson()).toList(),
+              if (l.selectedAddons.isNotEmpty)
+                'selected_addons':
+                    l.selectedAddons.map((g) => g.toJson()).toList(),
+              if (l.weight != null) 'weight': l.weight,
               'notes': l.itemNote,
             })
         .toList();
   }
 
   String? _activeOrderIdForTable() {
+    if (widget.isRoom) {
+      final room = ref
+          .read(roomsProvider)
+          .where((r) => r.serverId == widget.tableId)
+          .firstOrNull;
+      if (room?.activeOrderId != null && room!.activeOrderId!.isNotEmpty) {
+        return room.activeOrderId;
+      }
+      final active = ref.read(activeOrdersProvider).where((order) {
+        return order['room_id']?.toString() == widget.tableId &&
+            order['status']?.toString() != 'paid' &&
+            order['status']?.toString() != 'cancelled';
+      }).firstOrNull;
+      return active?['id']?.toString();
+    }
     if (_orderType != _OrderType.dineIn) return null;
     final table = ref
         .read(tablesProvider)
@@ -155,16 +176,20 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       });
     }
     return socketService.emitAck('order:create', <String, dynamic>{
-      if (_orderType == _OrderType.dineIn) 'table_id': widget.tableId,
+      if (widget.isRoom)
+        'room_id': widget.tableId
+      else if (_orderType == _OrderType.dineIn)
+        'table_id': widget.tableId,
       'items': items,
       'notes': notes,
-      'order_type': _orderType == _OrderType.dineIn ? 'dine_in' : 'takeaway',
+      'order_type': widget.isRoom
+          ? 'room'
+          : (_orderType == _OrderType.dineIn ? 'dine_in' : 'takeaway'),
       if (_customer != null && _customer!['id'] != null)
         'customer_id': _customer!['id'],
     });
   }
 
-  /// Runs the order submission flow, returning which step failed and why.
   Future<_OrderFlowStepResult> _runOrderFlow({
     required bool generateBill,
     required bool collectPayment,
@@ -203,9 +228,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         );
       }
 
-      // Optimistic UI: mark all cart lines as pending before the KOT emit.
       ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.pending);
-      _kotSentOrderId = orderId; // set before emit so timeout-retry skips KOT
+      _kotSentOrderId = orderId;
       Map<String, dynamic> kotResponse;
       try {
         kotResponse = await socketService.emitAck('kot:send', <String, dynamic>{
@@ -236,15 +260,25 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       ref
           .read(syncServiceProvider)
           .applyOrderAck(kotResponse, includeHistory: true);
-      // Capture the real KOT number from the kot:send ack (the order:create ack
-      // has kot_number = null because no KOT existed yet).
+
       _rememberKotLabel(kotResponse);
-      // Physically print the KOT on the kitchen printer. kot:send only creates
-      // the KOT record on the desktop; the desktop renderer prints on print:kot
-      // (same path as the reprint button). Without this the KOT never printed.
-      // "Only KOT" passes printKot=false to send to the kitchen without paper.
+
       if (printKot) {
-        socketService.emit('print:kot', <String, dynamic>{'order_id': orderId});
+        socketService.emit(
+          'print:kot',
+          <String, dynamic>{'order_id': orderId},
+          onAck: (response) {
+            if (!mounted || response['kind'] != 'error') return;
+            ScaffoldMessenger.of(context)
+              ..clearSnackBars()
+              ..showSnackBar(SnackBar(
+                content: Text(
+                  response['message']?.toString() ??
+                      'KOT print failed — check the kitchen printer',
+                ),
+              ));
+          },
+        );
       }
     }
 
@@ -296,6 +330,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     ref
         .read(syncServiceProvider)
         .applyOrderAck(paymentResponse, includeHistory: true);
+
+    for (final b in (bills is List ? bills : <dynamic>[])) {
+      if (b is Map && b['id'] != null) {
+        socketService.emit('print:bill', <String, dynamic>{'bill_id': b['id']});
+      }
+    }
     return const _OrderFlowStepResult();
   }
 
@@ -335,26 +375,24 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       if (!mounted) return;
       if (ok) {
         _submitted = true;
-        _kotSentOrderId = null; // OR2: reset so next order starts fresh
+        _kotSentOrderId = null;
         ref.read(cartProvider.notifier).clear();
         ref.read(orderNotesProvider.notifier).state = '';
         if (returnToBuilder) {
-          // Only KOT: skip the celebration screen — go back to the order
-          // screen so the captain can keep taking items for this table.
+
           final kotLabel = ref.read(lastKotIdProvider);
           ScaffoldMessenger.of(context)
             ..clearSnackBars()
             ..showSnackBar(SnackBar(
               content: Text('KOT $kotLabel sent to kitchen — not printed'),
             ));
-          context.go('/order/${widget.tableId}');
+          context.go(_builderRoute);
           return;
         }
-        context.go('/order/${widget.tableId}/success');
+        context.go(_successRoute);
         return;
       }
 
-      // Flow failed — capture messenger before await to avoid async gap warning.
       final messenger = ScaffoldMessenger.of(context);
       String msg = 'Order could not be confirmed — please retry';
       try {
@@ -372,7 +410,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               : result.errorMessage!;
         }
       } catch (_) {
-        // ignore — use default message
+
       }
 
       messenger
@@ -383,9 +421,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     }
   }
 
-  /// Only KOT: send the KOT to the kitchen WITHOUT printing it, then return
-  /// to the order screen instead of the success celebration — mirrors the
-  /// desktop "Only KOT" (Direct KOT) button. Gated by flag_direct_kot.
   Future<void> _submitOnlyKot() async {
     final pinOk = await requirePinIfNeeded(context, ref, 'kot');
     if (!pinOk || !mounted) return;
@@ -397,8 +432,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     );
   }
 
-  /// Hold: save the order as a draft (no KOT sent) and reserve the table —
-  /// mirrors the desktop Hold button (order → DRAFT, table → RESERVED).
   Future<void> _holdOrder() async {
     final pinOk = await requirePinIfNeeded(context, ref, 'hold');
     if (!pinOk || !mounted) return;
@@ -467,15 +500,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     }
   }
 
-  /// KOT + Bill: create order → send KOT → generate bill in one action.
   Future<void> _submitKotAndBill() async {
     final pinOk = await requirePinIfNeeded(context, ref, 'kot_and_bill');
     if (!pinOk || !mounted) return;
     await _submitWithFlow(generateBill: true, collectPayment: false);
   }
 
-  /// Quick Settle: create → KOT → bill → pay, all in one.
-  /// Shows a payment mode picker before committing.
   Future<void> _quickSettle() async {
     final pinOk = await requirePinIfNeeded(context, ref, 'quick_settle');
     if (!pinOk || !mounted) return;
@@ -634,17 +664,18 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     );
   }
 
-  /// Undo a recently deleted cart line.
   void _undoDelete(CartLine line) {
     ref.read(cartProvider.notifier).addCustom(
           item: line.item,
           qty: line.qty,
           mods: line.mods,
           selectedOptions: line.selectedOptions,
+          selectedAddons: line.selectedAddons,
           modsExtra: line.modsExtra,
           itemNote: line.itemNote,
           variationId: line.variationId,
           variationName: line.variationName,
+          weight: line.weight,
         );
   }
 
@@ -658,39 +689,58 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     }
     final flags = ref.watch(flagsProvider);
 
-    // Resolve display name for the table from the tables provider.
     final tables = ref.watch(tablesProvider);
-    final tableDisplay = tables
-            .where((t) => t.serverId == widget.tableId)
-            .map((t) => t.id)
-            .firstOrNull ??
-        widget.tableId;
+    final rooms = ref.watch(roomsProvider);
+    final tableDisplay = widget.isRoom
+        ? (rooms
+                .where((r) => r.serverId == widget.tableId)
+                .map((r) => r.id)
+                .firstOrNull ??
+            widget.tableId)
+        : (tables
+                .where((t) => t.serverId == widget.tableId)
+                .map((t) => t.id)
+                .firstOrNull ??
+            widget.tableId);
 
-    // T1 fix: lock order_type toggle once a draft dine-in order exists for
-    // this table — switching types after items are sent would create a
-    // duplicate order on a different order_id.
     final activeOrders = ref.watch(activeOrdersProvider);
-    final hasExistingOrder = tables.any(
-          (t) =>
-              t.serverId == widget.tableId &&
-              t.activeOrderId != null &&
-              t.activeOrderId!.isNotEmpty,
-        ) ||
-        activeOrders.any(
-          (o) =>
-              o['table_id']?.toString() == widget.tableId &&
-              o['status']?.toString() != 'paid' &&
-              o['status']?.toString() != 'cancelled',
-        );
+    final hasExistingOrder = widget.isRoom
+        ? rooms.any(
+              (r) =>
+                  r.serverId == widget.tableId &&
+                  r.activeOrderId != null &&
+                  r.activeOrderId!.isNotEmpty,
+            ) ||
+            activeOrders.any(
+              (o) =>
+                  o['room_id']?.toString() == widget.tableId &&
+                  o['status']?.toString() != 'paid' &&
+                  o['status']?.toString() != 'cancelled',
+            )
+        : tables.any(
+              (t) =>
+                  t.serverId == widget.tableId &&
+                  t.activeOrderId != null &&
+                  t.activeOrderId!.isNotEmpty,
+            ) ||
+            activeOrders.any(
+              (o) =>
+                  o['table_id']?.toString() == widget.tableId &&
+                  o['status']?.toString() != 'paid' &&
+                  o['status']?.toString() != 'cancelled',
+            );
 
-    // D1 fix: if another operator already generated a bill (activeBillCount > 0
-    // from socket broadcast), disable "KOT + Bill" and "Quick Settle" to
-    // prevent duplicate bill generation.
-    final activeBillCount = tables
-            .where((t) => t.serverId == widget.tableId)
-            .map((t) => t.activeBillCount)
-            .firstOrNull ??
-        0;
+    final activeBillCount = widget.isRoom
+        ? (rooms
+                .where((r) => r.serverId == widget.tableId)
+                .map((r) => r.activeBillCount)
+                .firstOrNull ??
+            0)
+        : (tables
+                .where((t) => t.serverId == widget.tableId)
+                .map((t) => t.activeBillCount)
+                .firstOrNull ??
+            0);
     final billAlreadyGenerated = activeBillCount > 0;
 
     return LiquidMeshBackground(
@@ -705,17 +755,19 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                 child: Material(
                   color: Colors.transparent,
                   child: LiquidAppBar(
-                    title: 'Review · $tableDisplay',
+                    title: widget.isRoom
+                        ? 'Review · Room $tableDisplay'
+                        : 'Review · $tableDisplay',
                     leading: IconButton(
                       icon: const Icon(Icons.arrow_back),
                       onPressed: cart.isEmpty
-                          ? null // Task #10 fix: disable back with empty cart
+                          ? null
                           : () => context.pop(),
                     ),
                   ),
                 ),
               ),
-              // Retry banner — shown when any cart line failed to sync.
+
               Consumer(
                 builder: (context, ref, _) {
                   final hasFailure = ref.watch(
@@ -773,11 +825,10 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                               MediaQuery.of(context).viewInsets.bottom,
                         ),
                         children: [
-                          // Guest count removed — managed on Desktop side.
+
                           if (flags.customers) ...[
                             const SizedBox(height: 12),
 
-                            // Customer attach row.
                             AppCard(
                               onTap: () async {
                                 final result = await CustomerSheet.show(
@@ -852,7 +903,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                           ],
                           const SizedBox(height: 12),
 
-                          // Cart lines.
                           AppCard(
                             padding: EdgeInsets.zero,
                             child: Column(
@@ -889,7 +939,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                             .read(cartProvider.notifier)
                                             .removeAt(idx);
                                       }
-                                      // Undo snackbar — 4 second window.
+
                                       ScaffoldMessenger.of(context)
                                         ..clearSnackBars()
                                         ..showSnackBar(
@@ -929,7 +979,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                           ),
                           const SizedBox(height: 12),
 
-                          // KOT preview by kitchen section.
                           Text(
                             'KOT PREVIEW',
                             style: AppTypography.micro.copyWith(
@@ -964,7 +1013,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                           ),
                           const SizedBox(height: 12),
 
-                          // Order notes.
                           Text(
                             'ORDER NOTES',
                             style: AppTypography.micro.copyWith(
@@ -985,7 +1033,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                           ),
                           const SizedBox(height: 12),
 
-                          // Billing breakdown by type.
                           Builder(
                             builder: (_) {
                               double foodTotal = 0;
@@ -1115,9 +1162,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: Column(
                     children: [
-                      // Dine-in / Takeaway toggle.
-                      // Locked once a draft order exists — changing type after
-                      // items are sent would create a duplicate order.
+
+                      if (!widget.isRoom) ...[
                       Row(
                         children: [
                           Expanded(
@@ -1231,8 +1277,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      // Fix #4: Make "Send to Kitchen" visually dominant.
-                      // Full-width with glow, separated from secondary actions.
+                      ],
+
                       Container(
                         decoration: BoxDecoration(
                           borderRadius: const BorderRadius.all(AppRadii.md),
@@ -1251,9 +1297,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                           onPressed: _submit,
                         ),
                       ),
-                      // Hold / Only KOT — non-billing actions, visible to
-                      // waiters too. Only KOT is gated by flag_direct_kot,
-                      // matching the desktop order screen.
+
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -1276,8 +1320,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                           ],
                         ],
                       ),
-                      // Billing/payment actions — hidden for waiters (they can
-                      // only send KOT; billing is operator-only, also server-enforced).
+
                       if (!ref.watch(isWaiterProvider)) ...[
                         const SizedBox(height: 8),
                         Row(
@@ -1286,8 +1329,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                               child: LiquidSecondaryButton(
                                 label: 'KOT + Bill',
                                 leadingIcon: Icons.receipt_long,
-                                // D1: disable if bill already generated from
-                                // another device — prevent duplicate billing.
+
                                 onPressed: billAlreadyGenerated
                                     ? null
                                     : _submitKotAndBill,
@@ -1321,7 +1363,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
             ],
           ),
         ),
-      ), // LiquidMeshBackground
+      ),
     );
   }
 }
@@ -1375,37 +1417,52 @@ class _CartRow extends ConsumerWidget {
               ],
             ),
           ),
-          StepperButton(
-            icon: Icons.remove,
-            glass: true,
-            repeatOnHold: true,
-            haptics: false, // feedback service below covers it
-            onTap: () {
-              ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
-              ref.read(cartProvider.notifier).setQtyAt(index, line.qty - 1);
-            },
-          ),
-          SizedBox(
-            width: 32,
-            child: Center(
+          if (line.item.isWeighed) ...[
+
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: context.palette.ink05,
+                borderRadius: BorderRadius.circular(8),
+              ),
               child: Text(
-                '${line.qty}',
-                style: AppTypography.title.copyWith(
-                  fontWeight: FontWeight.w600,
+                '${line.weight ?? 0} ${line.item.measureUnit ?? ''}',
+                style: AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ] else ...[
+            StepperButton(
+              icon: Icons.remove,
+              glass: true,
+              repeatOnHold: true,
+              haptics: false,
+              onTap: () {
+                ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
+                ref.read(cartProvider.notifier).setQtyAt(index, line.qty - 1);
+              },
+            ),
+            SizedBox(
+              width: 32,
+              child: Center(
+                child: Text(
+                  '${line.qty}',
+                  style: AppTypography.title.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
-          ),
-          StepperButton(
-            icon: Icons.add,
-            glass: true,
-            repeatOnHold: true,
-            haptics: false, // feedback service below covers it
-            onTap: () {
-              ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
-              ref.read(cartProvider.notifier).setQtyAt(index, line.qty + 1);
-            },
-          ),
+            StepperButton(
+              icon: Icons.add,
+              glass: true,
+              repeatOnHold: true,
+              haptics: false,
+              onTap: () {
+                ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
+                ref.read(cartProvider.notifier).setQtyAt(index, line.qty + 1);
+              },
+            ),
+          ],
           const SizedBox(width: 12),
           SizedBox(
             width: 70,
@@ -1415,7 +1472,7 @@ class _CartRow extends ConsumerWidget {
               textAlign: TextAlign.right,
             ),
           ),
-          // Sync status badge — spinner while pending, warning icon if failed.
+
           if (line.syncStatus == SyncStatus.pending) ...[
             const SizedBox(width: 8),
             const SizedBox(
@@ -1495,9 +1552,6 @@ class _KotRow extends StatelessWidget {
   }
 }
 
-/// Task #10 fix: guard wrapping the empty-cart state with a PopScope so the
-/// user cannot accidentally back out of the review screen with nothing ordered.
-/// Both the Android back button and iOS swipe gesture are intercepted.
 class _EmptyCartGuard extends ConsumerWidget {
   final VoidCallback onBackToMenu;
   const _EmptyCartGuard({required this.onBackToMenu});
@@ -1564,8 +1618,7 @@ class _EmptyCartGuard extends ConsumerWidget {
                               : m.name == line.name)
                           .firstOrNull;
                       if (menuItem != null) {
-                        // Reconstruct the price delta so the repeated line bills
-                        // at its original (variation-inclusive) unit price.
+
                         final modsExtra = line.price - menuItem.price;
                         ref.read(cartProvider.notifier).addCustom(
                               item: menuItem,

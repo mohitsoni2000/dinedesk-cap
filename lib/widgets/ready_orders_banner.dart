@@ -1,5 +1,4 @@
-// Ready-to-serve banner — overlays the app shell when the kitchen bumps a
-// round for an order this device owns. Tap to dismiss the most recent ticket.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,9 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../theme/tokens.dart';
 
-/// Wraps the app shell and shows a top banner whenever there are
-/// ready-to-serve tickets for this device. Tap the banner to dismiss
-/// the most recent ticket.
 class ReadyOrdersBanner extends ConsumerWidget {
   final Widget child;
   const ReadyOrdersBanner({super.key, required this.child});

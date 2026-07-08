@@ -1,5 +1,5 @@
-/// Centralised registry of every Hero tag used in the app.
-/// Every shared element gets a typed factory here.
+
+
 class HeroTags {
   const HeroTags._();
 

@@ -1,7 +1,4 @@
-// PIN Re-verification Sheet — confirms the operator's identity before
-// sensitive actions like KOT send, cancel order, bill generation, payment.
-//
-// Returns true if PIN verified, false if cancelled.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,9 +11,7 @@ import '../widgets/pin_pad.dart';
 import 'sheet_handle.dart';
 
 class PinVerifySheet {
-  /// Opens the PIN verification bottom sheet.
-  /// [action] describes what action requires verification (displayed to user).
-  /// Returns true if PIN verified, false if dismissed/cancelled.
+
   static Future<bool?> show(BuildContext context, {required String action}) {
     return showModalBottomSheet<bool>(
       context: context,
@@ -111,7 +106,6 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
           ),
           const SizedBox(height: 16),
 
-          // Lock icon.
           Container(
             width: 48,
             height: 48,
@@ -133,7 +127,6 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
           ),
           const SizedBox(height: 20),
 
-          // PIN dots.
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(4, (i) {
@@ -167,7 +160,6 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
 
           const SizedBox(height: 16),
 
-          // Numeric pad — compact sizing (rowVerticalPadding: 5, keyVerticalPadding: 16).
           PinPad(
             onKeyPress: _press,
             onSubmit: _verify,

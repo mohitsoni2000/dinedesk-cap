@@ -1,7 +1,4 @@
-// Order Builder — menu + cart for a specific table.
-//
-// Tap row → ItemDetailSheet for qty + grouped modifiers + note.
-// Save & exit keeps the cart in memory until the session ends.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,7 +24,10 @@ import '../widgets/table_shift_sheet.dart';
 
 class OrderBuilderScreen extends ConsumerStatefulWidget {
   final String tableId;
-  const OrderBuilderScreen({super.key, required this.tableId});
+
+  final bool isRoom;
+  const OrderBuilderScreen(
+      {super.key, required this.tableId, this.isRoom = false});
   @override
   ConsumerState<OrderBuilderScreen> createState() => _OrderBuilderScreenState();
 }
@@ -60,6 +60,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   }
 
   Future<void> _joinPresence() async {
+
+    if (widget.isRoom) return;
     final socketService = ref.read(socketServiceProvider);
     try {
       final ack = await socketService.emitAck(
@@ -77,24 +79,51 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
         }
       }
     } catch (_) {
-      // Presence is non-critical — silently ignore if server is unreachable.
+
     }
   }
 
+  int _activeBillCountForSlot() {
+    if (widget.isRoom) {
+      final room = ref
+          .read(roomsProvider)
+          .where((r) => r.serverId == widget.tableId)
+          .firstOrNull;
+      return room?.activeBillCount ?? 0;
+    }
+    final table = ref
+        .read(tablesProvider)
+        .where((t) => t.serverId == widget.tableId)
+        .firstOrNull;
+    return table?.activeBillCount ?? 0;
+  }
+
+  String? _activeOrderIdForSlot() {
+    if (widget.isRoom) {
+      final room = ref
+          .read(roomsProvider)
+          .where((r) => r.serverId == widget.tableId)
+          .firstOrNull;
+      return room?.activeOrderId;
+    }
+    final table = ref
+        .read(tablesProvider)
+        .where((t) => t.serverId == widget.tableId)
+        .firstOrNull;
+    return table?.activeOrderId;
+  }
 
   void _maybeAutoShowPayment() {
-    final tables = ref.read(tablesProvider);
-    final table =
-        tables.where((t) => t.serverId == widget.tableId).firstOrNull;
-    if (table == null || table.activeBillCount <= 0) return;
+    if (_activeBillCountForSlot() <= 0) return;
 
     final activeOrders = ref.read(activeOrdersProvider);
-    final activeOrderId = table.activeOrderId;
+    final activeOrderId = _activeOrderIdForSlot();
+    final slotKey = widget.isRoom ? 'room_id' : 'table_id';
     final orderMap = activeOrders.where((o) {
       final id = o['id']?.toString();
-      final tableId = o['table_id']?.toString();
+      final slotId = o[slotKey]?.toString();
       return (activeOrderId != null && id == activeOrderId) ||
-          tableId == widget.tableId;
+          slotId == widget.tableId;
     }).firstOrNull;
     if (orderMap == null) return;
 
@@ -112,19 +141,18 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   }
 
   ServerOrder? _runningOrder(List<RestaurantTable> tables) {
-    final table = tables.where((t) => t.serverId == widget.tableId).firstOrNull;
-    final activeOrderId = table?.activeOrderId;
+    final activeOrderId = _activeOrderIdForSlot();
+    final slotKey = widget.isRoom ? 'room_id' : 'table_id';
     final raw = ref.read(activeOrdersProvider).where((order) {
       final id = order['id']?.toString();
-      final tableId = order['table_id']?.toString();
+      final slotId = order[slotKey]?.toString();
       return (activeOrderId != null && id == activeOrderId) ||
-          tableId == widget.tableId;
+          slotId == widget.tableId;
     }).firstOrNull;
     if (raw == null) return null;
     return ServerOrder.fromMap(Map<String, dynamic>.from(raw));
   }
 
-  /// Converts the current cart into a server-side draft order, then navigates away.
   Future<void> _saveAndExitDraft() async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
@@ -140,6 +168,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
               'quantity': l.qty,
               'selected_options':
                   l.selectedOptions.map((o) => o.toJson()).toList(),
+              if (l.selectedAddons.isNotEmpty)
+                'selected_addons':
+                    l.selectedAddons.map((g) => g.toJson()).toList(),
+              if (l.weight != null) 'weight': l.weight,
               'notes': l.itemNote,
             })
         .toList();
@@ -147,10 +179,13 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     final response = await socketService.emitAck(
       'order:create',
       <String, dynamic>{
-        'table_id': widget.tableId,
+        if (widget.isRoom)
+          'room_id': widget.tableId
+        else
+          'table_id': widget.tableId,
         'items': items,
         'notes': notes,
-        'order_type': 'dine_in',
+        'order_type': widget.isRoom ? 'room' : 'dine_in',
       },
     );
 
@@ -194,6 +229,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
       context.go('/tables');
     }
   }
+
+  String get _reviewRoute => widget.isRoom
+      ? '/order/room/${widget.tableId}/review'
+      : '/order/${widget.tableId}/review';
 
   Future<bool> _confirmDiscard() async {
     final cart = ref.read(cartProvider);
@@ -289,12 +328,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     controller.dispose();
   }
 
-  /// Adds an item to the cart, opening the configuration sheet first when the
-  /// item needs a variation (when enabled) or required-option choice. This is the
-  /// single routing point for every quick-add entry point (rows, fast-add, recents).
   void _addOrConfigure(BuildContext context, MenuItem item, {bool track = true}) {
     if (_readOnly) {
-      // Silent dead taps read as "app is broken" — say why nothing happens.
+
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
         ..showSnackBar(SnackBar(
@@ -395,14 +431,20 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
     final allSections = menu.map((m) => m.section).toSet().toList();
 
-    // Resolve display name from serverId.
     final tables = ref.watch(tablesProvider);
+    final rooms = ref.watch(roomsProvider);
     final runningOrder = _runningOrder(tables);
-    final tableDisplay = tables
-            .where((t) => t.serverId == widget.tableId)
-            .map((t) => t.id)
-            .firstOrNull ??
-        widget.tableId;
+    final tableDisplay = widget.isRoom
+        ? (rooms
+                .where((r) => r.serverId == widget.tableId)
+                .map((r) => r.id)
+                .firstOrNull ??
+            widget.tableId)
+        : (tables
+                .where((t) => t.serverId == widget.tableId)
+                .map((t) => t.id)
+                .firstOrNull ??
+            widget.tableId);
 
     return PopScope(
       canPop: false,
@@ -445,7 +487,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     ),
                   ),
                 LiquidAppBar(
-                  title: 'Table $tableDisplay',
+                  title: widget.isRoom ? 'Room $tableDisplay' : 'Table $tableDisplay',
                   leading: IconButton(
                     icon: const Icon(Icons.arrow_back),
                     onPressed: () async {
@@ -490,8 +532,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       onPressed: () =>
                           KotHistorySheet.show(context, widget.tableId),
                     ),
-                    // More actions — collapsed into menu to reduce header clutter.
-                    // Shift, Link, and Packages are less frequent, so they belong in a menu.
+
                     Builder(builder: (_) {
                       final tables = ref.watch(tablesProvider);
                       final table = tables
@@ -505,7 +546,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       final isLinked = linkGroups.values
                           .any((ids) => ids.contains(widget.tableId));
                       final flags = ref.watch(flagsProvider);
-                      // Waiters cannot shift/link/merge tables — hide those items.
+
                       final isWaiter = ref.watch(isWaiterProvider);
                       if (!isTableAction && !flags.packages) {
                         return const SizedBox.shrink();
@@ -639,7 +680,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       ),
                     ),
                   ),
-                // Section chips — min 48px touch target per accessibility guidelines.
+
                   SizedBox(
                     height: 48,
                     child: ListView(
@@ -673,7 +714,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       ],
                     ),
                   ),
-                // Fast-add bar — pinned + auto trending items from server.
+
                 if (runningOrder != null && runningOrder.itemCount > 0)
                   _RunningOrderCard(
                     order: runningOrder,
@@ -690,7 +731,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                 Builder(builder: (context) {
                   final pinned = ref.watch(fastAddPinnedProvider);
                   final auto = ref.watch(fastAddAutoProvider);
-                  // Merge: pinned first, then auto (exclude duplicates)
+
                   final pinnedIds = pinned.map((m) => m.id).toSet();
                   final merged = [
                     ...pinned,
@@ -721,10 +762,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-                                  // Pinned chip: ember tint that keeps the
-                                  // inherited text color readable in BOTH
-                                  // themes (terra50 + cream text was
-                                  // invisible in dark).
+
                                   color: pinnedIds.contains(item.id)
                                       ? (context.palette.isDark
                                           ? AppColors.terra600
@@ -782,7 +820,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     ),
                   );
                 }),
-                // Recent items bar — last 8 items for quick re-add.
+
                 Builder(builder: (context) {
                   final recent = ref.watch(recentItemsProvider);
                   if (recent.isEmpty) return const SizedBox.shrink();
@@ -848,7 +886,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                   child: Builder(builder: (_) {
                     final isLoading = ref.watch(menuLoadingProvider);
                     if (isLoading) {
-                      // Fix #2: Show skeleton loader while menu is loading.
+
                       return ListView(
                         padding: const EdgeInsets.all(AppSpacing.lg),
                         children: [
@@ -954,7 +992,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                         );
                   }),
                 ),
-                // Auto-KOT hint — shows when cart reaches threshold.
+
                 Consumer(builder: (context, ref, _) {
                   final flags = ref.watch(flagsProvider);
                   final (itemCount, isEmpty) = ref.watch(
@@ -992,12 +1030,11 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             ),
                           ),
                           GestureDetector(
-                            // Goes straight to review — the actual send still
-                            // happens there, so no confirmation dialog needed.
+
                             onTap: _readOnly
                                 ? null
                                 : () => context.push(
-                                    '/order/${widget.tableId}/review'),
+                                    _reviewRoute),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 4),
@@ -1050,8 +1087,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 child: GestureDetector(
                                   onTap: _readOnly
                                       ? null
-                                      : () => context
-                                          .push('/order/${widget.tableId}/review'),
+                                      : () => context.push(_reviewRoute),
                                   child: Container(
                                     padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
@@ -1103,13 +1139,15 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
             ),
           ),
         ),
-      ), // LiquidMeshBackground
+      ),
     );
   }
 
   @override
   void dispose() {
-    _socketSvc?.emit('table:presence:leave', {'table_id': widget.tableId});
+    if (!widget.isRoom) {
+      _socketSvc?.emit('table:presence:leave', {'table_id': widget.tableId});
+    }
     super.dispose();
   }
 }
@@ -1304,7 +1342,7 @@ class _RunningOrderCard extends StatelessWidget {
                 ),
               ],
             ],
-            // Print Summary hidden for waiters (operator-only).
+
             if (cartIsEmpty && !isWaiter) ...[
               const SizedBox(height: 10),
               const Divider(height: 1, thickness: 1, color: AppColors.terra200),
@@ -1352,10 +1390,10 @@ class _RunningOrderCard extends StatelessWidget {
   }
 }
 
-// Returns true if the item requires user configuration before being added
-// to the cart — i.e. it has variations (when enabled) or required option groups.
 bool _itemNeedsSheet(MenuItem item, {bool variationsEnabled = true}) {
   if (variationsEnabled && item.variations.isNotEmpty) return true;
+  if (item.isWeighed) return true;
+  if (item.addonGroups.isNotEmpty) return true;
   return item.optionGroups.any((g) => g.isRequired || g.minSelect > 0);
 }
 
@@ -1424,7 +1462,7 @@ class _SwipeToAddWrapperState extends State<_SwipeToAddWrapper>
       widget.onSwipeConfirm?.call();
       widget.onAdd();
     }
-    // Spring-back animation
+
     _springStartOffset = _dragOffset;
     _ctrl.forward(from: 0);
   }
@@ -1436,7 +1474,7 @@ class _SwipeToAddWrapperState extends State<_SwipeToAddWrapper>
       onHorizontalDragEnd: widget.readOnly ? null : _onDragEnd,
       child: Stack(
         children: [
-          // Green background revealed as card slides right
+
           if (_dragOffset > 0)
             Positioned.fill(
               child: Container(
@@ -1483,7 +1521,7 @@ class _ItemRow extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Row(
             children: [
-              // Veg/non-veg indicator (FSSAI dot).
+
               _VegMark(isVeg: item.isVeg),
               const SizedBox(width: 10),
               Expanded(
@@ -1549,7 +1587,6 @@ class _ItemRow extends StatelessWidget {
   }
 }
 
-/// FSSAI veg/non-veg marker — green square dot for veg, red for non-veg.
 class _VegMark extends StatelessWidget {
   final bool isVeg;
   const _VegMark({required this.isVeg});
@@ -1574,7 +1611,6 @@ class _VegMark extends StatelessWidget {
   }
 }
 
-/// Shimmer skeleton row for menu loading state.
 class _SkeletonRow extends StatefulWidget {
   @override
   State<_SkeletonRow> createState() => _SkeletonRowState();

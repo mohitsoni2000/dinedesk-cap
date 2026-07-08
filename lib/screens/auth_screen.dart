@@ -1,8 +1,4 @@
-// Auth Screen — PIN-only entry after successful pairing.
-//
-// The operator is already identified by the JWT token from the QR scan.
-// No username field is needed — PIN verifies the person holding the device.
-// Server responds with operator profile + initial sync data.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,7 +26,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
   String? _error;
   bool _submitting = false;
 
-  // Shake animation controller for wrong PIN
   late final AnimationController _shakeCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 480),
@@ -86,8 +81,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     });
   }
 
-  // No admin desktop paired — accept any PIN and load fixture data instead
-  // of verifying over the socket. See qr_scan_screen.dart's "Try Demo".
   Future<void> _submitDemo() async {
     await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
@@ -208,7 +201,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                   hasScrollBody: false,
                   child: Column(
                     children: [
-                      // Paired restaurant badge — top strip
+
                       LiquidGlassSurface(
                         borderRadius: const BorderRadius.all(AppRadii.md),
                         padding: const EdgeInsets.symmetric(
@@ -257,7 +250,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
 
                       const Spacer(),
 
-                      // Logo + headline block
                       Hero(
                         tag: HeroTags.appLogo,
                         child: Container(
@@ -280,7 +272,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                       ),
                       const SizedBox(height: 18),
 
-                      // Headline: big Cormorant serif — feels editorial & premium
                       Text(
                         'Welcome back',
                         style: TextStyle(
@@ -303,7 +294,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
 
                       const SizedBox(height: 32),
 
-                      // PIN dots — shakes on error
                       AnimatedBuilder(
                         animation: _shakeAnim,
                         builder: (_, child) => Transform.translate(
@@ -362,7 +352,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
 
                       const SizedBox(height: 8),
 
-                      // Error text or spacer label
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 200),
                         child: _error != null
@@ -392,7 +381,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
 
                       const Spacer(),
 
-                      // PIN Pad
                       PinPad(
                         onKeyPress: _press,
                         onSubmit: _maybeSubmit,
@@ -400,7 +388,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                       ),
                       const SizedBox(height: 16),
 
-                      // Footer actions
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [

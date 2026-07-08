@@ -1,8 +1,4 @@
-// Payment Sheet — bottom sheet for collecting payment after bill generation.
-//
-// Supports: multi-bill orders (Food/Liquor/Bev), split payment,
-// cash tendered with change calculation, complimentary/company
-// reason capture, credit mode customer guard, PIN verification.
+
 
 import 'dart:async';
 
@@ -17,7 +13,6 @@ import 'liquid_chrome.dart';
 import 'liquid_glass_surface.dart';
 import 'sheet_handle.dart';
 
-/// A single bill from the server's bill:generate response.
 class BillInfo {
   final String id;
   final String billNumber;
@@ -84,8 +79,7 @@ IconData _modeIcon(PaymentMode m) => switch (m) {
     };
 
 class PaymentSheet {
-  /// Shows the payment sheet. Supports multiple bills.
-  /// Returns `true` if all bills are fully paid.
+
   static Future<bool?> show(
     BuildContext context, {
     required List<BillInfo> bills,
@@ -128,14 +122,12 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
   final _authorizedByController = TextEditingController();
   bool _submitting = false;
 
-  // Split payment state.
   final List<_PaymentEntry> _splits = [];
   final _splitAmountController = TextEditingController();
 
   double get _paidSoFar => _splits.fold(0.0, (s, e) => s + e.amount);
   double get _remaining => widget.grandTotal - _paidSoFar;
 
-  // Cash tendered.
   double get _tendered {
     final t = double.tryParse(_tenderedController.text.trim());
     return t ?? 0;
@@ -158,7 +150,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       PaymentMode.upi,
       PaymentMode.card,
     ];
-    // Comp, credit, company always visible — server validates permissions.
+
     modes.addAll([
       PaymentMode.complimentary,
       PaymentMode.credit,
@@ -179,7 +171,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       return;
     }
 
-    // PIN verification before payment.
     final pinOk = await requirePinIfNeeded(context, ref, 'payment');
     if (!pinOk || !mounted) return;
 
@@ -188,7 +179,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
     final flags = ref.read(flagsProvider);
     final socketService = ref.read(socketServiceProvider);
 
-    // Build payment entries.
     List<_PaymentEntry> entries;
     if (flags.splitPayment && _splits.isNotEmpty) {
       entries = _splits;
@@ -208,7 +198,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       ];
     }
 
-    // Pay each bill sequentially (proportional distribution).
     int billsPaid = 0;
 
     for (final bill in widget.bills) {
@@ -229,8 +218,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
         billRemaining -= payAmount;
       }
 
-      // P1 fix: floating-point rounding can leave a tiny gap (< ₹1).
-      // Absorb it into the last payment entry so the bill is fully paid.
       if (billPayments.isNotEmpty && billRemaining > 0.001 && billRemaining < 1.0) {
         final last = billPayments.last;
         final lastAmt = (last['amount'] as num).toDouble();
@@ -342,7 +329,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                 child: const SheetHandle()),
             const SizedBox(height: 16),
 
-            // Header with multi-bill breakdown.
             Row(
               children: [
                 const Icon(Icons.payment_outlined,
@@ -355,7 +341,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
               ],
             ),
 
-            // Multi-bill breakdown (if more than 1 bill).
             if (widget.bills.length > 1) ...[
               const SizedBox(height: 8),
               for (final bill in widget.bills)
@@ -389,7 +374,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
             ],
             const SizedBox(height: 16),
 
-            // Payment mode grid.
             Text('PAYMENT MODE',
                 style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
             const SizedBox(height: 10),
@@ -408,7 +392,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
             ),
             const SizedBox(height: 12),
 
-            // Credit mode blocked warning.
             if (_isCreditBlocked)
               Container(
                 padding: const EdgeInsets.all(10),
@@ -427,7 +410,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                 ]),
               ),
 
-            // Reference field (UPI/Card).
             if (_needsRef) ...[
               const SizedBox(height: 12),
               Text('REFERENCE NUMBER',
@@ -441,7 +423,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
               ),
             ],
 
-            // Reason fields (Comp/Company).
             if (_needsReason) ...[
               const SizedBox(height: 12),
               Text('REASON',
@@ -456,7 +437,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                   hint: 'Authorized by (name)'),
             ],
 
-            // Cash tendered + change (only for cash full payment).
             if (_selectedMode == PaymentMode.cash &&
                 !(isSplitMode && _splits.isNotEmpty)) ...[
               const SizedBox(height: 12),
@@ -494,7 +474,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                   ]),
                 ),
               ],
-              // Quick denomination buttons.
+
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -522,7 +502,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
               ),
             ],
 
-            // Split payment section.
             if (isSplitMode) ...[
               const SizedBox(height: 12),
               Divider(color: context.palette.ink10),
@@ -569,7 +548,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                     ]),
                   ),
                 ),
-              // Round-off: settle tiny remaining (< ₹1).
+
               if (_remaining > 0 && _remaining < 1.0 && _splits.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),

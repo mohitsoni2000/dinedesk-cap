@@ -1,13 +1,5 @@
-// Routing — go_router (Navigator 2.0).
-//
-// Boot flow:   /splash → /scan → /connecting → /auth → /tables
-// On disconnect:  banner overlay → /disconnected (after 2-min grace)
-// On force-kick:  /force-disconnected
-//
-// Tab section (/tables, /history, /profile, /settings) is a
-// StatefulShellRoute.indexedStack: each tab keeps its own Navigator + state
-// (scroll position, search text, etc.) and switching is INSTANT with no slide —
-// the iOS tab-bar behaviour. Push/modal routes still use liquidPage.
+
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +10,7 @@ import 'screens/qr_scan_screen.dart';
 import 'screens/connecting_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/tables_screen.dart';
+import 'screens/rooms_screen.dart';
 import 'screens/order_builder_screen.dart';
 import 'screens/order_review_screen.dart';
 import 'screens/order_success_screen.dart';
@@ -35,7 +28,7 @@ import 'widgets/ready_orders_banner.dart';
 import 'widgets/root_shell.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  // Only watch auth state — connection changes handled by ConnectionBanner widget.
+
   final authed = ref.watch(isAuthenticatedProvider);
   final forceDisconnected = ref.watch(forceDisconnectedProvider);
 
@@ -79,7 +72,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           pageBuilder: (_, s) =>
               liquidPage(key: s.pageKey, child: const AuthScreen())),
 
-      // ── Tab section: indexed stack keeps each tab alive & switches instantly ──
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) => LiquidMeshBackground(
           child: ConnectionBanner(
@@ -92,6 +84,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(routes: [
             GoRoute(
                 path: '/tables', builder: (_, __) => const TablesScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/rooms', builder: (_, __) => const RoomsScreen()),
           ]),
           StatefulShellBranch(routes: [
             GoRoute(
@@ -109,7 +104,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
 
-      // ── Push / modal routes over the shell ──
       GoRoute(
           path: '/order/:tableId',
           pageBuilder: (_, s) => liquidPage(
@@ -132,6 +126,31 @@ final routerProvider = Provider<GoRouter>((ref) {
               child: ConnectionBanner(
                   child: OrderSuccessScreen(
                       tableId: s.pathParameters['tableId']!)))),
+      GoRoute(
+          path: '/order/room/:roomId',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              child: ConnectionBanner(
+                  child: OrderBuilderScreen(
+                      tableId: s.pathParameters['roomId']!,
+                      isRoom: true)))),
+      GoRoute(
+          path: '/order/room/:roomId/review',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              child: ConnectionBanner(
+                  child: OrderReviewScreen(
+                      tableId: s.pathParameters['roomId']!,
+                      isRoom: true)))),
+      GoRoute(
+          path: '/order/room/:roomId/success',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              fromBottom: true,
+              child: ConnectionBanner(
+                  child: OrderSuccessScreen(
+                      tableId: s.pathParameters['roomId']!,
+                      isRoom: true)))),
       GoRoute(
           path: '/history/:orderId',
           pageBuilder: (_, s) => liquidPage(

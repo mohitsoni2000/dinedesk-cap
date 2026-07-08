@@ -1,8 +1,4 @@
-// Order Submitting Overlay — shown during the in-flight order.create round trip.
-//
-// The caller provides a [Completer<bool>] which is resolved when the server
-// acknowledges (true) or rejects (false) the order. A safety timeout of 15s
-// prevents the overlay from staying on-screen indefinitely.
+
 
 import 'dart:async';
 
@@ -11,21 +7,18 @@ import '../theme/tokens.dart';
 import 'liquid_glass_surface.dart';
 
 class OrderSubmittingOverlay {
-  /// Shows the overlay and returns when the [completer] resolves or the safety
-  /// timeout (15 s) fires. Returns `true` on success, `false` on error/timeout.
+
   static Future<bool> show(
     BuildContext context, {
     required Completer<bool> completer,
   }) async {
-    // Capture navigator before any async gap to satisfy use_build_context_synchronously.
+
     final nav = Navigator.of(context, rootNavigator: true);
 
-    // Safety timeout — auto-dismiss after 15 s so the UI never locks up.
     final timer = Timer(const Duration(seconds: 15), () {
       if (!completer.isCompleted) completer.complete(false);
     });
 
-    // Wait for the external signal in parallel with showing the dialog.
     final dialogFuture = showGeneralDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -36,7 +29,6 @@ class OrderSubmittingOverlay {
           FadeTransition(opacity: anim, child: child),
     );
 
-    // When the completer resolves, pop the dialog.
     completer.future.then((ok) {
       timer.cancel();
       if (nav.canPop()) nav.pop(ok);

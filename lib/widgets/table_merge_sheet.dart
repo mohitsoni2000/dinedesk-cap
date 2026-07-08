@@ -1,5 +1,4 @@
-// Merge / split sheet — combines two adjacent tables into one or splits a
-// merged table back to individuals.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -39,7 +38,7 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
     final palette = context.palette;
     final selectedFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     final tables = ref.watch(tablesProvider);
-    // Merge candidates: occupied tables (mine or other) — not free.
+
     final candidates = tables
         .where((t) =>
             t.serverId != widget.origin.serverId &&

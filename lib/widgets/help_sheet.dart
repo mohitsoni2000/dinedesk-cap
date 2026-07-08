@@ -1,6 +1,4 @@
-// Help Sheet — slide-up modal accessible from QR scan and login screens.
-//
-// Walks through pairing steps, troubleshooting, support contact.
+
 
 import 'package:flutter/material.dart';
 

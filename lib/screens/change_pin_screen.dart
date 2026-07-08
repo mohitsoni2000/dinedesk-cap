@@ -1,4 +1,4 @@
-// PIN change flow — current PIN, new PIN, confirm. Uses NumericKeyboard.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,7 +24,7 @@ class ChangePinScreen extends ConsumerStatefulWidget {
 class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
   _Step _step = _Step.current;
   String _input = '';
-  String _currentPin = ''; // saved from step 1 for the change request
+  String _currentPin = '';
   String _newPin = '';
   String? _error;
   bool _done = false;
@@ -47,13 +47,13 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
       case _Step.current:
         final socketService = ref.read(socketServiceProvider);
         setState(() => _verifying = true);
-        // Use operator:verify — the only PIN check event the server supports.
+
         socketService.emit('operator:verify', {'pin': _input},
             onAck: (response) {
           if (!mounted) return;
           if (response['kind'] == 'success') {
             setState(() {
-              _currentPin = _input; // save for the change request
+              _currentPin = _input;
               _step = _Step.fresh;
               _input = '';
               _verifying = false;
@@ -83,10 +83,10 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
             _step = _Step.fresh;
           });
         } else {
-          // Persist the new PIN on the server.
+
           setState(() => _verifying = true);
           final socketService = ref.read(socketServiceProvider);
-          // Server may not have operator:change_pin yet — emit and handle gracefully.
+
           socketService.emit('operator:change_pin', {
             'current_pin': _currentPin,
             'new_pin': _newPin,

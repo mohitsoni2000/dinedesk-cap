@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
-/// A single layer in a [DepthParallaxStack].
-/// `depth` determines tilt response. 0.0 = anchored, 1.0 = maximum movement.
 @immutable
 class DepthLayer {
   const DepthLayer({
@@ -16,9 +14,6 @@ class DepthLayer {
   final double depth;
 }
 
-/// Parallax stack driven by device gyroscope.
-/// Each [DepthLayer] translates by (tilt * depth * maxOffset).
-/// Includes smoothing, decay-to-centre, and reduced-motion accessibility.
 class DepthParallaxStack extends StatefulWidget {
   const DepthParallaxStack({
     required this.layers,
@@ -47,8 +42,7 @@ class _DepthParallaxStackState extends State<DepthParallaxStack>
   double _currentY = 0;
 
   static const double _decay = 0.92;
-  // Below this, treat the effect as settled and stop the ticker entirely so
-  // the frame pipeline can go idle (battery + jank on low-end devices).
+
   static const double _settleEpsilon = 0.0005;
 
   @override
@@ -60,8 +54,7 @@ class _DepthParallaxStackState extends State<DepthParallaxStack>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // With reduced motion the build renders a static stack — don't burn the
-    // gyroscope (50-100Hz) for an effect that is never shown.
+
     final reducedMotion = MediaQuery.of(context).disableAnimations;
     if (reducedMotion) {
       _sub?.cancel();
@@ -77,7 +70,7 @@ class _DepthParallaxStackState extends State<DepthParallaxStack>
     _targetY += e.x * 0.05;
     _targetX = _targetX.clamp(-1.0, 1.0);
     _targetY = _targetY.clamp(-1.0, 1.0);
-    // Wake the ticker only while there is motion to animate.
+
     if (!_ticker.isActive &&
         (_targetX.abs() > _settleEpsilon || _targetY.abs() > _settleEpsilon)) {
       _ticker.start();
@@ -100,7 +93,7 @@ class _DepthParallaxStackState extends State<DepthParallaxStack>
       return;
     }
     final next = Offset(_currentX, _currentY);
-    // ValueNotifier skips notification when value hasn't changed (settled state).
+
     if (_offset.value != next) _offset.value = next;
   }
 

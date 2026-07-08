@@ -6,12 +6,6 @@ import 'package:flutter/services.dart';
 import '../theme/tokens.dart';
 import 'liquid_glass_surface.dart';
 
-/// Shared quantity stepper button (+ / −).
-///
-/// One implementation for every qty control in the app — previously the
-/// review screen and item-detail sheet each had their own copy with
-/// different hit areas. Guarantees the AppTouchTargets.control (48px)
-/// touch target regardless of visual size.
 class StepperButton extends StatefulWidget {
   const StepperButton({
     super.key,
@@ -25,13 +19,10 @@ class StepperButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
 
-  /// Keep firing while held: 500ms threshold, then every 150ms.
   final bool repeatOnHold;
 
-  /// Frosted-glass look (cart rows) vs solid white circle (sheets).
   final bool glass;
 
-  /// Disable when the caller already fires its own feedback per tap.
   final bool haptics;
 
   @override
@@ -73,7 +64,7 @@ class _StepperButtonState extends State<StepperButton> {
             borderRadius: BorderRadius.circular(14),
             blur: 14,
             thickness: 6,
-            skipBlur: true, // tiny surface — backdrop blur is pure GPU cost
+            skipBlur: true,
             child: SizedBox(
               width: 30,
               height: 30,

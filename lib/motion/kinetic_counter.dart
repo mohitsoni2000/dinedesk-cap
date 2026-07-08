@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-// ignore: unused_import
+
 import 'springs.dart';
 import '../theme/tokens.dart';
 
@@ -14,11 +14,11 @@ class CounterAxisMap {
     required this.italicSlant,
   });
 
-  final double weight; // 100–900
-  final double soft; // 0–100
-  final double wonk; // 0–1
-  final double opticalSize; // 9–144
-  final double italicSlant; // 0–1
+  final double weight;
+  final double soft;
+  final double wonk;
+  final double opticalSize;
+  final double italicSlant;
 
   static CounterAxisMap lerp(CounterAxisMap a, CounterAxisMap b, double t) {
     return CounterAxisMap(
@@ -65,8 +65,6 @@ class CounterAxisMap {
   }
 }
 
-/// Kinetic ₹ counter. Digits roll + font axes morph with amount magnitude.
-/// Indian locale grouping: 12,34,567.
 class KineticRupeeCounter extends StatelessWidget {
   const KineticRupeeCounter({
     required this.amount,
@@ -79,8 +77,6 @@ class KineticRupeeCounter extends StatelessWidget {
   final double amount;
   final double fontSize;
 
-  /// Digit color. Defaults to the brightness-resolved counter-paper tone
-  /// (a const constructor default can't read the theme, hence nullable).
   final Color? color;
   final Duration duration;
 
@@ -115,7 +111,6 @@ class KineticRupeeCounter extends StatelessWidget {
   }
 }
 
-/// Kinetic KOT number — bold italic reveal on first mount.
 class KineticKotNumber extends StatefulWidget {
   const KineticKotNumber({
     required this.number,

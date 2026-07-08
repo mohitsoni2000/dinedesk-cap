@@ -1,29 +1,22 @@
 import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 
-/// Spring tokens used throughout Restro Operator.
 class RestroSprings {
   const RestroSprings._();
 
-  /// Gentle settle, no overshoot. Use for: card entrance, drawer open, list reveal.
   static const SpringDescription soft =
       SpringDescription(mass: 1.0, stiffness: 280.0, damping: 24.0);
 
-  /// Tight, minimal overshoot (~3%). Use for: button press, PIN dot fill, cart badge.
   static const SpringDescription snappy =
       SpringDescription(mass: 1.0, stiffness: 400.0, damping: 22.0);
 
-  /// ~15% overshoot, two-bounce settle. Use for: success states, celebrations.
   static const SpringDescription bouncy =
       SpringDescription(mass: 1.0, stiffness: 350.0, damping: 16.0);
 
-  /// Heavy, slow — for large surfaces. Use for: sheet open, modal entrance.
   static const SpringDescription heavy =
       SpringDescription(mass: 2.5, stiffness: 180.0, damping: 22.0);
 }
 
-/// Drop-in replacement for [TweenAnimationBuilder] driven by a [SpringSimulation].
-/// Interruption-safe: if [to] changes mid-flight, re-targets from current position+velocity.
 class SpringBuilder extends StatefulWidget {
   const SpringBuilder({
     required this.to,
@@ -65,7 +58,6 @@ class _SpringBuilderState extends State<SpringBuilder>
     _controller.animateWith(_simulation);
   }
 
-  // No setState — values are read directly from controller in AnimatedBuilder.
   void _onTick() {
     _currentValue = _controller.value;
     _currentVelocity = _controller.velocity;
@@ -97,7 +89,6 @@ class _SpringBuilderState extends State<SpringBuilder>
   }
 }
 
-/// Convenience extension for chaining springs onto common widget transforms.
 extension SpringTransitions on Widget {
   Widget springScale({
     required double to,

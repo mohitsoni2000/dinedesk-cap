@@ -10,8 +10,6 @@ import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/liquid_chrome.dart';
 
-// ─── Local settings state ────────────────────────────────────────────────────
-
 class _SettingsState {
   final bool soundEnabled;
   final bool hapticEnabled;
@@ -62,8 +60,6 @@ final _settingsProvider =
   (ref) => _SettingsNotifier(ref),
 );
 
-// ─── Screen ──────────────────────────────────────────────────────────────────
-
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -90,7 +86,7 @@ class SettingsScreen extends ConsumerWidget {
                   AppCard(
                     padding: EdgeInsets.zero,
                     child: Column(children: [
-                      // Notifications.
+
                       ListTile(
                         leading: Icon(Icons.notifications_outlined,
                             color: context.palette.ink70),
@@ -112,7 +108,7 @@ class SettingsScreen extends ConsumerWidget {
                             _showNotificationsSheet(context, ref, settings),
                       ),
                       Divider(height: 1, color: context.palette.ink10),
-                      // Appearance.
+
                       ListTile(
                         leading: Icon(Icons.palette_outlined,
                             color: context.palette.ink70),
@@ -130,7 +126,7 @@ class SettingsScreen extends ConsumerWidget {
                         onTap: () => _showAppearanceSheet(context),
                       ),
                       Divider(height: 1, color: context.palette.ink10),
-                      // About.
+
                       ListTile(
                         leading: Icon(Icons.info_outline,
                             color: context.palette.ink70),
@@ -216,8 +212,6 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  // ─── Notifications sheet ──────────────────────────────────────────────────
-
   void _showNotificationsSheet(
       BuildContext context, WidgetRef ref, _SettingsState settings) {
     showModalBottomSheet(
@@ -229,8 +223,6 @@ class SettingsScreen extends ConsumerWidget {
       builder: (ctx) => _NotificationsSheet(settings: settings, ref: ref),
     );
   }
-
-  // ─── Appearance sheet ────────────────────────────────────────────────────
 
   void _showAppearanceSheet(BuildContext context) {
     showModalBottomSheet(
@@ -318,8 +310,6 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  // ─── About sheet ─────────────────────────────────────────────────────────
-
   void _showAboutSheet(BuildContext context, String restaurantName) {
     showModalBottomSheet(
       context: context,
@@ -393,8 +383,6 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 }
-
-// ─── Notifications bottom sheet widget ───────────────────────────────────────
 
 class _NotificationsSheet extends StatefulWidget {
   final _SettingsState settings;
@@ -481,8 +469,6 @@ class _NotificationsSheetState extends State<_NotificationsSheet> {
     );
   }
 }
-
-// ─── Helper widget ────────────────────────────────────────────────────────────
 
 class _AboutRow extends StatelessWidget {
   final IconData icon;

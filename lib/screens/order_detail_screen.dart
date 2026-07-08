@@ -1,12 +1,4 @@
-// Order Detail Screen — read-only view of a sent order.
-//
-// Reached from /history/:orderId. Operator can:
-//   • Reprint KOT  (re-emits the print event to the admin desktop)
-//   • Cancel order (only allowed for orders < 5 minutes old;
-//                    disabled for already-cancelled orders)
-//   • Generate Bill (after KOT sent, not cancelled)
-//   • Apply Discount (before billing)
-//   • Collect Payment (after bill generated)
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,6 +16,7 @@ import '../widgets/liquid_mesh_background.dart';
 import '../widgets/payment_sheet.dart';
 import '../widgets/discount_sheet.dart';
 import '../widgets/coupon_sheet.dart';
+import '../widgets/offers_sheet.dart';
 
 class OrderDetailScreen extends ConsumerStatefulWidget {
   final String orderId;
@@ -36,9 +29,8 @@ class OrderDetailScreen extends ConsumerStatefulWidget {
 class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   String get orderId => widget.orderId;
 
-  // Bill state tracked locally in this screen instance.
-  List<BillInfo> _bills = []; // multi-bill support
-  String? _billId; // first bill ID (backward compat)
+  List<BillInfo> _bills = [];
+  String? _billId;
   String? _billNumber;
   double? _billTotal;
   double? _billGst;
@@ -49,7 +41,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   bool _paymentCollected = false;
   bool _generatingBill = false;
 
-  /// Check if this order has a linked customer by looking at activeOrdersProvider raw data.
   bool _hasLinkedCustomer(HistoryOrder order) {
     final activeOrders = ref.read(activeOrdersProvider);
     for (final raw in activeOrders) {
@@ -82,22 +73,54 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   void _reprintKot(BuildContext context) {
     HapticFeedback.mediumImpact();
     final socketService = ref.read(socketServiceProvider);
-    // Use the server UUID from the order, not the display KOT number.
+
     final order = ref
         .read(historyProvider)
         .where((o) => o.id == orderId || o.orderId == orderId)
         .firstOrNull;
-    socketService.emit('print:kot', {'order_id': order?.orderId ?? orderId});
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(const SnackBar(
-        content: Text('Reprint queued · admin desktop'),
-        duration: Duration(seconds: 2),
-      ));
+    bool acked = false;
+    socketService.emit(
+      'print:kot',
+      {'order_id': order?.orderId ?? orderId},
+      onAck: (response) {
+        acked = true;
+        if (!mounted) return;
+        if (response['kind'] == 'error') {
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(SnackBar(
+              backgroundColor: AppColors.danger,
+              content: Text(
+                response['message']?.toString() ?? 'Reprint failed',
+                style: AppTypography.bodyMd.copyWith(color: Colors.white),
+              ),
+            ));
+        } else {
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(const SnackBar(
+              content: Text('Reprint queued · admin desktop'),
+              duration: Duration(seconds: 2),
+            ));
+        }
+      },
+    );
+    scheduleSocketTimeout(
+      duration: const Duration(seconds: 10),
+      isMounted: () => mounted,
+      isStillWaiting: () => !acked,
+      onTimeout: () {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(const SnackBar(
+            content: Text('Reprint request timed out — please retry'),
+          ));
+      },
+    );
   }
 
   Future<void> _confirmCancel(BuildContext context, HistoryOrder order) async {
-    // PIN guard — verify operator before cancelling.
+
     final pinOk = await requirePinIfNeeded(context, ref, 'cancel_order');
     if (!pinOk || !context.mounted) return;
 
@@ -126,7 +149,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
     HapticFeedback.heavyImpact();
 
-    // Emit cancel to server so the kitchen is notified.
     final socketService = ref.read(socketServiceProvider);
     socketService.emit('order:cancel', {
       'order_id': order.orderId,
@@ -145,7 +167,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           ));
         return;
       }
-      // Only update local state on success.
+
       final list = ref.read(historyProvider);
       ref.read(historyProvider.notifier).state = [
         for (final o in list)
@@ -215,7 +237,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             (billsRaw is List && billsRaw.isNotEmpty && billsRaw[0] is Map)
                 ? Map<String, dynamic>.from(billsRaw[0])
                 : null;
-        // Compute grand total across all bills.
+
         final grandTotal =
             parsedBills.fold(0.0, (double s, BillInfo b) => s + b.totalAmount);
 
@@ -247,7 +269,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       }
     });
 
-    // Timeout fallback
     scheduleSocketTimeout(
       duration: const Duration(seconds: 10),
       isMounted: () => mounted,
@@ -274,7 +295,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 totalAmount: _billTotal ?? 0,
                 billType: 'food')
           ];
-    // Look up current order for customer check.
+
     final currentOrder =
         ref.read(historyProvider).where((o) => o.id == orderId).firstOrNull;
     final paid = await PaymentSheet.show(
@@ -301,7 +322,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       orderTotal: order.total,
     );
     if (result != null && mounted) {
-      // Parse discount from the order in the response.
+
       final orderMap = result['order'];
       if (orderMap is Map) {
         setState(() {
@@ -318,7 +339,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               result['label']?.toString();
         });
       }
-      // If bill was already generated, regenerate to reflect new discount.
+
       if (_billGenerated) {
         _billGenerated = false;
         _bills = [];
@@ -365,6 +386,31 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     }
   }
 
+  Future<void> _openOffers(HistoryOrder order) async {
+    final result = await OffersSheet.show(context, orderId: order.orderId);
+    if (result != null && mounted) {
+      setState(() {
+        _discountAmount = (result['discount_amount'] as num?)?.toDouble();
+        _discountLabel = result['discount_label']?.toString() ?? 'Offer';
+      });
+      if (_billGenerated) {
+        _billGenerated = false;
+        _bills = [];
+        _billId = null;
+        _generateBill(order);
+      }
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(
+          backgroundColor: AppColors.success,
+          content: Text(
+            'Offer applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
+            style: AppTypography.bodyMd.copyWith(color: Colors.white),
+          ),
+        ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final orders = ref.watch(historyProvider);
@@ -373,8 +419,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         .where((o) => o.id == orderId || o.orderId == orderId)
         .firstOrNull;
 
-    // Auto-detect when another operator generates a bill for this order via
-    // the bill:generated broadcast, which lands in activeOrdersProvider.
     ref.listen(activeOrdersProvider, (_, activeOrders) {
       if (_billGenerated || order == null) return;
       for (final raw in activeOrders) {
@@ -415,7 +459,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       );
     }
 
-    // Group lines by kitchen.
     final byKitchen = <String, List<HistoryOrderLine>>{};
     for (final l in order.lines) {
       byKitchen.putIfAbsent(l.kitchenSection, () => []).add(l);
@@ -447,7 +490,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 child: ListView(
                   padding: const EdgeInsets.all(AppSpacing.lg),
                   children: [
-                    // Header — table, time, total.
+
                     AppCard(
                       child: Row(
                         children: [
@@ -496,7 +539,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Bill details card (shown after bill is generated)
                     if (_billGenerated) ...[
                       AppCard(
                         background: AppColors.success.withValues(alpha: 0.06),
@@ -623,7 +665,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                       const SizedBox(height: 16),
                     ],
 
-                    // Lines, grouped by kitchen.
                     for (final entry in byKitchen.entries) ...[
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -739,13 +780,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 ),
               ),
 
-              // Footer action buttons
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: Column(
                   children: [
-                    // Reprint / Cancel — only for active (sent/modified) orders.
-                    // Paid or cancelled orders are view-only: no actions shown.
+
                     if (isSent) ...[
                     Row(
                       children: [
@@ -757,7 +796,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                 isCancelled ? null : () => _reprintKot(context),
                           ),
                         ),
-                        // Cancel Order — hidden for waiters (operator-only).
+
                         if (!ref.watch(isWaiterProvider)) ...[
                           const SizedBox(width: 8),
                           Expanded(
@@ -776,41 +815,56 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     ),
                     ],
 
-                    // Row 2: Discount + Generate Bill / Collect Payment.
-                    // Hidden for waiters — billing/payment/discount is operator-only.
                     if (isSent &&
                         !_paymentCollected &&
                         !ref.watch(isWaiterProvider)) ...[
+
+                      if (!_billGenerated &&
+                          (flags.discounts || flags.offers)) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            if (flags.discounts) ...[
+                              Expanded(
+                                child: LiquidSecondaryButton(
+                                  label: _discountAmount != null
+                                      ? 'Discount Applied'
+                                      : 'Discount',
+                                  leadingIcon: Icons.discount_outlined,
+                                  onPressed: _discountAmount != null
+                                      ? null
+                                      : () => _openDiscount(order),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: LiquidSecondaryButton(
+                                  label: 'Coupon',
+                                  leadingIcon:
+                                      Icons.confirmation_number_outlined,
+                                  onPressed: _discountAmount != null
+                                      ? null
+                                      : () => _openCoupon(order),
+                                ),
+                              ),
+                            ],
+                            if (flags.offers) ...[
+                              if (flags.discounts) const SizedBox(width: 8),
+                              Expanded(
+                                child: LiquidSecondaryButton(
+                                  label: 'Offers',
+                                  leadingIcon: Icons.local_activity_outlined,
+                                  onPressed: () => _openOffers(order),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          // Discount button (before bill is generated)
-                          if (!_billGenerated && flags.discounts) ...[
-                            Expanded(
-                              child: LiquidSecondaryButton(
-                                label: _discountAmount != null
-                                    ? 'Discount Applied'
-                                    : 'Discount',
-                                leadingIcon: Icons.discount_outlined,
-                                onPressed: _discountAmount != null
-                                    ? null
-                                    : () => _openDiscount(order),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: LiquidSecondaryButton(
-                                label: 'Coupon',
-                                leadingIcon: Icons.confirmation_number_outlined,
-                                onPressed: _discountAmount != null
-                                    ? null
-                                    : () => _openCoupon(order),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                          ],
 
-                          // Generate Bill or Collect Payment
                           Expanded(
                             child: _billGenerated
                                 ? LiquidPrimaryButton(
@@ -836,7 +890,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                       ),
                     ],
 
-                    // Print Summary — hidden for waiters (operator-only).
                     if (_billGenerated &&
                         (_bills.isNotEmpty || _billId != null) &&
                         !ref.watch(isWaiterProvider)) ...[
@@ -877,7 +930,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             ],
           ),
         ),
-      ), // LiquidMeshBackground
+      ),
     );
   }
 }

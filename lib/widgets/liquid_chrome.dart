@@ -1,11 +1,10 @@
-// Reusable liquid-glass chrome: app bar, bottom nav, pills, FAB.
+
 
 import 'package:flutter/material.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import 'liquid_glass_surface.dart';
 
-/// Top app bar with liquid glass background.
 class LiquidAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final Widget? leading;
@@ -45,7 +44,6 @@ class LiquidAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-/// Floating bottom navigation bar with sliding pill indicator.
 class LiquidBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -60,8 +58,7 @@ class LiquidBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    // Active pill: ink reads as near-black in light mode but vanishes against
-    // dark surfaces — use terra as the active fill in dark (white fg works on both).
+
     final activeFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -127,7 +124,6 @@ class LiquidNavItem {
   const LiquidNavItem({required this.icon, required this.label});
 }
 
-/// Small status pill (connection, badges, status chips).
 class LiquidPill extends StatelessWidget {
   final Widget child;
   final Color? tint;
@@ -140,7 +136,7 @@ class LiquidPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       blur: 18,
       thickness: 8,
-      skipBlur: true, // chip-sized — real backdrop blur is GPU cost for nothing
+      skipBlur: true,
       tint: tint,
       child: DefaultTextStyle.merge(
         style: AppTypography.caption.copyWith(fontWeight: FontWeight.w600),
@@ -150,7 +146,6 @@ class LiquidPill extends StatelessWidget {
   }
 }
 
-/// Primary CTA — solid terra with rim-light treatment and press feedback.
 class LiquidPrimaryButton extends StatefulWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -228,7 +223,6 @@ class _LiquidPrimaryButtonState extends State<LiquidPrimaryButton> {
   }
 }
 
-/// Secondary / ghost — translucent liquid glass with press feedback.
 class LiquidSecondaryButton extends StatefulWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -267,7 +261,7 @@ class _LiquidSecondaryButtonState extends State<LiquidSecondaryButton> {
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           blur: 16,
           thickness: 8,
-          skipBlur: true, // button-sized — skip the saveLayer-forcing blur
+          skipBlur: true,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

@@ -1,12 +1,4 @@
-// Pressable — the iOS "press-down" micro-interaction.
-//
-// Wraps any tappable surface so it springs to [pressedScale] on touch-down and
-// settles back on release, using the project's snappy spring. Visual only (no
-// haptic) so it can live inside Stateless shared widgets without coupling to
-// Riverpod or double-firing haptics that some keypads already emit.
-//
-// Used internally by AppCard, QuickActionTile and LiquidGlassSurface so every
-// tappable element in the app gets the same tactile feel for free.
+
 
 import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';

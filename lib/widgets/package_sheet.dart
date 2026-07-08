@@ -1,7 +1,4 @@
-// Package Sheet — browse and add combo packages to the cart.
-//
-// Packages are synced from the Desktop server in the initial sync
-// and stored in rawMenuDataProvider under the 'packages' key.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -128,7 +125,6 @@ class PackageSheet extends ConsumerWidget {
       final qty = (item['quantity'] is int) ? item['quantity'] as int : 1;
       if (itemId == null) continue;
 
-      // Find matching menu item.
       MenuItem? menuItem;
       for (final m in menu) {
         if (m.id == itemId) {

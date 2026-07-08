@@ -1,7 +1,4 @@
-// Table Shift Sheet — move an active order from one table to a free table.
-//
-// Requires PIN guard (reuses operatorPinKot flag).
-// Emits 'table:shift' socket event on confirmation.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

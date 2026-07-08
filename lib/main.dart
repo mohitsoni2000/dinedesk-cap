@@ -27,7 +27,7 @@ class RestroApp extends ConsumerWidget {
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
         themeMode: ref.watch(themeModeProvider),
-        // iOS rubber-band overscroll on every scrollable, every platform.
+
         scrollBehavior: const AppScrollBehavior(),
         routerConfig: ref.watch(routerProvider),
       );

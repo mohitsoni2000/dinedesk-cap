@@ -1,8 +1,4 @@
-// Shared PIN numeric pad widget used by auth_screen and pin_verify_sheet.
-//
-// Keys: 1-9, 0, del, submit.
-// Row vertical padding is configurable via [rowVerticalPadding] to allow
-// the auth screen (more space) and verify sheet (compact) to tune sizing.
+
 
 import 'package:flutter/material.dart';
 
@@ -14,10 +10,8 @@ class PinPad extends StatelessWidget {
   final VoidCallback? onSubmit;
   final VoidCallback onDelete;
 
-  /// Vertical padding applied to each key row. Defaults to 6 (auth screen).
   final double rowVerticalPadding;
 
-  /// Vertical padding inside each key cell. Defaults to 18 (auth screen).
   final double keyVerticalPadding;
 
   const PinPad({

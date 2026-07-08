@@ -88,8 +88,7 @@ class SendKotButtonController {
   void confirmSuccess() {
     _resetTimer?.cancel();
     _state?._setPhase(const RiveButtonSuccess());
-    // Hold the "Sent" state long enough to register in a busy restaurant —
-    // a 2.5s flash was read as "did it send?" and invited double-taps.
+
     _resetTimer = Timer(const Duration(milliseconds: 4500), () {
       _state?._setPhase(const RiveButtonIdle());
       _resetTimer = null;

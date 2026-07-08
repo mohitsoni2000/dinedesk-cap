@@ -1,7 +1,4 @@
-// Customer Count Sheet — slides up when a free table is tapped.
-//
-// Operator picks how many guests are seating, then proceeds to the order
-// builder. Returns the chosen count or null if cancelled.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -81,7 +78,6 @@ class _CustomerCountSheetState extends State<_CustomerCountSheet> {
               style: AppTypography.caption),
           const SizedBox(height: 24),
 
-          // Big stepper.
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -118,7 +114,6 @@ class _CustomerCountSheetState extends State<_CustomerCountSheet> {
             ),
           const SizedBox(height: 16),
 
-          // Quick-pick chips.
           Wrap(
             spacing: 8,
             runSpacing: 8,

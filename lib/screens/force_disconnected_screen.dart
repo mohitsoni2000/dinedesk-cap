@@ -1,8 +1,4 @@
-// Force-disconnected blocking overlay.
-//
-// Shown when the admin desktop kicks this device — happens when a third
-// device is added and the current one is bumped, or when a manager signs the
-// operator out manually. The session token is invalid; user must re-pair.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

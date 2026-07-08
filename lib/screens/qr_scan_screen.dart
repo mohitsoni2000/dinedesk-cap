@@ -1,14 +1,4 @@
-// QR Scan Screen — entry point for device pairing.
-//
-// Operator scans the rotating pairing QR shown on the admin desktop. On a
-// successful scan we navigate to /connecting which simulates the WS handshake
-// and then continues to /auth for username + PIN.
-//
-// Design: "maître d' podium" — full-bleed camera under a cinematic vignette,
-// the scan frame biased upward with breathing ember brackets, and a glass
-// console anchored at the bottom carrying the serif welcome + the two
-// first-class actions (Help / Try Demo). Status (align hint, errors,
-// success) appears in a pill directly under the frame, where the eyes are.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,7 +32,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
   bool _processing = false;
   _ScanError? _error;
 
-  // Entrance animation
   late final AnimationController _entranceCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 700),
@@ -112,8 +101,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
     });
   }
 
-  // Lets anyone without a paired admin desktop (most notably App Store /
-  // Play Store reviewers) explore the app on fixture data — see demo_data.dart.
   void _demoScan() {
     if (_processing) return;
     setState(() {
@@ -150,7 +137,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
       backgroundColor: AppColors.ink,
       body: Stack(
         children: [
-          // Camera fills the screen
+
           Positioned.fill(
             child: MobileScanner(
               controller: _controller,
@@ -159,7 +146,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
             ),
           ),
 
-          // Cinematic vignette — heavier at the bottom to seat the console.
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
@@ -178,7 +164,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
             ),
           ),
 
-          // Animated scan target overlay: cutout, brackets, sweep, status pill.
           Positioned.fill(
             child: AnimatedBuilder(
               animation: _entranceCtrl,
@@ -193,8 +178,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
             ),
           ),
 
-          // Faint ember tint behind the chrome. Static — the drift would be
-          // invisible at 12% opacity, so don't pay for its controller.
           const IgnorePointer(
             child: Opacity(
               opacity: 0.12,
@@ -203,7 +186,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
             ),
           ),
 
-          // Top chrome — logo + torch only; the title lives in the console.
           SafeArea(
             child: AnimatedBuilder(
               animation: _entranceCtrl,
@@ -255,7 +237,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
             ),
           ),
 
-          // Processing overlay — shown while navigating
           if (_processing)
             Positioned.fill(
               child: IgnorePointer(
@@ -289,7 +270,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
               ),
             ),
 
-          // Bottom console — the "maître d' podium": serif welcome + actions.
           Positioned(
             left: 0,
             right: 0,
@@ -369,9 +349,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Camera-permission fallback
-
 class _CameraUnavailable extends StatelessWidget {
   const _CameraUnavailable();
 
@@ -402,9 +379,6 @@ class _CameraUnavailable extends StatelessWidget {
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Animated scan target: cutout, breathing ember brackets, sweep, status pill
-
 class _ScanTargetOverlay extends StatefulWidget {
   final bool processing;
   final String? errorLabel;
@@ -433,7 +407,7 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (_, c) {
       final size = c.maxWidth * 0.66;
-      // Frame sits above centre so the bottom console gets breathing room.
+
       final centerY = c.maxHeight * 0.40;
       final centerX = c.maxWidth / 2;
       final frameTop = centerY - size / 2;
@@ -451,7 +425,7 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
 
       return Stack(
         children: [
-          // Dark overlay with cutout
+
           ColorFiltered(
             colorFilter: ColorFilter.mode(
               Colors.black.withValues(alpha: 0.60),
@@ -480,7 +454,6 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
             ),
           ),
 
-          // Scan line — animated ember sweep
           if (!widget.processing && !_hasError)
             AnimatedBuilder(
               animation: _scanCtrl,
@@ -518,7 +491,6 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
               },
             ),
 
-          // Success glow when processing
           if (widget.processing)
             Align(
               alignment: frameCenter,
@@ -542,8 +514,6 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
               ),
             ),
 
-          // Corner brackets — breathing scale rides the same controller as
-          // the sweep, so the frame feels alive at zero extra cost.
           Align(
             alignment: frameCenter,
             child: AnimatedBuilder(
@@ -564,7 +534,6 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
             ),
           ),
 
-          // Status pill under the frame — hint / error / success, in place.
           Positioned(
             left: 0,
             right: 0,
@@ -609,7 +578,7 @@ class _BracketPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Soft ember glow pass under the crisp stroke.
+
     final glow = Paint()
       ..color = color.withValues(alpha: 0.45)
       ..style = PaintingStyle.stroke
@@ -623,29 +592,26 @@ class _BracketPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     const arm = 28.0;
-    const r = 6.0; // inner corner radius
+    const r = 6.0;
     final w = size.width, h = size.height;
 
     void drawBrackets(Paint p) {
-      // top-left
+
       canvas.drawLine(Offset(0, arm), Offset(0, r), p);
       canvas.drawArc(
           Rect.fromLTWH(0, 0, r * 2, r * 2), 3.14159, -1.5708, false, p);
       canvas.drawLine(Offset(r, 0), Offset(arm, 0), p);
 
-      // top-right
       canvas.drawLine(Offset(w - arm, 0), Offset(w - r, 0), p);
       canvas.drawArc(
           Rect.fromLTWH(w - r * 2, 0, r * 2, r * 2), 4.7124, -1.5708, false, p);
       canvas.drawLine(Offset(w, r), Offset(w, arm), p);
 
-      // bottom-left
       canvas.drawLine(Offset(0, h - arm), Offset(0, h - r), p);
       canvas.drawArc(
           Rect.fromLTWH(0, h - r * 2, r * 2, r * 2), 1.5708, 1.5708, false, p);
       canvas.drawLine(Offset(r, h), Offset(arm, h), p);
 
-      // bottom-right
       canvas.drawLine(Offset(w - arm, h), Offset(w - r, h), p);
       canvas.drawArc(Rect.fromLTWH(w - r * 2, h - r * 2, r * 2, r * 2), 0,
           1.5708, false, p);
@@ -659,9 +625,6 @@ class _BracketPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _BracketPainter old) => old.color != color;
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Chrome pieces
 
 class _GlassIcon extends StatelessWidget {
   final IconData icon;
@@ -702,7 +665,6 @@ class _GlassIcon extends StatelessWidget {
   }
 }
 
-/// Console action — ghost by default, ember-tinted when [emphasis] is set.
 class _ConsoleButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -721,7 +683,7 @@ class _ConsoleButton extends StatelessWidget {
       borderRadius: const BorderRadius.all(AppRadii.md),
       blur: 20,
       thickness: 10,
-      skipBlur: true, // sits on the console's own blur — don't stack passes
+      skipBlur: true,
       tint: emphasis
           ? AppColors.terra400.withValues(alpha: 0.30)
           : Colors.white.withValues(alpha: 0.06),

@@ -1,28 +1,21 @@
-// Riverpod providers for DineDesk Cap (waiter) app.
-//
-// Indian restaurant POS context — ₹ currency, Indian dishes, kitchen-section
-// based KOT routing, veg/non-veg flags. Data is populated via Socket.IO sync
-// from the Desktop Electron POS (see sync_service.dart).
+
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/feature_flags.dart';
 import '../services/socket_service.dart';
 import '../services/sync_service.dart';
 
-// ─────────────── Models ───────────────
-
 enum TableState { mine, other, dirty, reserved, free }
 
 enum OrderStatus { sent, modified, cancelled, paid }
 
-// Tracks optimistic sync state for cart lines during KOT send.
 enum SyncStatus { synced, pending, failed }
 
 class RestaurantTable {
   static const _absent = Object();
 
-  final String id; // Display name — "T-04", "F1", etc.
-  final String serverId; // Server UUID — used in all socket emits
+  final String id;
+  final String serverId;
   final int seats;
   final String floor;
   final TableState state;
@@ -96,6 +89,74 @@ class RestaurantTable {
       );
 }
 
+enum RoomState { mine, occupied, free }
+
+class RestaurantRoom {
+  static const _absent = Object();
+
+  final String id;
+  final String serverId;
+  final int capacity;
+  final RoomState state;
+  final String? guestName;
+  final String? activeOrderId;
+  final int activeBillCount;
+  final int orderItemCount;
+  final double? bill;
+  const RestaurantRoom({
+    required this.id,
+    required this.serverId,
+    required this.capacity,
+    required this.state,
+    this.guestName,
+    this.activeOrderId,
+    this.activeBillCount = 0,
+    this.orderItemCount = 0,
+    this.bill,
+  });
+
+  RestaurantRoom copyWith({
+    String? id,
+    String? serverId,
+    int? capacity,
+    RoomState? state,
+    Object? guestName = _absent,
+    Object? activeOrderId = _absent,
+    int? activeBillCount,
+    int? orderItemCount,
+    Object? bill = _absent,
+  }) =>
+      RestaurantRoom(
+        id: id ?? this.id,
+        serverId: serverId ?? this.serverId,
+        capacity: capacity ?? this.capacity,
+        state: state ?? this.state,
+        guestName:
+            guestName == _absent ? this.guestName : guestName as String?,
+        activeOrderId: activeOrderId == _absent
+            ? this.activeOrderId
+            : activeOrderId as String?,
+        activeBillCount: activeBillCount ?? this.activeBillCount,
+        orderItemCount: orderItemCount ?? this.orderItemCount,
+        bill: bill == _absent ? this.bill : bill as double?,
+      );
+}
+
+class Offer {
+  final String id;
+  final String name;
+  final String ruleType;
+  final String? couponCode;
+  final bool autoApply;
+  const Offer({
+    required this.id,
+    required this.name,
+    required this.ruleType,
+    this.couponCode,
+    this.autoApply = false,
+  });
+}
+
 class MenuOption {
   final String id;
   final String groupId;
@@ -128,6 +189,74 @@ class MenuOptionGroup {
   });
 }
 
+class AddonChoice {
+  final String id;
+  final String groupId;
+  final String name;
+  final double price;
+  const AddonChoice({
+    required this.id,
+    required this.groupId,
+    required this.name,
+    required this.price,
+  });
+}
+
+class AddonGroup {
+  final String id;
+  final String itemId;
+  final String name;
+  final String selectionType;
+  final int minSelect;
+  final int maxSelect;
+  final List<AddonChoice> choices;
+  const AddonGroup({
+    required this.id,
+    required this.itemId,
+    required this.name,
+    this.selectionType = 'S',
+    this.minSelect = 0,
+    this.maxSelect = 1,
+    this.choices = const [],
+  });
+}
+
+class SelectedAddonChoice {
+  final String choiceId;
+  final String name;
+  final double price;
+  const SelectedAddonChoice({
+    required this.choiceId,
+    required this.name,
+    required this.price,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'choice_id': choiceId,
+        'name': name,
+        'price': price,
+      };
+}
+
+class SelectedAddonGroup {
+  final String groupId;
+  final String groupName;
+  final List<SelectedAddonChoice> choices;
+  const SelectedAddonGroup({
+    required this.groupId,
+    required this.groupName,
+    required this.choices,
+  });
+
+  double get extraPrice => choices.fold(0.0, (s, c) => s + c.price);
+
+  Map<String, dynamic> toJson() => {
+        'group_id': groupId,
+        'group_name': groupName,
+        'choices': choices.map((c) => c.toJson()).toList(),
+      };
+}
+
 class MenuItemVariation {
   final String id;
   final String name;
@@ -143,15 +272,18 @@ class MenuItemVariation {
 class MenuItem {
   final String id;
   final String name;
-  final String section; // menu category — "Tandoor", "Chinese", etc.
+  final String section;
   final String
-      kitchenSection; // routing — "tandoor", "curry", "south", "chinese", "beverages"
-  final double price; // in ₹
+      kitchenSection;
+  final double price;
   final bool isVeg;
   final bool available;
   final String? note;
+
+  final String? measureUnit;
   final List<MenuOptionGroup> optionGroups;
   final List<MenuItemVariation> variations;
+  final List<AddonGroup> addonGroups;
   const MenuItem({
     required this.id,
     required this.name,
@@ -161,16 +293,20 @@ class MenuItem {
     required this.isVeg,
     this.available = true,
     this.note,
+    this.measureUnit,
     this.optionGroups = const [],
     this.variations = const [],
+    this.addonGroups = const [],
   });
+
+  bool get isWeighed => measureUnit != null && measureUnit!.isNotEmpty;
 }
 
 class Modifier {
-  final String id; // option_id from server
-  final String groupId; // option_group_id from server
+  final String id;
+  final String groupId;
   final String label;
-  final double extraPrice; // in ₹, can be 0
+  final double extraPrice;
   const Modifier(
       {required this.id,
       this.groupId = '',
@@ -178,18 +314,16 @@ class Modifier {
       this.extraPrice = 0});
 }
 
-/// Structured option selection matching Desktop's `SelectedOptionPayload`.
 class SelectedOption {
-  final String groupName; // option group display name
-  final String optionName; // option display name
-  final double priceModifier; // price delta (can be negative)
+  final String groupName;
+  final String optionName;
+  final double priceModifier;
   const SelectedOption({
     required this.groupName,
     required this.optionName,
     this.priceModifier = 0,
   });
 
-  /// Serialize to match Desktop's `SelectedOptionPayload` exactly.
   Map<String, dynamic> toJson() => {
         'group_name': groupName,
         'option_name': optionName,
@@ -200,15 +334,18 @@ class SelectedOption {
 class CartLine {
   static int _nextUid = 0;
 
-  final int uid; // stable identity for Dismissible keys
+  final int uid;
   final MenuItem item;
   final int qty;
-  final List<String> mods; // display labels for UI
-  final List<SelectedOption> selectedOptions; // structured for server payload
-  final double modsExtra; // total extra cost from selected mods
+  final List<String> mods;
+  final List<SelectedOption> selectedOptions;
+  final List<SelectedAddonGroup> selectedAddons;
+  final double modsExtra;
   final String itemNote;
-  final String? variationId; // selected item variation id (nullable)
-  final String? variationName; // selected item variation name (nullable)
+  final String? variationId;
+  final String? variationName;
+
+  final double? weight;
   final SyncStatus syncStatus;
 
   CartLine({
@@ -216,10 +353,12 @@ class CartLine {
     required this.qty,
     this.mods = const [],
     this.selectedOptions = const [],
+    this.selectedAddons = const [],
     this.modsExtra = 0,
     this.itemNote = '',
     this.variationId,
     this.variationName,
+    this.weight,
     this.syncStatus = SyncStatus.synced,
   }) : uid = _nextUid++;
 
@@ -229,23 +368,32 @@ class CartLine {
     required this.qty,
     required this.mods,
     required this.selectedOptions,
+    required this.selectedAddons,
     required this.modsExtra,
     required this.itemNote,
     this.variationId,
     this.variationName,
+    this.weight,
     this.syncStatus = SyncStatus.synced,
   });
 
-  double get lineTotal => (item.price + modsExtra) * qty;
+  double get addonsExtra =>
+      selectedAddons.fold(0.0, (s, g) => s + g.extraPrice);
+
+  double get lineTotal => item.isWeighed
+      ? (item.price + modsExtra + addonsExtra) * (weight ?? 0)
+      : (item.price + modsExtra + addonsExtra) * qty;
 
   CartLine copyWith({
     int? qty,
     List<String>? mods,
     List<SelectedOption>? selectedOptions,
+    List<SelectedAddonGroup>? selectedAddons,
     double? modsExtra,
     String? itemNote,
     String? variationId,
     String? variationName,
+    double? weight,
     SyncStatus? syncStatus,
   }) =>
       CartLine._clone(
@@ -254,10 +402,12 @@ class CartLine {
         qty: qty ?? this.qty,
         mods: mods ?? this.mods,
         selectedOptions: selectedOptions ?? this.selectedOptions,
+        selectedAddons: selectedAddons ?? this.selectedAddons,
         modsExtra: modsExtra ?? this.modsExtra,
         itemNote: itemNote ?? this.itemNote,
         variationId: variationId ?? this.variationId,
         variationName: variationName ?? this.variationName,
+        weight: weight ?? this.weight,
         syncStatus: syncStatus ?? this.syncStatus,
       );
 }
@@ -292,7 +442,7 @@ class ConnectionStatus {
   final bool online;
   final String label;
   final int?
-      secondsRemaining; // null when online; counts down 120s when reconnecting
+      secondsRemaining;
   const ConnectionStatus({
     required this.online,
     required this.label,
@@ -312,17 +462,17 @@ class OperatorStats {
 }
 
 class HistoryOrder {
-  final String id; // Display ID — KOT number e.g. "K-4127"
-  final String orderId; // Server UUID — used in all socket emits
+  final String id;
+  final String orderId;
   final String tableId;
-  final String time; // HH:MM
-  final String date; // YYYY-MM-DD — used for date-scope filtering
+  final String time;
+  final String date;
   final int itemCount;
-  final double total; // in ₹
+  final double total;
   final OrderStatus status;
   final List<HistoryOrderLine> lines;
   final String? notes;
-  final String? createdBy; // user id who created the order (for "my history")
+  final String? createdBy;
   const HistoryOrder({
     required this.id,
     required this.orderId,
@@ -339,15 +489,15 @@ class HistoryOrder {
 }
 
 class HistoryOrderLine {
-  final String orderItemId; // Server order_item id — needed for KOT edit
-  final String itemId; // Menu item id — needed for Repeat Last Order
+  final String orderItemId;
+  final String itemId;
   final String name;
   final int qty;
   final double price;
   final List<String> mods;
   final String kitchenSection;
-  final String? variationId; // selected variation id — for Repeat Last Order
-  final String? variationName; // selected variation name — for display/repeat
+  final String? variationId;
+  final String? variationName;
   const HistoryOrderLine({
     required this.orderItemId,
     required this.itemId,
@@ -367,11 +517,6 @@ class ActiveOperator {
   const ActiveOperator({required this.name, required this.role});
 }
 
-// ─────────────── Modifier defaults ───────────────
-// These are fallback defaults used when the server menu sync hasn't provided
-// option groups yet. In production, modifiers come from the server's
-// `item_option_groups` / `item_options` per menu item.
-
 const spiceLevels = <Modifier>[
   Modifier(id: 'sp_mild', label: 'Mild'),
   Modifier(id: 'sp_med', label: 'Medium'),
@@ -388,22 +533,19 @@ const addOns = <Modifier>[
   Modifier(id: 'ad_half', label: 'Half Portion', extraPrice: -50),
 ];
 
-// ─────────────── Providers ───────────────
-
 final tablesProvider = StateProvider<List<RestaurantTable>>((_) => []);
+final roomsProvider = StateProvider<List<RestaurantRoom>>((_) => []);
+final offersProvider = StateProvider<List<Offer>>((_) => []);
 final menuProvider = StateProvider<List<MenuItem>>((_) => []);
 final menuLoadingProvider = StateProvider<bool>((_) => false);
 
-// Fast-add items — pinned (admin-set) + auto (trending, server-computed).
 final fastAddPinnedProvider = StateProvider<List<MenuItem>>((_) => []);
 final fastAddAutoProvider = StateProvider<List<MenuItem>>((_) => []);
 
 final selectedTableIdProvider = StateProvider<String?>((_) => null);
 
-// Order-level note typed in review screen.
 final orderNotesProvider = StateProvider<String>((_) => '');
 
-// Recent items — last 8 items added to any cart (for quick re-add).
 final recentItemsProvider =
     StateNotifierProvider<RecentItemsNotifier, List<MenuItem>>(
   (_) => RecentItemsNotifier(),
@@ -428,7 +570,7 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
   CartNotifier() : super(const []);
 
   void add(MenuItem item) {
-    // Only merge into a plain (no-variation, no-mods, no-note) existing line.
+
     final i = state.indexWhere((l) =>
         l.item.id == item.id &&
         l.variationId == null &&
@@ -448,10 +590,12 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
     required int qty,
     required List<String> mods,
     List<SelectedOption> selectedOptions = const [],
+    List<SelectedAddonGroup> selectedAddons = const [],
     required double modsExtra,
     required String itemNote,
     String? variationId,
     String? variationName,
+    double? weight,
   }) {
     state = [
       ...state,
@@ -460,15 +604,16 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
         qty: qty,
         mods: mods,
         selectedOptions: selectedOptions,
+        selectedAddons: selectedAddons,
         modsExtra: modsExtra,
         itemNote: itemNote,
         variationId: variationId,
         variationName: variationName,
+        weight: weight,
       ),
     ];
   }
 
-  /// Removes the first cart line matching [itemId] (not all of them).
   void remove(String itemId) {
     final i = state.indexWhere((l) => l.item.id == itemId);
     if (i >= 0) removeAt(i);
@@ -532,7 +677,6 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
 
   double get total => state.fold(0.0, (s, l) => s + l.lineTotal);
 
-  // Group lines by kitchen section for the KOT preview.
   Map<String, List<CartLine>> get byKitchen {
     final map = <String, List<CartLine>>{};
     for (final l in state) {
@@ -544,20 +688,11 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
 
 final operatorProvider = StateProvider<Operator?>((_) => null);
 
-/// True when the logged-in user is a waiter. Waiters take orders and fire KOTs
-/// but cannot bill, take payment or apply discounts — those actions are hidden
-/// in the UI (and also enforced server-side).
 final isWaiterProvider = Provider<bool>((ref) {
   final role = ref.watch(operatorProvider)?.role.toLowerCase().trim() ?? '';
   return role == 'waiter';
 });
 
-/// Derived from `historyProvider`, scoped to today + the logged-in operator's
-/// own orders. Previously an incremented counter — that let it drift after a
-/// reconnect/restart (resets to 0) and double-count every OTHER operator's
-/// orders too (order:created broadcasts to the whole restaurant, not just the
-/// creator). Deriving from history means it's always consistent with what the
-/// operator actually sees on their own History tab.
 final operatorStatsProvider = Provider<OperatorStats>((ref) {
   final myId = ref.watch(operatorProvider)?.username ?? '';
   final now = DateTime.now();
@@ -586,15 +721,11 @@ final connectionProvider = StateProvider<ConnectionStatus>(
   (_) => const ConnectionStatus(online: false, label: 'Not connected'),
 );
 
-// Active operators (besides "you") for presence indicators.
 final activeOperatorsProvider = StateProvider<List<ActiveOperator>>((_) => []);
 
 final historyProvider = StateProvider<List<HistoryOrder>>((_) => []);
 
-// Discount presets synced from admin server.
 final discountsProvider = StateProvider<List<Map<String, dynamic>>>((_) => []);
-
-// ─────────────── New real-time providers ───────────────
 
 final flagsProvider = StateProvider<FeatureFlags>((_) => const FeatureFlags());
 final rawMenuDataProvider = StateProvider<Map<String, dynamic>>((_) => {});
@@ -605,40 +736,27 @@ final syncServiceProvider = Provider<SyncService>(
   (ref) => SyncService(ref.read(socketServiceProvider), ref),
 );
 
-// tableId → operator_name of the waiter currently on that table's order screen.
 final tablePresencesProvider = StateProvider<Map<String, String>>((_) => {});
 
-// Haptic enabled flag — mirrors SharedPreferences 'setting_haptic'.
-// Updated by _SettingsNotifier in settings_screen.dart on every toggle.
 final hapticEnabledProvider = StateProvider<bool>((_) => true);
-
-// ─────────────── Auth ───────────────
 
 final isAuthenticatedProvider = StateProvider<bool>((_) => false);
 final pinVerifiedAtProvider = StateProvider<DateTime?>((_) => null);
 final forceDisconnectedProvider = StateProvider<bool>((_) => false);
-
-// ─────────────── KOT numbering ───────────────
 
 int _kotCounter = 0;
 String generateKotId() => 'K-${++_kotCounter}';
 
 final lastKotIdProvider = StateProvider<String>((_) => '');
 
-// ─────────────── Table link groups ───────────────
-// Map of groupId → list of table serverIds belonging to that group.
-// Updated by sync_service on 'table:links:updated' broadcasts.
 final linkGroupsProvider = StateProvider<Map<String, List<String>>>((_) => {});
 
-// ─────────────── Ready-to-serve ───────────────
-
-/// A kitchen "round ready" notification for an order owned by this device.
 class ReadyTicket {
   final String orderId;
-  final String? tableId; // server table UUID
-  final String tableName; // display, e.g. "T-04" or "Takeaway"
+  final String? tableId;
+  final String tableName;
   final String kotNumber;
-  final List<String> itemLabels; // e.g. ["2× Butter Naan", "1× Dal"]
+  final List<String> itemLabels;
 
   const ReadyTicket({
     required this.orderId,
@@ -649,5 +767,4 @@ class ReadyTicket {
   });
 }
 
-/// Active ready-to-serve notifications (most recent first).
 final readyOrdersProvider = StateProvider<List<ReadyTicket>>((_) => []);

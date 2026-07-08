@@ -36,7 +36,7 @@ class ProfileScreen extends ConsumerWidget {
               child: ListView(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 children: [
-                  // Operator card.
+
                   AppCard(
                     child: Row(
                       children: [
@@ -80,7 +80,6 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
 
-                  // Today's KPIs.
                   Text("TODAY'S SHIFT",
                       style:
                           context.palette.micro.copyWith(letterSpacing: 1.4)),
@@ -111,7 +110,6 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
 
-                  // Restaurant + connection info.
                   Text('PAIRED WITH',
                       style:
                           context.palette.micro.copyWith(letterSpacing: 1.4)),
@@ -161,7 +159,6 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
 
-                  // Account actions.
                   AppCard(
                     padding: EdgeInsets.zero,
                     child: Column(children: [
@@ -193,7 +190,7 @@ class ProfileScreen extends ConsumerWidget {
                     label: 'Sign out',
                     leadingIcon: Icons.logout,
                     onPressed: () {
-                      // Clear all session state before sign-out (C5 fix).
+
                       ref.read(syncServiceProvider).unregisterListeners();
                       ref.read(socketServiceProvider).disconnect();
                       SessionService().clearPairing();

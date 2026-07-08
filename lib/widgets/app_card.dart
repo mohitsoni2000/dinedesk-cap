@@ -1,4 +1,4 @@
-// Solid card surface — opaque, for dense content (per HIG).
+
 import 'package:flutter/material.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
@@ -7,8 +7,6 @@ class AppCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
 
-  /// Explicit background; when null, resolves to the theme surface
-  /// (cream paper in light, warm ember in dark).
   final Color? background;
   final BorderRadius borderRadius;
   final Border? border;

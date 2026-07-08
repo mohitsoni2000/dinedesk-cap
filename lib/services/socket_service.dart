@@ -177,7 +177,6 @@ class SocketService {
     _stateController.close();
   }
 
-  /// Summarize payload for logging (avoid dumping huge lists).
   static String _summarize(Map<String, dynamic> data) {
     final buf = StringBuffer('{');
     for (final e in data.entries) {

@@ -1,8 +1,4 @@
-// Animated check-draw — pop circle + stroke-drawn check.
-//
-// Two phases:
-//   0..0.45: circle scales in (elastic), bg fills
-//   0.45..1: check stroke draws via PathMetric extraction
+
 
 import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
@@ -39,11 +35,11 @@ class _AnimatedCheckDrawState extends State<AnimatedCheckDraw>
       animation: _ctrl,
       builder: (_, __) {
         final t = _ctrl.value;
-        // Pop in (elastic)
+
         final pop = t < 0.45
             ? Curves.elasticOut.transform((t / 0.45).clamp(0, 1))
             : 1.0;
-        // Draw progress
+
         final draw = t < 0.45 ? 0.0 : ((t - 0.45) / 0.55).clamp(0.0, 1.0);
 
         return SizedBox(
@@ -71,17 +67,14 @@ class _CheckPainter extends CustomPainter {
     final r = size.width / 2;
     final c = Offset(r, r);
 
-    // Soft glow
     final glow = Paint()
       ..color = color.withValues(alpha: 0.32)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
     canvas.drawCircle(c, r * 0.95, glow);
 
-    // Filled circle
     final fill = Paint()..color = color;
     canvas.drawCircle(c, r * 0.88, fill);
 
-    // Inner specular sweep
     final sheen = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topLeft,
@@ -93,13 +86,11 @@ class _CheckPainter extends CustomPainter {
       ).createShader(Rect.fromCircle(center: c, radius: r));
     canvas.drawCircle(c, r * 0.88, sheen);
 
-    // Build check path
     final path = Path()
       ..moveTo(r * 0.55, r * 1.05)
       ..lineTo(r * 0.92, r * 1.38)
       ..lineTo(r * 1.45, r * 0.72);
 
-    // Extract metric and slice by progress
     final metric = path.computeMetrics().first;
     final extracted = metric.extractPath(0, metric.length * progress);
 

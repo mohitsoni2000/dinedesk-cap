@@ -29,3 +29,14 @@ TableOpenIntent resolveTableOpenIntent(RestaurantTable table) {
 
   return TableOpenIntent.openOrder(table.serverId);
 }
+
+TableOpenIntent resolveRoomOpenIntent(RestaurantRoom room) {
+  if (room.state == RoomState.free &&
+      (room.activeOrderId == null || room.activeOrderId!.isEmpty)) {
+    return TableOpenIntent._(TableOpenAction.createDraft,
+        route: '/order/room/${room.serverId}');
+  }
+
+  return TableOpenIntent._(TableOpenAction.openOrder,
+      route: '/order/room/${room.serverId}');
+}

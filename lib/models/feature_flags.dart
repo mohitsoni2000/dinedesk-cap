@@ -37,10 +37,6 @@ class FeatureFlags {
   final bool kitchenDisplay;
   final bool readyToServe;
 
-  // Added for full parity with restro-desktop's feature flags — these were
-  // reaching the phone in the raw sync payload already (every flag_*/
-  // operator_pin_* DB column is sent generically) but silently dropped
-  // because this model didn't have a field for them yet.
   final bool cashOnlyDiscounts;
   final bool reports;
   final bool advancedReports;

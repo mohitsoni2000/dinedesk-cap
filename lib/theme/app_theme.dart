@@ -1,8 +1,5 @@
-// Material ThemeData wired up from design tokens.
-//
-// AppTypography styles are color-free; the color enters HERE, per brightness,
-// via textTheme (Material's DefaultTextStyle = textTheme.bodyMedium). That is
-// what makes every un-annotated Text flip correctly between light and dark.
+
+
 import 'package:flutter/material.dart';
 import 'tokens.dart';
 
@@ -11,7 +8,6 @@ class AppTheme {
 
   static ThemeData light() => _build(AppPalette.light);
 
-  /// "Midnight tandoor" — warm ember dark, cream ink, same terra brand.
   static ThemeData dark() => _build(AppPalette.dark);
 
   static ThemeData _build(AppPalette p) {
@@ -47,8 +43,7 @@ class AppTheme {
       dividerColor: p.ink10,
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
-      // Any Material route that doesn't go through liquidPage still gets the
-      // iOS push (parallax + interactive back) on every platform.
+
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: CupertinoPageTransitionsBuilder(),

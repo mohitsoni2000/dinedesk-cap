@@ -1,9 +1,4 @@
-// KOT Edit Sheet — modify items that have already been sent to kitchen.
-//
-// Allows the operator to change quantity or remove sent items within
-// the server's configured time window. Emits order:update with
-// items_remove for deleted items and order:update with items_add
-// for new modifications.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,10 +65,6 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
 
     final reason = _reason.text.trim();
 
-    // Build the kot:edit changes list. Removed (qty→0) items become a 'remove'
-    // change; quantity changes become an 'update_quantity' change. The desktop
-    // routes this through the real editKot path (generates + prints a
-    // modification KOT), unlike order:update which rejects already-sent items.
     final changes = <Map<String, dynamic>>[];
     for (final l in _lines) {
       if (!l.isModified || l.orderItemId.isEmpty) continue;

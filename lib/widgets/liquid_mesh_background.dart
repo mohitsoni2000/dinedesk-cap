@@ -1,19 +1,4 @@
-// Liquid-glass background mesh painter.
-//
-// Paints the warm cream backdrop with terra/amber/violet/teal radial blobs so
-// the LiquidGlass widgets have something to refract.
-//
-// PERFORMANCE NOTES (why this is structured the way it is):
-//  • The animated painter is isolated in its own RepaintBoundary and the UI
-//    `child` is a SIBLING in a Stack — so when the mesh repaints each frame it
-//    re-rasterizes ONLY the background layer, not the whole screen on top of it.
-//    (Previously the child sat inside the CustomPaint subtree, so every drift
-//    frame re-rastered the entire UI.)
-//  • `willChange` is true only while animating; when static, Flutter caches the
-//    painted picture and per-frame cost drops to zero.
-//  • Pass `animate: false` for transient pushed screens that sit on screen
-//    briefly (order builder/review/detail) — the drift is imperceptible there
-//    and you save a second looping controller behind the visible one.
+
 
 import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
@@ -21,8 +6,6 @@ import '../theme/tokens.dart';
 class LiquidMeshBackground extends StatefulWidget {
   final Widget child;
 
-  /// Force the dark mesh. When null (default) it follows the app theme —
-  /// screens that are always dark regardless of theme (splash etc.) pass true.
   final bool? dark;
   final bool animate;
   const LiquidMeshBackground({
@@ -49,7 +32,7 @@ class _LiquidMeshBackgroundState extends State<LiquidMeshBackground>
   void _startController() {
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 24), // slower drift = cheaper, calmer
+      duration: const Duration(seconds: 24),
     )..repeat(reverse: true);
   }
 
@@ -93,7 +76,7 @@ class _LiquidMeshBackgroundState extends State<LiquidMeshBackground>
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Background lives in its own layer; its repaints never touch the UI.
+
         RepaintBoundary(child: background),
         widget.child,
       ],
@@ -108,7 +91,7 @@ class _MeshPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Base wash
+
     final base = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topLeft,
@@ -123,7 +106,6 @@ class _MeshPainter extends CustomPainter {
       ).createShader(Offset.zero & size);
     canvas.drawRect(Offset.zero & size, base);
 
-    // Drifting blobs
     final drift =
         Offset(size.width * 0.02 * (t - 0.5), size.height * 0.015 * (t - 0.5));
     void blob(Offset center, double radius, Color color) {

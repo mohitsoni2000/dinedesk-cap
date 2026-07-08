@@ -13,7 +13,9 @@ import '../widgets/confetti_burst.dart';
 
 class OrderSuccessScreen extends ConsumerStatefulWidget {
   final String tableId;
-  const OrderSuccessScreen({super.key, required this.tableId});
+  final bool isRoom;
+  const OrderSuccessScreen(
+      {super.key, required this.tableId, this.isRoom = false});
   @override
   ConsumerState<OrderSuccessScreen> createState() => _OrderSuccessScreenState();
 }
@@ -22,8 +24,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
   bool _showText = false;
   Timer? _autoNav;
   String? _tableDisplayName;
-  // 45s: waiters need time to note the KOT number mid-shift; 20s vanished
-  // under them and the number was lost.
+
   static const int _autoNavSeconds = 45;
   int _countdown = _autoNavSeconds;
 
@@ -32,8 +33,17 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
     super.initState();
     ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final tables = ref.read(tablesProvider);
-      final display = tables.where((t) => t.serverId == widget.tableId).map((t) => t.id).firstOrNull;
+      final display = widget.isRoom
+          ? ref
+              .read(roomsProvider)
+              .where((r) => r.serverId == widget.tableId)
+              .map((r) => r.id)
+              .firstOrNull
+          : ref
+              .read(tablesProvider)
+              .where((t) => t.serverId == widget.tableId)
+              .map((t) => t.id)
+              .firstOrNull;
       if (mounted) setState(() => _tableDisplayName = display);
     });
     Future.delayed(const Duration(milliseconds: 500), () {
@@ -101,7 +111,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                       const Text('Sent to Kitchen',
                           style: AppTypography.displayMd),
                       const SizedBox(height: 24),
-                      // Large prominent KOT number
+
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 32, vertical: 16),
@@ -124,8 +134,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                                 )),
                             const SizedBox(height: 8),
                             KineticKotNumber(
-                              // KOT numbers arrive prefixed ("KOT-002"); pull the
-                              // numeric part so the counter shows the real number.
+
                               number: int.tryParse(ref
                                       .watch(lastKotIdProvider)
                                       .replaceAll(RegExp(r'[^0-9]'), '')) ??
@@ -139,7 +148,8 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Table ${_tableDisplayName ?? widget.tableId}',
+                          Text(
+                              '${widget.isRoom ? 'Room' : 'Table'} ${_tableDisplayName ?? widget.tableId}',
                               style: context.palette.caption),
                         ],
                       ),
@@ -166,7 +176,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                       },
                       child: Column(
                         children: [
-                          // Manual override — users who already noted the KOT
+
                           SizedBox(
                             width: double.infinity,
                             child: OutlinedButton(

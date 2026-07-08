@@ -43,7 +43,7 @@ class FeedbackService {
       await player.stop();
       await player.play(AssetSource(asset));
     } catch (_) {
-      // Audio failures are non-fatal. Haptic still fired.
+
     }
   }
 

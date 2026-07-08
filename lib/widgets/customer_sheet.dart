@@ -1,8 +1,4 @@
-// Customer Search / Create Sheet — search existing customers or create a new
-// one to attach to the current order.
-//
-// Invoked from order_review_screen when the operator wants to tag a customer.
-// Returns the selected/created customer map, or null if dismissed.
+
 
 import 'dart:async';
 
@@ -18,8 +14,7 @@ import '../widgets/liquid_glass_surface.dart';
 import 'sheet_handle.dart';
 
 class CustomerSheet {
-  /// Opens the customer search/create bottom sheet.
-  /// Returns the selected or newly created customer map, or null if dismissed.
+
   static Future<Map<String, dynamic>?> show(BuildContext context) {
     return showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -44,7 +39,6 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
   bool _searching = false;
   bool _showCreate = false;
 
-  // Create form controllers.
   final TextEditingController _name = TextEditingController();
   final TextEditingController _phone = TextEditingController();
   final TextEditingController _email = TextEditingController();
@@ -138,12 +132,12 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
         });
         return;
       }
-      // Return the created customer — server wraps it in 'customer' key.
+
       final customer = response['customer'] as Map?;
       if (customer != null) {
         Navigator.of(context).pop(Map<String, dynamic>.from(customer));
       } else {
-        // Fallback: treat whole response as customer data (older server versions).
+
         Navigator.of(context).pop(Map<String, dynamic>.from(response));
       }
     });
@@ -176,7 +170,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
                   const Text('Search by name or phone',
                       style: AppTypography.caption),
                   const SizedBox(height: 12),
-                  // Search bar.
+
                   LiquidGlassSurface(
                     borderRadius: const BorderRadius.all(AppRadii.sm),
                     padding:

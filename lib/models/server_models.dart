@@ -1,11 +1,5 @@
-// Typed server response models — validated at the boundary.
-//
-// These classes parse raw Map<String, dynamic> from socket events
-// into strictly typed Dart objects. All validation happens in the
-// factory constructors. After construction, every field is guaranteed
-// non-null and correctly typed.
 
-/// Parses a dynamic value to double. Returns 0 if not parseable.
+
 double _toDouble(dynamic v) {
   if (v is double) return v;
   if (v is int) return v.toDouble();
@@ -13,7 +7,6 @@ double _toDouble(dynamic v) {
   return 0;
 }
 
-/// Parses a dynamic value to int. Returns [fallback] if not parseable.
 int _toInt(dynamic v, [int fallback = 0]) {
   if (v is int) return v;
   if (v is double) return v.toInt();
@@ -21,21 +14,17 @@ int _toInt(dynamic v, [int fallback = 0]) {
   return fallback;
 }
 
-/// Parses a dynamic value to String. Returns [fallback] if null.
 String _toStr(dynamic v, [String fallback = '']) {
   if (v == null) return fallback;
   return v.toString();
 }
 
-/// Parses a dynamic value to bool. Handles int (0/1), bool, String.
 bool _toBool(dynamic v, [bool fallback = false]) {
   if (v is bool) return v;
   if (v is int) return v == 1;
   if (v is String) return v == '1' || v == 'true';
   return fallback;
 }
-
-// ─────────────── Server Table ───────────────
 
 class ServerTable {
   final String id;
@@ -51,8 +40,8 @@ class ServerTable {
   final int orderItemCount;
   final int oldestKotMinutes;
   final int kotCount;
-  final String? operatorId; // operator who owns this table's active order
-  final String? waiterName; // display name of the waiter serving this table
+  final String? operatorId;
+  final String? waiterName;
 
   const ServerTable({
     required this.id,
@@ -93,7 +82,49 @@ class ServerTable {
   }
 }
 
-// ─────────────── Server Floor ───────────────
+class ServerRoom {
+  final String id;
+  final String name;
+  final int capacity;
+  final String status;
+  final String? floorId;
+  final String? activeOrderId;
+  final String? guestName;
+  final double orderTotal;
+  final int activeBillCount;
+  final int orderItemCount;
+  final int kotCount;
+
+  const ServerRoom({
+    required this.id,
+    required this.name,
+    required this.capacity,
+    required this.status,
+    this.floorId,
+    this.activeOrderId,
+    this.guestName,
+    this.orderTotal = 0,
+    this.activeBillCount = 0,
+    this.orderItemCount = 0,
+    this.kotCount = 0,
+  });
+
+  factory ServerRoom.fromMap(Map<String, dynamic> m) {
+    return ServerRoom(
+      id: _toStr(m['id']),
+      name: _toStr(m['name'], _toStr(m['id'])),
+      capacity: _toInt(m['capacity'], 2),
+      status: _toStr(m['status'], 'free'),
+      floorId: m['floor_id']?.toString(),
+      activeOrderId: m['active_order_id']?.toString(),
+      guestName: m['guest_name']?.toString(),
+      orderTotal: _toDouble(m['order_total']),
+      activeBillCount: _toInt(m['active_bill_count']),
+      orderItemCount: _toInt(m['order_item_count']),
+      kotCount: _toInt(m['kot_count']),
+    );
+  }
+}
 
 class ServerFloor {
   final String id;
@@ -109,11 +140,10 @@ class ServerFloor {
   }
 }
 
-// ─────────────── Server Order ───────────────
-
 class ServerOrder {
   final String id;
   final String tableId;
+  final String roomId;
   final String orderNumber;
   final String status;
   final double foodSubtotal;
@@ -124,12 +154,15 @@ class ServerOrder {
   final String createdAt;
   final String? notes;
   final String? kotNumber;
-  final String? createdBy; // user id who created the order (for "my history")
+  final String? createdBy;
   final List<ServerOrderItem> items;
+
+  bool get isRoom => roomId.isNotEmpty;
 
   const ServerOrder({
     required this.id,
     required this.tableId,
+    this.roomId = '',
     required this.orderNumber,
     required this.status,
     required this.foodSubtotal,
@@ -165,6 +198,7 @@ class ServerOrder {
     return ServerOrder(
       id: _toStr(m['id']),
       tableId: _toStr(m['table_id']),
+      roomId: _toStr(m['room_id']),
       orderNumber: _toStr(m['order_number']),
       status: _toStr(m['status'], 'open'),
       foodSubtotal: foodSub,
@@ -180,8 +214,6 @@ class ServerOrder {
     );
   }
 }
-
-// ─────────────── Server Order Item ───────────────
 
 class ServerOrderItem {
   final String id;
@@ -233,8 +265,6 @@ class ServerOrderItem {
   }
 }
 
-// ─────────────── Server Menu Item ───────────────
-
 class ServerMenuItem {
   final String id;
   final String name;
@@ -244,8 +274,11 @@ class ServerMenuItem {
   final bool isVeg;
   final bool isAvailable;
   final String? note;
+
+  final String? measureUnit;
   final List<ServerMenuOptionGroup> optionGroups;
   final List<ServerItemVariation> variations;
+  final List<ServerAddonGroup> addonGroups;
 
   const ServerMenuItem({
     required this.id,
@@ -256,8 +289,10 @@ class ServerMenuItem {
     required this.isVeg,
     required this.isAvailable,
     this.note,
+    this.measureUnit,
     this.optionGroups = const [],
     this.variations = const [],
+    this.addonGroups = const [],
   });
 
   factory ServerMenuItem.fromMap(Map<String, dynamic> m) {
@@ -273,14 +308,17 @@ class ServerMenuItem {
       isVeg: _toBool(m['is_veg']),
       isAvailable: _toBool(m['is_available'] ?? m['available'], true),
       note: m['note']?.toString(),
+      measureUnit: m['measure_unit']?.toString(),
       optionGroups: const [],
       variations: const [],
+      addonGroups: const [],
     );
   }
 
   ServerMenuItem copyWith({
     List<ServerMenuOptionGroup>? optionGroups,
     List<ServerItemVariation>? variations,
+    List<ServerAddonGroup>? addonGroups,
   }) =>
       ServerMenuItem(
         id: id,
@@ -291,8 +329,75 @@ class ServerMenuItem {
         isVeg: isVeg,
         isAvailable: isAvailable,
         note: note,
+        measureUnit: measureUnit,
         optionGroups: optionGroups ?? this.optionGroups,
         variations: variations ?? this.variations,
+        addonGroups: addonGroups ?? this.addonGroups,
+      );
+}
+
+class ServerAddonChoice {
+  final String id;
+  final String groupId;
+  final String name;
+  final double price;
+
+  const ServerAddonChoice({
+    required this.id,
+    required this.groupId,
+    required this.name,
+    required this.price,
+  });
+
+  factory ServerAddonChoice.fromMap(Map<String, dynamic> m) {
+    return ServerAddonChoice(
+      id: _toStr(m['id']),
+      groupId: _toStr(m['group_id']),
+      name: _toStr(m['name']),
+      price: _toDouble(m['price']),
+    );
+  }
+}
+
+class ServerAddonGroup {
+  final String id;
+  final String itemId;
+  final String name;
+  final String selectionType;
+  final int minSelect;
+  final int maxSelect;
+  final List<ServerAddonChoice> choices;
+
+  const ServerAddonGroup({
+    required this.id,
+    required this.itemId,
+    required this.name,
+    required this.selectionType,
+    required this.minSelect,
+    required this.maxSelect,
+    this.choices = const [],
+  });
+
+  factory ServerAddonGroup.fromMap(Map<String, dynamic> m) {
+    return ServerAddonGroup(
+      id: _toStr(m['group_id'] ?? m['id']),
+      itemId: _toStr(m['item_id']),
+      name: _toStr(m['name'], 'Add-ons'),
+      selectionType: _toStr(m['selection_type'], 'S'),
+      minSelect: _toInt(m['min_select']),
+      maxSelect: _toInt(m['max_select'], 1),
+    );
+  }
+
+  ServerAddonGroup copyWith({List<ServerAddonChoice>? choices}) =>
+      ServerAddonGroup(
+        id: id,
+        itemId: itemId,
+        name: name,
+        selectionType: selectionType,
+        minSelect: minSelect,
+        maxSelect: maxSelect,
+        choices: choices ?? this.choices,
       );
 }
 
@@ -363,8 +468,6 @@ class ServerMenuOption {
   }
 }
 
-// ─────────────── Server Item Variation ───────────────
-
 class ServerItemVariation {
   final String id;
   final String itemId;
@@ -391,8 +494,6 @@ class ServerItemVariation {
   }
 }
 
-// ─────────────── Server Restaurant Info ───────────────
-
 class ServerRestaurantInfo {
   final String name;
   final String address;
@@ -412,8 +513,6 @@ class ServerRestaurantInfo {
     );
   }
 }
-
-// ─────────────── Server Operator Presence ───────────────
 
 class ServerOperatorPresence {
   final String operatorId;
@@ -435,9 +534,6 @@ class ServerOperatorPresence {
   }
 }
 
-// ─────────────── Broadcast Envelope ───────────────
-
-/// Many Desktop broadcasts wrap data as `{ order: {...}, tables: [...] }`.
 class BroadcastEnvelope {
   final Map<String, dynamic> raw;
 
@@ -453,6 +549,17 @@ class BroadcastEnvelope {
     final t = raw['tables'];
     if (t is List) {
       return t
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
+    }
+    return const [];
+  }
+
+  List<Map<String, dynamic>> get roomsList {
+    final r = raw['rooms'];
+    if (r is List) {
+      return r
           .whereType<Map>()
           .map((m) => Map<String, dynamic>.from(m))
           .toList();

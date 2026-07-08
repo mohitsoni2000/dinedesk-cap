@@ -1,8 +1,4 @@
-// Disconnected Screen — shown when the 2-minute reconnect grace expires.
-//
-// Distinct from /force-disconnected which is triggered by an admin-initiated
-// kick. Here the device simply lost contact long enough that the session is
-// stale and a fresh QR pair is required.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

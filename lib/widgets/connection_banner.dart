@@ -1,8 +1,4 @@
-// Connection banner — slides down from top when offline / reconnecting.
-//
-// Shows a M:SS countdown counting down from 2:00. When it hits 0:00 the user
-// is routed to /disconnected — at that point the session is considered stale
-// and a fresh QR scan is needed.
+
 
 import 'dart:async';
 
@@ -24,7 +20,7 @@ class ConnectionBanner extends ConsumerStatefulWidget {
 
 class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
   Timer? _ticker;
-  int _remaining = 120; // seconds — full 2-min grace window
+  int _remaining = 120;
   FeedbackService? _feedbackSvc;
 
   @override
@@ -47,7 +43,7 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
       if (_remaining <= 1) {
         _ticker?.cancel();
         setState(() => _remaining = 0);
-        // Move user to the timeout screen — but only once.
+
         Future.microtask(() {
           if (mounted) context.go('/disconnected');
         });
@@ -108,7 +104,6 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
       });
     }
 
-    // React to connection state transitions.
     ref.listen<ConnectionStatus>(connectionProvider, (prev, next) {
       if (prev != null && prev.online && !next.online) {
         _startTimer();
@@ -166,7 +161,7 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
                                       .copyWith(color: context.palette.ink70)),
                             ],
                           )),
-                          // Countdown ring.
+
                           SizedBox(
                             width: 32,
                             height: 32,
@@ -228,8 +223,8 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
                 ),
               ),
             ),
-          ), // IgnorePointer
-        ), // Positioned
+          ),
+        ),
       ],
     );
   }

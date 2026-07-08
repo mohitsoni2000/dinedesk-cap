@@ -1,7 +1,4 @@
-// Table Link Sheet — link or unlink two occupied tables.
-//
-// Requires PIN guard (reuses operatorPinKot flag).
-// Emits 'table:link' / 'table:unlink' socket events on confirmation.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -36,7 +33,6 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
   String? _pickedServerId;
   bool _submitting = false;
 
-  /// Returns the group ID that this table is currently linked in, or null.
   String? _currentGroupId(Map<String, List<String>> groups) {
     for (final entry in groups.entries) {
       if (entry.value.contains(widget.origin.serverId)) return entry.key;
@@ -119,7 +115,6 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
     final currentGroupId = _currentGroupId(linkGroups);
     final isLinked = currentGroupId != null;
 
-    // Linked peers — other tables in the same group.
     final linkedPeerIds = isLinked
         ? (linkGroups[currentGroupId] ?? [])
             .where((id) => id != widget.origin.serverId)
@@ -129,7 +124,6 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
         .where((t) => linkedPeerIds.contains(t.serverId))
         .toList();
 
-    // Link candidates: occupied tables (mine or other) not already in this group.
     final candidates = tables
         .where((t) =>
             t.serverId != widget.origin.serverId &&
@@ -188,7 +182,6 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
             const SizedBox(height: 12),
             Divider(height: 1, color: palette.ink10),
 
-            // Current links section — shown only if linked.
             if (isLinked && linkedPeers.isNotEmpty) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(
@@ -250,7 +243,6 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
               Divider(height: 1, color: palette.ink10),
             ],
 
-            // Candidates list.
             Expanded(
               child: candidates.isEmpty && !isLinked
                   ? const Center(

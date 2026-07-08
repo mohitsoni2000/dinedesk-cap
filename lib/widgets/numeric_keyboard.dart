@@ -1,6 +1,4 @@
-// Custom numeric keyboard — used for covers, qty, payment amount.
-//
-// Glass keys, haptic press, configurable on-submit + decimal mode.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,7 +29,7 @@ class NumericKeyboard extends StatelessWidget {
     } else if (k == '.') {
       if (!value.contains('.')) onChanged(value.isEmpty ? '0.' : '$value.');
     } else {
-      // Strip leading zero unless we're entering a decimal.
+
       if (value == '0') {
         onChanged(k);
       } else {

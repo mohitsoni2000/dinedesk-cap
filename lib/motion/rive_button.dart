@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'feedback_kind.dart';
 import 'feedback_service.dart';
 
-/// Sealed union of Rive-button visible states.
 sealed class RiveButtonPhase {
   const RiveButtonPhase();
 }
@@ -25,8 +24,6 @@ final class RiveButtonError extends RiveButtonPhase {
   const RiveButtonError();
 }
 
-/// Wraps a Rive state-machine asset as a stateful button.
-/// Parent owns [phase]; this widget renders and binds inputs.
 class RiveButton extends ConsumerStatefulWidget {
   const RiveButton({
     required this.assetPath,
@@ -68,7 +65,7 @@ class _RiveButtonState extends ConsumerState<RiveButton> {
     }
     artboard.addController(controller);
     _controller = controller;
-    // Rive API requires cast from SMIInput<bool> to SMITrigger — mathematically safe.
+
     _fireInput = controller.findInput<bool>('fire') as SMITrigger?;
     _successInput = controller.findInput<bool>('success') as SMITrigger?;
     _errorInput = controller.findInput<bool>('error') as SMITrigger?;

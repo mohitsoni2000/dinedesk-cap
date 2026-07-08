@@ -1,7 +1,6 @@
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 
-/// Standardised [OpenContainer] preset for Restro.
 class RestroMorph extends StatelessWidget {
   const RestroMorph({
     required this.closedBuilder,
@@ -36,7 +35,6 @@ class RestroMorph extends StatelessWidget {
   }
 }
 
-/// Standard shuttle that interpolates fade between two Hero sides during flight.
 Widget restroFadeShuttle(
   BuildContext flightContext,
   Animation<double> animation,
@@ -44,12 +42,12 @@ Widget restroFadeShuttle(
   BuildContext fromHeroContext,
   BuildContext toHeroContext,
 ) {
-  // Safe cast: hero contexts are guaranteed to wrap a Hero widget.
+
   final Widget fromHero = fromHeroContext.widget is Hero
-      ? (fromHeroContext.widget as Hero).child // safe: is-check above
+      ? (fromHeroContext.widget as Hero).child
       : const SizedBox.shrink();
   final Widget toHero = toHeroContext.widget is Hero
-      ? (toHeroContext.widget as Hero).child // safe: is-check above
+      ? (toHeroContext.widget as Hero).child
       : const SizedBox.shrink();
   return AnimatedBuilder(
     animation: animation,

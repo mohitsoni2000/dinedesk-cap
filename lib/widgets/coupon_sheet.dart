@@ -1,8 +1,4 @@
-// Coupon Sheet — apply a coupon code to the order.
-//
-// Emits coupon:apply (or discount:apply with coupon_code) to Desktop.
-// Currently the Desktop operator gateway does not have a dedicated
-// coupon:apply event, so we use discount:apply with a coupon_code field.
+
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

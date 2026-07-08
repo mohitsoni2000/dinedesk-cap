@@ -2,9 +2,6 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-/// Wraps a child with a "predictive zone" that measures pointer proximity.
-/// Reports [0..1]: 0 = far away, 1 = fully over the widget.
-/// Does not animate — just measures and reports. Consumer decides what to do.
 class PredictiveZone extends StatefulWidget {
   const PredictiveZone({
     required this.child,
@@ -83,8 +80,6 @@ class _PredictiveZoneState extends State<PredictiveZone> {
   }
 }
 
-/// Convenience: wraps child with [PredictiveZone] and applies subtle
-/// pre-scale based on proximity. Scale: 1.0 (far) to 1.0+maxScaleBoost (touching).
 class PredictiveScale extends StatefulWidget {
   const PredictiveScale({
     required this.child,

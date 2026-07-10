@@ -58,3 +58,8 @@ android/key.properties
 
 # UI redesign reference (design artifact, not app code)
 /restro-operator-ui-v2.html
+
+# Delivered source/reference archives — not app code
+/Archive.zip
+/crew-app.zip
+/crew-ui-redesign.zip

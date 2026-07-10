@@ -19,8 +19,10 @@ class ConnectionBanner extends ConsumerStatefulWidget {
 }
 
 class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
+  static const _reconnectWindowSeconds = 15 * 60;
+
   Timer? _ticker;
-  int _remaining = 120;
+  int _remaining = _reconnectWindowSeconds;
   FeedbackService? _feedbackSvc;
 
   @override
@@ -37,7 +39,7 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
 
   void _startTimer() {
     _ticker?.cancel();
-    setState(() => _remaining = 120);
+    setState(() => _remaining = _reconnectWindowSeconds);
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       if (_remaining <= 1) {
@@ -63,7 +65,7 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
 
   void _resetTimer() {
     if (!mounted) return;
-    setState(() => _remaining = 120);
+    setState(() => _remaining = _reconnectWindowSeconds);
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -173,7 +175,7 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
                                   height: 32,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2.5,
-                                    value: _remaining / 120,
+                                    value: _remaining / _reconnectWindowSeconds,
                                     color: AppColors.danger,
                                     backgroundColor: context.palette.ink10,
                                   ),

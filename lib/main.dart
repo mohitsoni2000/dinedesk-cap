@@ -22,12 +22,11 @@ class RestroApp extends ConsumerWidget {
   const RestroApp({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) => MaterialApp.router(
-        title: 'Restro',
+        title: 'Commond.Crew',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
         themeMode: ref.watch(themeModeProvider),
-
         scrollBehavior: const AppScrollBehavior(),
         routerConfig: ref.watch(routerProvider),
       );

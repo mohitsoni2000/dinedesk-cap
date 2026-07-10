@@ -43,6 +43,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (forceDisconnected && loc != '/force-disconnected') {
         return '/force-disconnected';
       }
+      if (!ref.read(flagsProvider).rooms &&
+          (loc == '/rooms' || loc.startsWith('/order/room'))) {
+        return '/tables';
+      }
       if (!authed && !onAuthFlow && !onDisconnect) return '/auth';
       if (authed && onAuthFlow) return '/tables';
       return null;

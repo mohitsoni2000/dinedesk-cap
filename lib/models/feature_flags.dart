@@ -72,6 +72,7 @@ class FeatureFlags {
   final bool offers;
   final bool menuAccessGroups;
   final bool weighedItems;
+  final bool billingButton;
 
   const FeatureFlags({
     this.discounts = true,
@@ -90,7 +91,7 @@ class FeatureFlags {
     this.multiFloor = false,
     this.operatorPinAuth = true,
     this.operatorPinMode = 'per_action',
-    this.operatorPinSessionMinutes = 5,
+    this.operatorPinSessionMinutes = 15,
     this.operatorPinKot = false,
     this.operatorPinHold = false,
     this.operatorPinKotAndBill = false,
@@ -146,6 +147,7 @@ class FeatureFlags {
     this.offers = false,
     this.menuAccessGroups = false,
     this.weighedItems = false,
+    this.billingButton = false,
   });
 
   factory FeatureFlags.fromMap(Map<String, dynamic> map) {
@@ -176,7 +178,7 @@ class FeatureFlags {
       operatorPinAuth: flag('flag_operator_pin_auth', true),
       operatorPinMode: map['operator_pin_mode']?.toString() ?? 'per_action',
       operatorPinSessionMinutes:
-          int.tryParse('${map['operator_pin_session_minutes']}') ?? 5,
+          int.tryParse('${map['operator_pin_session_minutes']}') ?? 15,
       operatorPinKot: flag('operator_pin_kot'),
       operatorPinHold: flag('operator_pin_hold'),
       operatorPinKotAndBill: flag('operator_pin_kot_and_bill'),
@@ -232,6 +234,7 @@ class FeatureFlags {
       offers: flag('flag_offers'),
       menuAccessGroups: flag('flag_menu_access_groups'),
       weighedItems: flag('flag_weighed_items'),
+      billingButton: flag('flag_billing_button'),
     );
   }
 }

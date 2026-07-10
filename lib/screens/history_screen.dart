@@ -10,8 +10,6 @@ import '../data/currency.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
-import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_glass_surface.dart';
 
 enum _DateScope { today, yesterday }
 
@@ -105,20 +103,31 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }).toList()
       ..sort((a, b) => b.time.compareTo(a.time));
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Column(
-          children: [
-            const LiquidAppBar(title: 'History'),
+    return ColoredBox(
+      color: AppColors.paper,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('History', style: AppTypography.displayLg),
+                ),
+              ),
+              const SizedBox(height: 8),
 
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: LiquidGlassSurface(
-                borderRadius: const BorderRadius.all(AppRadii.sm),
+              child: Container(
                 padding: const EdgeInsets.all(4),
-                blur: 24,
-                thickness: 12,
+                decoration: BoxDecoration(
+                  color: context.palette.surface,
+                  borderRadius: const BorderRadius.all(AppRadii.sm),
+                  border: Border.all(color: AppColors.hairline),
+                ),
                 child: Row(
                   children: [
                     _DateTab(
@@ -199,6 +208,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           ],
         ),
       ),
+      ),
     );
   }
 }
@@ -218,9 +228,7 @@ class _DateTab extends StatelessWidget {
           duration: const Duration(milliseconds: 220),
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
-            color: selected
-                ? (context.palette.isDark ? AppColors.terra600 : AppColors.ink)
-                : Colors.transparent,
+            color: selected ? AppColors.ink : Colors.transparent,
             borderRadius: const BorderRadius.all(AppRadii.xs),
           ),
           alignment: Alignment.center,
@@ -251,11 +259,6 @@ class _StatusChip extends StatelessWidget {
   });
   @override
   Widget build(BuildContext context) {
-    final selectedBg =
-        context.palette.isDark ? AppColors.terra600 : AppColors.ink;
-    final unselectedBg = context.palette.isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.white.withValues(alpha: 0.6);
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
@@ -265,10 +268,10 @@ class _StatusChip extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? selectedBg : unselectedBg,
+          color: selected ? AppColors.ink : context.palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.pill),
           border: Border.all(
-              color: selected ? selectedBg : context.palette.ink10),
+              color: selected ? AppColors.ink : AppColors.hairline),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -312,15 +315,6 @@ class _OrderTile extends StatelessWidget {
       onTap: onTap,
       child: Row(
         children: [
-          Container(
-            width: 4,
-            height: 48,
-            decoration: BoxDecoration(
-              color: _statusColor(order.status),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -328,8 +322,9 @@ class _OrderTile extends StatelessWidget {
                 Row(
                   children: [
                     Flexible(
-                      child: Text(order.id,
-                          style: AppTypography.title,
+                      child: Text(order.tableId,
+                          style: AppTypography.tableName.copyWith(
+                              fontSize: 20, fontWeight: FontWeight.w600),
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1),
                     ),
@@ -339,7 +334,7 @@ class _OrderTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${order.tableId} · ${order.time} · ${order.itemCount} items',
+                  '${order.time} · ${order.id} · ${order.itemCount} items',
                   style: context.palette.caption,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -351,7 +346,8 @@ class _OrderTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(formatRupeesCompact(order.total),
-                  style: AppTypography.headline),
+                  style: AppTypography.bodyMd.copyWith(
+                      fontWeight: FontWeight.w800, fontSize: 15)),
               const SizedBox(height: 2),
               Icon(Icons.chevron_right,
                   color: context.palette.ink30, size: 18),
@@ -361,24 +357,26 @@ class _OrderTile extends StatelessWidget {
       ),
     );
   }
-
-  static Color _statusColor(OrderStatus s) => switch (s) {
-        OrderStatus.sent => AppColors.success,
-        OrderStatus.modified => AppColors.warn,
-        OrderStatus.cancelled => AppColors.danger,
-        OrderStatus.paid => AppColors.teal,
-      };
 }
 
 class _StatusBadge extends StatelessWidget {
   final OrderStatus status;
   const _StatusBadge({required this.status});
 
-  Color get _color => switch (status) {
-        OrderStatus.sent => AppColors.success,
-        OrderStatus.modified => AppColors.warn,
-        OrderStatus.cancelled => AppColors.danger,
-        OrderStatus.paid => AppColors.teal,
+  (Color, Color) get _tint => switch (status) {
+        OrderStatus.sent => (
+            AppColors.success.withValues(alpha: 0.12),
+            AppColors.success
+          ),
+        OrderStatus.modified => (
+            AppColors.warn.withValues(alpha: 0.14),
+            AppColors.warn
+          ),
+        OrderStatus.cancelled => (
+            AppColors.danger.withValues(alpha: 0.12),
+            AppColors.danger
+          ),
+        OrderStatus.paid => (const Color(0xFFDDF3F0), const Color(0xFF0B6E61)),
       };
 
   String get _label => switch (status) {
@@ -390,15 +388,16 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final (bg, fg) = _tint;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.14),
+        color: bg,
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(_label,
           style: AppTypography.micro.copyWith(
-            color: _color,
+            color: fg,
             letterSpacing: 0.8,
           )),
     );

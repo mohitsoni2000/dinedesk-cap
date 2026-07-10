@@ -7,12 +7,12 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../motion/motion.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import '../utils/socket_helpers.dart';
 import '../widgets/app_card.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_mesh_background.dart';
 import '../widgets/payment_sheet.dart';
 import '../widgets/discount_sheet.dart';
 import '../widgets/coupon_sheet.dart';
@@ -432,28 +432,25 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     });
 
     if (order == null) {
-      return Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: Column(
-            children: [
-              LiquidAppBar(
-                title: 'Order',
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => context.pop(),
-                ),
-              ),
-              const Spacer(),
-              Icon(Icons.error_outline,
-                  color: context.palette.ink30, size: 48),
-              const SizedBox(height: 12),
-              const Text('Order not found', style: AppTypography.title),
-              const SizedBox(height: 4),
-              const Text('It may have been removed',
-                  style: AppTypography.caption),
-              const Spacer(),
-            ],
+      return ColoredBox(
+        color: AppColors.paper,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: SafeArea(
+            child: Column(
+              children: [
+                _DetailHeader(title: 'Order', onBack: () => context.pop()),
+                const Spacer(),
+                Icon(Icons.error_outline,
+                    color: context.palette.ink30, size: 48),
+                const SizedBox(height: 12),
+                const Text('Order not found', style: AppTypography.title),
+                const SizedBox(height: 4),
+                const Text('It may have been removed',
+                    style: AppTypography.caption),
+                const Spacer(),
+              ],
+            ),
           ),
         ),
       );
@@ -468,23 +465,17 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final isSent = order.status == OrderStatus.sent ||
         order.status == OrderStatus.modified;
 
-    return LiquidMeshBackground(
-      animate: false,
+    return ColoredBox(
+      color: AppColors.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
           child: Column(
             children: [
-              LiquidAppBar(
+              _DetailHeader(
                 title: order.id,
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => context.pop(),
-                ),
-                actions: [
-                  _StatusBadge(status: order.status),
-                  const SizedBox(width: 8),
-                ],
+                onBack: () => context.pop(),
+                trailing: _StatusBadge(status: order.status),
               ),
               Expanded(
                 child: ListView(
@@ -788,17 +779,20 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     if (isSent) ...[
                     Row(
                       children: [
-                        Expanded(
-                          child: LiquidSecondaryButton(
-                            label: 'Reprint KOT',
-                            leadingIcon: Icons.print_outlined,
-                            onPressed:
-                                isCancelled ? null : () => _reprintKot(context),
+                        if (flags.kotReprint)
+                          Expanded(
+                            child: LiquidSecondaryButton(
+                              label: 'Reprint KOT',
+                              leadingIcon: Icons.print_outlined,
+                              onPressed: isCancelled
+                                  ? null
+                                  : () => _reprintKot(context),
+                            ),
                           ),
-                        ),
 
-                        if (!ref.watch(isWaiterProvider)) ...[
-                          const SizedBox(width: 8),
+                        if (!_billGenerated &&
+                            !ref.watch(isWaiterProvider)) ...[
+                          if (flags.kotReprint) const SizedBox(width: 8),
                           Expanded(
                             child: LiquidSecondaryButton(
                               label: isCancelled ? 'Cancelled' : 'Cancel Order',
@@ -891,6 +885,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     ],
 
                     if (_billGenerated &&
+                        flags.billPrinting &&
                         (_bills.isNotEmpty || _billId != null) &&
                         !ref.watch(isWaiterProvider)) ...[
                       const SizedBox(height: 8),
@@ -930,6 +925,47 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DetailHeader extends StatelessWidget {
+  final String title;
+  final VoidCallback onBack;
+  final Widget? trailing;
+  const _DetailHeader({required this.title, required this.onBack, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
+      child: Row(
+        children: [
+          Pressable(
+            onTap: onBack,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: context.palette.surface,
+                borderRadius: const BorderRadius.all(AppRadii.sm),
+                border: Border.all(color: AppColors.hairline),
+              ),
+              alignment: Alignment.center,
+              child: Icon(Icons.arrow_back,
+                  size: 18, color: context.palette.ink70),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(title,
+                style: AppTypography.sheetTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          ),
+          if (trailing != null) trailing!,
+        ],
       ),
     );
   }

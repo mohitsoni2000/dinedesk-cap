@@ -55,3 +55,6 @@ screen_*.png
 android/key.properties
 *.jks
 *.keystore
+
+# UI redesign reference (design artifact, not app code)
+/restro-operator-ui-v2.html

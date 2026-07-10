@@ -8,9 +8,9 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
+import '../services/socket_service.dart' show SocketState;
 import '../theme/tokens.dart';
-import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_glass_surface.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/table_merge_sheet.dart';
 
 class TablesScreen extends ConsumerStatefulWidget {
@@ -19,12 +19,31 @@ class TablesScreen extends ConsumerStatefulWidget {
   ConsumerState<TablesScreen> createState() => _TablesScreenState();
 }
 
-class _TablesScreenState extends ConsumerState<TablesScreen> {
+class _TablesScreenState extends ConsumerState<TablesScreen>
+    with SingleTickerProviderStateMixin {
   String? _floor;
   String _query = '';
   bool _searchOpen = false;
   bool _openingTable = false;
   String? _openingTableId;
+  TableState? _spotlight;
+  bool _refreshing = false;
+  late final AnimationController _refreshController;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+  }
+
+  @override
+  void dispose() {
+    _refreshController.dispose();
+    super.dispose();
+  }
 
   void _onTableTap(RestaurantTable t) async {
     if (_openingTable) return;
@@ -107,6 +126,36 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
       ));
   }
 
+  Future<void> _refresh() async {
+    if (_refreshing) return;
+    if (ref.read(socketServiceProvider).state != SocketState.verified) {
+      _showTableError('Not connected — nothing to resync');
+      return;
+    }
+    setState(() => _refreshing = true);
+    _refreshController.repeat();
+    try {
+      await ref.read(syncServiceProvider).requestResync();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(
+          backgroundColor: AppColors.ink,
+          content: Text(
+            'Resynced with the desk · just now',
+            style: AppTypography.bodyMd.copyWith(color: Colors.white),
+          ),
+          duration: const Duration(seconds: 2),
+        ));
+    } finally {
+      if (mounted) {
+        _refreshController.stop();
+        _refreshController.value = 0;
+        setState(() => _refreshing = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final tables = ref.watch(tablesProvider);
@@ -127,16 +176,21 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
       });
     }
 
-    final query = _query.toLowerCase();
+    final query = _query.trim().toLowerCase();
+    final isSearching = query.isNotEmpty;
     final filtered = tables.where((t) {
-      if (t.floor != activeFloor) return false;
-      if (query.isEmpty) return true;
+      if (!isSearching && t.floor != activeFloor) return false;
+      if (!isSearching) return true;
       return t.id.toLowerCase().contains(query) ||
           (t.waiterName?.toLowerCase().contains(query) ?? false);
     }).toList();
 
+    final floorCounts = {
+      for (final f in floors) f: tables.where((t) => t.floor == f).length,
+    };
+
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.paper,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -144,63 +198,72 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Tables', style: AppTypography.displayMd),
+                        const Text('Tables', style: AppTypography.displayLg),
+                        const SizedBox(height: 2),
                         Row(children: [
-                          Text('Hi, ${opName.split(' ').first} · ',
-                              style: AppTypography.caption),
-                          Text(restaurantName,
+                          Flexible(
+                            child: Text(
+                              'Hi ${opName.split(' ').first} · ',
+                              style: AppTypography.caption,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Flexible(
+                            child: Text(
+                              restaurantName,
                               style: AppTypography.caption
-                                  .copyWith(fontWeight: FontWeight.w600)),
+                                  .copyWith(fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ]),
                       ],
                     ),
                   ),
-                  IconButton(
-                    icon: Icon(_searchOpen ? Icons.close : Icons.search,
-                        color: context.palette.ink70),
-                    onPressed: () => setState(() {
+                  const SizedBox(width: 8),
+                  _HeaderIconTile(
+                    onTap: _refresh,
+                    child: RotationTransition(
+                      turns: _refreshController,
+                      child: Icon(Icons.refresh,
+                          size: 18, color: context.palette.ink70),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _HeaderIconTile(
+                    icon: _searchOpen ? Icons.close : Icons.search,
+                    onTap: () => setState(() {
                       _searchOpen = !_searchOpen;
                       if (!_searchOpen) _query = '';
                     }),
                   ),
-                  LiquidPill(
-                    tint: connOnline
-                        ? null
-                        : AppColors.warn.withValues(alpha: 0.32),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: connOnline
-                                ? AppColors.success
-                                : AppColors.warn,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(connOnline ? 'ONLINE' : 'OFFLINE'),
-                      ],
-                    ),
-                  ),
                 ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _ConnectionRail(
+                  online: connOnline,
+                  restaurantName: restaurantName,
+                ),
               ),
             ),
             if (_searchOpen)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: LiquidGlassSurface(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: AppSurface(
                   borderRadius: const BorderRadius.all(AppRadii.sm),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  blur: 20,
-                  thickness: 10,
+                  shadow: const [],
                   child: TextField(
                     autofocus: true,
                     decoration: InputDecoration(
@@ -213,10 +276,22 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                   ),
                 ),
               ),
-
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
               child: _OnlineStrip(operators: activeOps),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _LegendStrip(
+                active: _spotlight,
+                onChange: (s) => setState(() => _spotlight = s),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _StatsStrip(),
             ),
             const SizedBox(height: 12),
             Padding(
@@ -224,6 +299,8 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
               child: _FloorTabs(
                 value: activeFloor,
                 floors: floors,
+                counts: floorCounts,
+                enabled: !isSearching,
                 onChange: (v) => setState(() => _floor = v),
               ),
             ),
@@ -242,8 +319,13 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                               const Text('No tables match',
                                   style: AppTypography.title),
                               const SizedBox(height: 4),
-                              const Text('Try a different search or floor',
-                                  style: AppTypography.caption),
+                              Text(
+                                isSearching
+                                    ? 'No tables match — searched every floor for "$query"'
+                                    : 'Try a different search or floor',
+                                textAlign: TextAlign.center,
+                                style: AppTypography.caption,
+                              ),
                             ],
                           ),
                         ),
@@ -269,9 +351,12 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                               isLoading: _openingTable &&
                                   _openingTableId == t.serverId,
                               onTap: () => _onTableTap(t),
-
+                              spotlight: _spotlight,
+                              showFloorTag: isSearching,
                               onLongPress: ((t.state == TableState.mine ||
                                           t.state == TableState.other) &&
+                                      ref.watch(flagsProvider
+                                          .select((f) => f.tableMerge)) &&
                                       !ref.watch(isWaiterProvider))
                                   ? () => TableMergeSheet.show(context, t)
                                   : null,
@@ -283,6 +368,286 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _HeaderIconTile extends StatelessWidget {
+  final IconData? icon;
+  final Widget? child;
+  final VoidCallback? onTap;
+  const _HeaderIconTile({this.icon, this.child, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: context.palette.surface,
+          borderRadius: const BorderRadius.all(AppRadii.sm),
+          border: Border.all(color: AppColors.hairline),
+        ),
+        alignment: Alignment.center,
+        child: child ??
+            Icon(icon, size: 18, color: context.palette.ink70),
+      ),
+    );
+  }
+}
+
+class _ConnectionRail extends StatelessWidget {
+  final bool online;
+  final String restaurantName;
+  const _ConnectionRail({required this.online, required this.restaurantName});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = online ? AppColors.success : AppColors.danger;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: const BorderRadius.all(AppRadii.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (online)
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            )
+          else
+            _BlinkingDot(color: color),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              online ? 'Connected · $restaurantName' : 'Reconnecting…',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.caption.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BlinkingDot extends StatefulWidget {
+  final Color color;
+  const _BlinkingDot({required this.color});
+  @override
+  State<_BlinkingDot> createState() => _BlinkingDotState();
+}
+
+class _BlinkingDotState extends State<_BlinkingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 700));
+    if (!MediaQuery.of(context).disableAnimations) {
+      _c.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween(begin: 0.35, end: 1.0).animate(_c),
+      child: Container(
+        width: 6,
+        height: 6,
+        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
+      ),
+    );
+  }
+}
+
+class _LegendStrip extends StatelessWidget {
+  final TableState? active;
+  final ValueChanged<TableState?> onChange;
+  const _LegendStrip({required this.active, required this.onChange});
+
+  static const _entries = [
+    (TableState.free, 'FREE'),
+    (TableState.mine, 'MINE'),
+    (TableState.other, 'OTHER'),
+    (TableState.dirty, 'DIRTY'),
+    (TableState.reserved, 'RESERVED'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final e in _entries)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: GestureDetector(
+                onTap: () => onChange(active == e.$1 ? null : e.$1),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: active == e.$1
+                        ? _ringColor(e.$1).withValues(alpha: 0.12)
+                        : Colors.transparent,
+                    borderRadius: const BorderRadius.all(AppRadii.pill),
+                    border: Border.all(
+                      color: active == e.$1
+                          ? _ringColor(e.$1)
+                          : AppColors.hairline,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: _ringColor(e.$1),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(e.$2,
+                          style: AppTypography.pill
+                              .copyWith(color: context.palette.ink70)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatsStrip extends ConsumerWidget {
+  const _StatsStrip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mineCount = ref.watch(tablesProvider.select(
+      (list) => list.where((t) => t.state == TableState.mine).length,
+    ));
+    final freeCount = ref.watch(tablesProvider.select(
+      (list) => list.where((t) => t.state == TableState.free).length,
+    ));
+    final billSum = ref.watch(tablesProvider.select(
+      (list) => list.fold<double>(0, (sum, t) => sum + (t.bill ?? 0)),
+    ));
+
+    return Row(
+      children: [
+        Expanded(
+          child: _StatMiniCard(
+            dotColor: AppColors.terra,
+            label: 'My tables',
+            value: _BumpNumber(value: mineCount),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _StatMiniCard(
+            dotColor: AppColors.success,
+            label: 'Free now',
+            value: _BumpNumber(value: freeCount),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _StatMiniCard(
+            label: 'On tables',
+            value: KineticRupeeCounter(
+                amount: billSum, fontSize: 16, color: AppColors.ink),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatMiniCard extends StatelessWidget {
+  final Color? dotColor;
+  final String label;
+  final Widget value;
+  const _StatMiniCard(
+      {this.dotColor, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppSurface(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      borderRadius: const BorderRadius.all(AppRadii.md),
+      shadow: const [],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (dotColor != null) ...[
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration:
+                      BoxDecoration(color: dotColor, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 4),
+              ],
+              Expanded(
+                child: Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.pill
+                        .copyWith(color: context.palette.ink50)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          value,
+        ],
+      ),
+    );
+  }
+}
+
+class _BumpNumber extends StatelessWidget {
+  final int value;
+  const _BumpNumber({required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: value.toDouble(), end: value.toDouble()),
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+      builder: (_, v, __) => Text(
+        '${v.round()}',
+        style: AppTypography.title.copyWith(fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -310,7 +675,7 @@ class _OnlineStrip extends StatelessWidget {
                     height: 26,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [AppColors.terra300, AppColors.terra500],
+                        colors: [AppColors.terra300, AppColors.terra],
                       ),
                       shape: BoxShape.circle,
                       border:
@@ -351,77 +716,323 @@ class _OnlineStrip extends StatelessWidget {
 class _FloorTabs extends StatelessWidget {
   final String value;
   final List<String> floors;
+  final Map<String, int> counts;
+  final bool enabled;
   final ValueChanged<String> onChange;
-  const _FloorTabs(
-      {required this.value, required this.floors, required this.onChange});
+  const _FloorTabs({
+    required this.value,
+    required this.floors,
+    required this.counts,
+    required this.enabled,
+    required this.onChange,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return LiquidGlassSurface(
-      borderRadius: const BorderRadius.all(AppRadii.sm),
-      padding: const EdgeInsets.all(4),
-      blur: 24,
-      thickness: 12,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            for (final f in floors)
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: GestureDetector(
-                  onTap: () => onChange(f),
-                  child: SpringBuilder(
-                    to: value == f ? 1.0 : 0.0,
-                    spring: RestroSprings.snappy,
-                    builder: (BuildContext _, double t, Widget? child) {
-                      return Container(
-                        constraints: const BoxConstraints(minWidth: 96),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Color.lerp(
-                              Colors.transparent,
-                              context.palette.isDark
-                                  ? AppColors.terra600
-                                  : AppColors.ink,
-                              t),
-                          borderRadius: const BorderRadius.all(AppRadii.xs),
-                        ),
-                        alignment: Alignment.center,
-                        child: child,
-                      );
-                    },
-                    child: Text(
-                      f,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.micro.copyWith(
-                        color:
-                            value == f ? Colors.white : context.palette.ink70,
+    return AnimatedOpacity(
+      opacity: enabled ? 1 : 0.4,
+      duration: const Duration(milliseconds: 200),
+      child: IgnorePointer(
+        ignoring: !enabled,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final f in floors)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () => onChange(f),
+                    child: SpringBuilder(
+                      to: value == f ? 1.0 : 0.0,
+                      spring: RestroSprings.snappy,
+                      builder: (BuildContext _, double t, Widget? child) {
+                        return Container(
+                          constraints: const BoxConstraints(minWidth: 96),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 9,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Color.lerp(
+                                context.palette.surface, AppColors.ink, t),
+                            borderRadius:
+                                const BorderRadius.all(AppRadii.pill),
+                            border: Border.all(
+                              color: t > 0.5
+                                  ? Colors.transparent
+                                  : AppColors.hairline,
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: child,
+                        );
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            f,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.micro.copyWith(
+                              color: value == f
+                                  ? Colors.white
+                                  : context.palette.ink70,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${counts[f] ?? 0}',
+                            style: AppTypography.micro.copyWith(
+                              color: value == f
+                                  ? Colors.white.withValues(alpha: 0.7)
+                                  : context.palette.ink50,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _OccupancyBadge extends StatefulWidget {
-  final DateTime since;
-  const _OccupancyBadge({required this.since});
-
-  @override
-  State<_OccupancyBadge> createState() => _OccupancyBadgeState();
+Color _pillBg(BuildContext context, TableState state) {
+  switch (state) {
+    case TableState.mine:
+      return AppColors.terra;
+    case TableState.other:
+      return context.palette.tableOtherBg;
+    case TableState.dirty:
+      return context.palette.tableDirtyBg;
+    case TableState.reserved:
+      return context.palette.tableReservedBg;
+    case TableState.free:
+      return context.palette.tableFreeBg;
+  }
 }
 
-class _OccupancyBadgeState extends State<_OccupancyBadge> {
+Color _pillFg(TableState state) {
+  switch (state) {
+    case TableState.mine:
+      return Colors.white;
+    case TableState.other:
+      return AppColors.tableOtherText;
+    case TableState.dirty:
+      return AppColors.tableDirtyText;
+    case TableState.reserved:
+      return AppColors.tableReservedText;
+    case TableState.free:
+      return AppColors.tableFreeText;
+  }
+}
+
+Color _ringColor(TableState state) =>
+    state == TableState.mine ? AppColors.terra : _pillFg(state);
+
+String _pillLabel(TableState state, String? waiterName) {
+  switch (state) {
+    case TableState.mine:
+      return 'MINE';
+    case TableState.other:
+      final first = waiterName?.trim().split(' ').first;
+      return (first == null || first.isEmpty) ? 'OTHER' : first.toUpperCase();
+    case TableState.dirty:
+      return 'DIRTY';
+    case TableState.reserved:
+      return 'RESERVED';
+    case TableState.free:
+      return 'FREE';
+  }
+}
+
+Widget _applySpotlight(Widget card, TableState state, TableState? spotlight) {
+  if (spotlight == null) return card;
+  if (state == spotlight) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: const BorderRadius.all(AppRadii.lg),
+        border: Border.all(color: _ringColor(state), width: 1.5),
+      ),
+      child: card,
+    );
+  }
+  return Opacity(
+    opacity: 0.3,
+    child: ColorFiltered(
+      colorFilter: const ColorFilter.matrix(<double>[
+        0.2126, 0.7152, 0.0722, 0, 0, //
+        0.2126, 0.7152, 0.0722, 0, 0, //
+        0.2126, 0.7152, 0.0722, 0, 0, //
+        0, 0, 0, 1, 0, //
+      ]),
+      child: card,
+    ),
+  );
+}
+
+class _StatePill extends StatelessWidget {
+  final TableState state;
+  final String? waiterName;
+  const _StatePill({required this.state, this.waiterName});
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = _pillBg(context, state);
+    final fg = _pillFg(state);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.all(AppRadii.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
+          Text(_pillLabel(state, waiterName),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.pill.copyWith(color: fg)),
+        ],
+      ),
+    );
+  }
+}
+
+class _BillTag extends StatelessWidget {
+  const _BillTag();
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.6, end: 1.0),
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.elasticOut,
+      builder: (_, scale, child) =>
+          Transform.scale(scale: scale, child: child),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.warn, width: 1),
+          borderRadius: const BorderRadius.all(AppRadii.pill),
+        ),
+        child: Text('BILL',
+            style: AppTypography.pill.copyWith(color: AppColors.warn)),
+      ),
+    );
+  }
+}
+
+class _FloorTag extends StatelessWidget {
+  final String floor;
+  const _FloorTag({required this.floor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: const BoxDecoration(
+        color: AppColors.terraSoft,
+        borderRadius: BorderRadius.all(AppRadii.pill),
+      ),
+      child: Text(floor,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.pill.copyWith(color: AppColors.terraInk)),
+    );
+  }
+}
+
+class _ReadyChip extends StatefulWidget {
+  const _ReadyChip();
+  @override
+  State<_ReadyChip> createState() => _ReadyChipState();
+}
+
+class _ReadyChipState extends State<_ReadyChip>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _glow = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    );
+    if (!MediaQuery.of(context).disableAnimations) {
+      _glow.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _glow.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _glow,
+      builder: (_, child) {
+        final t = _glow.value;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(
+            color: AppColors.success,
+            borderRadius: const BorderRadius.all(AppRadii.pill),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.success.withValues(alpha: 0.25 + t * 0.25),
+                blurRadius: 6 + t * 6,
+                spreadRadius: t * 1.5,
+              ),
+            ],
+          ),
+          child: child,
+        );
+      },
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, size: 10, color: Colors.white),
+          SizedBox(width: 3),
+          Text('READY',
+              style: TextStyle(
+                fontFamily: AppTypography.inter,
+                fontWeight: FontWeight.w700,
+                fontSize: 9,
+                color: Colors.white,
+                letterSpacing: 0.4,
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimerChip extends StatefulWidget {
+  final DateTime since;
+  const _TimerChip({required this.since});
+
+  @override
+  State<_TimerChip> createState() => _TimerChipState();
+}
+
+class _TimerChipState extends State<_TimerChip> {
   Timer? _tick;
 
   @override
@@ -444,23 +1055,31 @@ class _OccupancyBadgeState extends State<_OccupancyBadge> {
     final label = elapsed.inHours >= 1
         ? '${elapsed.inHours}h ${elapsed.inMinutes.remainder(60)}m'
         : '${elapsed.inMinutes}m';
-    final color = elapsed.inMinutes < 30
-        ? AppColors.success
-        : elapsed.inMinutes < 60
-            ? AppColors.warn
-            : AppColors.danger;
+    final Color bg;
+    final Color fg;
+    if (elapsed.inMinutes < 30) {
+      bg = AppColors.success.withValues(alpha: 0.14);
+      fg = AppColors.success;
+    } else if (elapsed.inMinutes < 60) {
+      bg = AppColors.warn.withValues(alpha: 0.16);
+      fg = AppColors.warn;
+    } else {
+      bg = AppColors.timerBadBg;
+      fg = AppColors.timerBadText;
+    }
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(AppRadiiValues.sm),
+        color: bg,
+        borderRadius: const BorderRadius.all(AppRadii.pill),
       ),
-      child: Text(
-        label,
-        style: AppTypography.micro.copyWith(
-          color: Colors.white,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.schedule, size: 10, color: fg),
+          const SizedBox(width: 3),
+          Text(label, style: AppTypography.pill.copyWith(color: fg)),
+        ],
       ),
     );
   }
@@ -472,60 +1091,60 @@ class _TableCard extends ConsumerWidget {
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final DateTime? occupiedSince;
+  final TableState? spotlight;
+  final bool showFloorTag;
   const _TableCard({
     required this.table,
     required this.isLoading,
     required this.onTap,
     this.onLongPress,
     this.occupiedSince,
+    this.spotlight,
+    this.showFloorTag = false,
   });
 
-  Color _bg(BuildContext context) {
-    final palette = context.palette;
-    switch (table.state) {
-      case TableState.mine:
-        return palette.tableMineBg;
-      case TableState.other:
-        return palette.tableOtherBg;
-      case TableState.dirty:
-        return palette.tableDirtyBg;
-      case TableState.reserved:
-        return palette.tableReservedBg;
-      case TableState.free:
-        return palette.tableFreeBg;
+  Widget _buildBody(BuildContext context) {
+    if (table.bill != null) {
+      return Text(
+        formatRupeesCompact(table.bill!),
+        style: AppTypography.title
+            .copyWith(fontWeight: FontWeight.w800, fontSize: 20),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
     }
-  }
-
-  Color _border() {
-    switch (table.state) {
-      case TableState.mine:
-        return AppColors.terra400.withValues(alpha: 0.45);
-      case TableState.other:
-        return AppColors.info.withValues(alpha: 0.4);
-      case TableState.dirty:
-        return AppColors.warn.withValues(alpha: 0.4);
-      case TableState.reserved:
-        return AppColors.violet.withValues(alpha: 0.4);
-      case TableState.free:
-        return AppColors.success.withValues(alpha: 0.32);
+    if (table.state == TableState.free) {
+      return const Text(
+        'Start order →',
+        style: TextStyle(
+          fontFamily: AppTypography.inter,
+          fontWeight: FontWeight.w600,
+          fontSize: 12.5,
+          color: AppColors.success,
+        ),
+      );
     }
-  }
-
-  String _stateLabel() {
-    if (table.activeBillCount > 0) return 'BILL PENDING';
-    switch (table.state) {
-      case TableState.mine:
-        return 'MINE';
-      case TableState.other:
-        final waiter = table.waiterName;
-        return waiter == null || waiter.isEmpty ? 'OTHER' : 'OTHER · $waiter';
-      case TableState.dirty:
-        return 'DIRTY';
-      case TableState.reserved:
-        return 'RESERVED';
-      case TableState.free:
-        return 'FREE';
+    if (table.state == TableState.dirty) {
+      return Text('Needs cleaning',
+          style: AppTypography.caption.copyWith(color: context.palette.ink50));
     }
+    if (table.state == TableState.reserved && table.note != null) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.schedule, size: 12, color: context.palette.ink50),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(table.note!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.caption
+                    .copyWith(color: context.palette.ink50)),
+          ),
+        ],
+      );
+    }
+    return const SizedBox.shrink();
   }
 
   @override
@@ -536,144 +1155,153 @@ class _TableCard extends ConsumerWidget {
     final isReady = ref.watch(readyOrdersProvider.select(
       (list) => list.any((t) => t.tableId == table.serverId),
     ));
+    final isMine = table.state == TableState.mine;
 
-    return Pressable(
-      onTap: isLoading ? null : onTap,
-      onLongPress: onLongPress,
-      pressedScale: 0.97,
-      child: Hero(
-        tag: HeroTags.tableCard(table.serverId),
-        flightShuttleBuilder: (flightContext, anim, __, ___, ____) {
-          return AnimatedBuilder(
-            animation: anim,
-            builder: (_, __) => Material(
-              color: Colors.transparent,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: _bg(flightContext),
-                  borderRadius: const BorderRadius.all(AppRadii.lg),
-                  border: Border.all(color: _border(), width: 1),
-                  boxShadow: AppShadows.terraGlow,
+    final card = RepaintBoundary(
+      child: Pressable(
+        onTap: isLoading ? null : onTap,
+        onLongPress: onLongPress,
+        pressedScale: 0.97,
+        child: Hero(
+          tag: HeroTags.tableCard(table.serverId),
+          flightShuttleBuilder: (flightContext, anim, __, ___, ____) {
+            return AnimatedBuilder(
+              animation: anim,
+              builder: (_, __) => Material(
+                color: Colors.transparent,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: isMine
+                        ? AppColors.tableMineWashEnd
+                        : flightContext.palette.surface,
+                    borderRadius: const BorderRadius.all(AppRadii.lg),
+                    border: Border.all(color: AppColors.hairline, width: 1),
+                    boxShadow:
+                        isMine ? AppShadows.terraWash : AppShadows.card,
+                  ),
                 ),
               ),
-            ),
-          );
-        },
-        child: Stack(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                color: _bg(context),
-                borderRadius: const BorderRadius.all(AppRadii.lg),
-                border: Border.all(color: _border(), width: 1),
-                boxShadow: table.state == TableState.mine
-                    ? AppShadows.terraGlow
-                    : AppShadows.card,
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              gradient: isMine
+                  ? const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.tableMineWashStart,
+                        AppColors.tableMineWashEnd,
+                      ],
+                    )
+                  : null,
+              color: isMine ? null : context.palette.surface,
+              borderRadius: const BorderRadius.all(AppRadii.lg),
+              border: Border.all(
+                color:
+                    isMine ? AppColors.tableMineBorder : AppColors.hairline,
+                width: 1,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
+              boxShadow: isMine ? AppShadows.terraWash : AppShadows.card,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Opacity(
+                        opacity: table.state == TableState.dirty ? 0.55 : 1,
                         child: Text(
                           table.id,
-                          style: AppTypography.displayMd.copyWith(fontSize: 24),
+                          style: AppTypography.tableName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      Text('${table.seats} seats', style: AppTypography.caption),
-                    ],
-                  ),
-                  const Spacer(),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(_stateLabel(),
-                            style: AppTypography.micro,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      if (isLinked)
-                        const Icon(Icons.link, size: 12, color: AppColors.info),
-                    ],
-                  ),
-                  if (table.coverCount != null) ...[
-                    const SizedBox(height: 2),
-                    Text('${table.coverCount} guests',
-                        style: AppTypography.caption),
-                  ],
-                  if (table.bill != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      formatRupeesCompact(table.bill!),
-                      style:
-                          AppTypography.title.copyWith(fontWeight: FontWeight.w700),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        if (isReady) const _ReadyChip(),
+                        if (isMine && occupiedSince != null) ...[
+                          if (isReady) const SizedBox(height: 4),
+                          _TimerChip(since: occupiedSince!),
+                        ],
+                      ],
                     ),
                   ],
-                  if (table.note != null) ...[
-                    const SizedBox(height: 4),
-                    Text(table.note!,
-                        style: AppTypography.caption,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _StatePill(state: table.state, waiterName: table.waiterName),
+                    if (table.activeBillCount > 0) ...[
+                      const SizedBox(width: 6),
+                      const _BillTag(),
+                    ],
+                    if (isLinked) ...[
+                      const SizedBox(width: 6),
+                      const Icon(Icons.link, size: 12, color: AppColors.info),
+                    ],
                   ],
-                ],
-              ),
+                ),
+                const Spacer(),
+                _buildBody(context),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.event_seat_outlined,
+                        size: 12, color: context.palette.ink50),
+                    const SizedBox(width: 3),
+                    Text('${table.seats}',
+                        style: AppTypography.caption
+                            .copyWith(color: context.palette.ink50)),
+                    if (table.coverCount != null) ...[
+                      const SizedBox(width: 8),
+                      Icon(Icons.people_outline,
+                          size: 12, color: context.palette.ink50),
+                      const SizedBox(width: 3),
+                      Text('${table.coverCount}',
+                          style: AppTypography.caption
+                              .copyWith(color: context.palette.ink50)),
+                    ],
+                    const Spacer(),
+                    if (showFloorTag) _FloorTag(floor: table.floor),
+                  ],
+                ),
+              ],
             ),
-            if (table.state == TableState.mine && occupiedSince != null)
-              Positioned(
-                right: 4,
-                bottom: 4,
-                child: _OccupancyBadge(since: occupiedSince!),
-              ),
-            if (isReady)
-              Positioned(
-                right: 4,
-                top: 4,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.success,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'READY',
-                    style: AppTypography.micro.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            if (isLoading)
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.ink.withValues(alpha: 0.38),
-                    borderRadius: const BorderRadius.all(AppRadii.lg),
-                  ),
-                  child: const Center(
-                    child: SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
+          ),
         ),
       ),
+    );
+
+    return Stack(
+      children: [
+        _applySpotlight(card, table.state, spotlight),
+        if (isLoading)
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.ink.withValues(alpha: 0.38),
+                borderRadius: const BorderRadius.all(AppRadii.lg),
+              ),
+              child: const Center(
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

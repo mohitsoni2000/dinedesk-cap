@@ -258,6 +258,9 @@ class SyncService {
       final flagsMap =
           (flagsRaw is Map) ? Map<String, dynamic>.from(flagsRaw) : envelope;
       _ref.read(flagsProvider.notifier).state = FeatureFlags.fromMap(flagsMap);
+      // Per-staff permissions: floor/menu access may have changed with the
+      // flags — pull a fresh, freshly-filtered sync right away.
+      _requestResync();
     });
 
     _socket.on('menu:updated', (data) async {
@@ -527,13 +530,18 @@ class SyncService {
     }
   }
 
-  void _requestResync() {
+  /// Public entry point for a user-triggered resync (e.g. the Tables screen
+  /// refresh button). Internal auto-resync triggers call [_requestResync]
+  /// directly and don't need the returned future.
+  Future<void> requestResync() => _requestResync();
+
+  Future<void> _requestResync() {
     _ref.read(connectionProvider.notifier).state = const ConnectionStatus(
       online: true,
       label: 'Syncing…',
     );
 
-    _socket.emitAck('operator:resync', {}).then((res) async {
+    return _socket.emitAck('operator:resync', {}).then((res) async {
       if (res['kind'] == 'success') {
         final syncRaw = res['sync'];
         if (syncRaw is Map) {

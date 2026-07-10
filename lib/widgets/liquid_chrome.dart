@@ -58,60 +58,70 @@ class LiquidBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-
-    final activeFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: LiquidGlassSurface(
-        borderRadius: const BorderRadius.all(AppRadii.lg),
-        padding: const EdgeInsets.all(6),
-        blur: 28,
-        thickness: 14,
-        child: Row(
-          children: [
-            for (int i = 0; i < items.length; i++)
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => onTap(i),
-                  child: SpringBuilder(
-                    to: i == currentIndex ? 1.0 : 0.0,
-                    spring: RestroSprings.snappy,
-                    builder: (BuildContext _, double t, Widget? child) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color:
-                              Color.lerp(Colors.transparent, activeFill, t),
-                          borderRadius: const BorderRadius.all(AppRadii.sm),
-                        ),
-                        child: child,
-                      );
-                    },
-                    child: Column(
-                      children: [
-                        Icon(
-                          items[i].icon,
-                          size: 22,
-                          color: i == currentIndex
-                              ? Colors.white
-                              : palette.ink70,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          items[i].label,
-                          style: AppTypography.micro.copyWith(
-                            color: i == currentIndex
-                                ? Colors.white
-                                : palette.ink50,
-                            decoration: TextDecoration.none,
-                          ),
-                        ),
-                      ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: palette.surface,
+        border: Border(top: BorderSide(color: AppColors.hairline)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 20,
+            offset: Offset(0, -6),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(
+            children: [
+              for (int i = 0; i < items.length; i++)
+                Expanded(
+                  child: Pressable(
+                    onTap: () => onTap(i),
+                    pressedScale: 0.88,
+                    child: SpringBuilder(
+                      to: i == currentIndex ? 1.0 : 0.0,
+                      spring: RestroSprings.snappy,
+                      builder: (BuildContext _, double t, Widget? child) {
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 52,
+                              height: 29,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Color.lerp(Colors.transparent,
+                                    AppColors.terraSoft, t),
+                                borderRadius:
+                                    const BorderRadius.all(AppRadii.pill),
+                              ),
+                              child: Icon(
+                                items[i].icon,
+                                size: 20,
+                                color: Color.lerp(
+                                    palette.ink50, AppColors.terraDeep, t),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              items[i].label,
+                              style: AppTypography.navLabel.copyWith(
+                                color: Color.lerp(
+                                    palette.ink50, AppColors.terraDeep, t),
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

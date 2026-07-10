@@ -9,7 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
-import 'liquid_glass_surface.dart';
+import 'app_surface.dart';
 
 class ConnectionBanner extends ConsumerStatefulWidget {
   final Widget child;
@@ -137,13 +137,13 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
                 child: SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                    child: LiquidGlassSurface(
+                    child: AppSurface(
                       borderRadius: const BorderRadius.all(AppRadii.md),
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 10),
-                      blur: 24,
-                      thickness: 12,
                       tint: AppColors.danger.withValues(alpha: 0.12),
+                      border: Border.all(
+                          color: AppColors.danger.withValues(alpha: 0.3)),
                       child: Row(
                         children: [
                           const _PulseDot(color: AppColors.danger),

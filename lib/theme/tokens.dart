@@ -14,12 +14,19 @@ class AppColors {
   static const terra600 = Color(0xFFD4501F);
   static const terra700 = Color(0xFFB23E15);
 
-  static const ink = Color(0xFF140E08);
-  static const ink70 = Color(0xB3140E08);
-  static const ink50 = Color(0x80140E08);
-  static const ink30 = Color(0x4D140E08);
-  static const ink10 = Color(0x1A140E08);
-  static const ink05 = Color(0x0D140E08);
+  // "Light" design system terracotta — same ramp, named per the token spec.
+  static const terra = Color(0xFFE05D38);
+  static const terraDeep = Color(0xFFB23E15);
+  static const terraInk = Color(0xFF8A3212);
+  static const terraSoft = Color(0xFFFFE3D6);
+
+  static const ink = Color(0xFF1A130C);
+  static const ink70 = Color(0xB31A130C);
+  static const ink50 = Color(0x801A130C);
+  static const ink30 = Color(0x4D1A130C);
+  static const ink10 = Color(0x1A1A130C);
+  static const ink05 = Color(0x0D1A130C);
+  static const hairline = Color(0x171A130C);
   static const amber = Color(0xFFF59E0B);
 
   static const readOnlyBannerBg = Color(0xFFFEF3C7);
@@ -27,23 +34,34 @@ class AppColors {
 
   static const trendingDot = Color(0xFFFF6B35);
 
-  static const paper = Color(0xFFFFFCF8);
+  static const paper = Color(0xFFF9F5EE);
+  static const card = Color(0xFFFFFFFF);
   static const paperWarm = Color(0xFFF9E8D2);
   static const paperDeeper = Color(0xFFF2DBC0);
+  static const night = Color(0xFF141009);
 
-  static const success = Color(0xFF22C55E);
-  static const warn = Color(0xFFF59E0B);
-  static const danger = Color(0xFFDC2626);
+  static const success = Color(0xFF1FA455);
+  static const warn = Color(0xFFD98A0B);
+  static const danger = Color(0xFFD5392B);
   static const info = Color(0xFF3B82F6);
   static const violet = Color(0xFFA855F7);
   static const teal = Color(0xFF14B8A6);
 
-  static const tableMineBg = Color(0xFFFFE8DC);
-  static const tableMineBorder = Color(0x73ED6E47);
-  static const tableOtherBg = Color(0xFFDCEAFE);
-  static const tableDirtyBg = Color(0xFFFDF0DC);
-  static const tableReservedBg = Color(0xFFF0E8FB);
-  static const tableFreeBg = Color(0xFFE8F5EC);
+  static const tableMineBg = Color(0xFFFFF3EC);
+  static const tableMineWashStart = Color(0xFFFFFAF6);
+  static const tableMineWashEnd = Color(0xFFFFF2E9);
+  static const tableMineBorder = Color(0x73E05D38);
+  static const tableOtherBg = Color(0xFFE4EEFD);
+  static const tableOtherText = Color(0xFF1D4FB8);
+  static const tableDirtyBg = Color(0xFFFBF0D9);
+  static const tableDirtyText = Color(0xFF8F5C05);
+  static const tableReservedBg = Color(0xFFF0E7FB);
+  static const tableReservedText = Color(0xFF6B32B0);
+  static const tableFreeBg = Color(0xFFE4F6EC);
+  static const tableFreeText = Color(0xFF0E7A3D);
+
+  static const timerBadBg = Color(0xFFFBE4E1);
+  static const timerBadText = Color(0xFFA82A1E);
 
   static const logoBg = Color(0xFF2A2622);
 
@@ -116,7 +134,7 @@ class AppPalette {
     ink30: AppColors.ink30,
     ink10: AppColors.ink10,
     ink05: AppColors.ink05,
-    surface: AppColors.paper,
+    surface: AppColors.card,
     surfaceWarm: AppColors.paperWarm,
     counterPaper: AppColors.counterPaper,
     tableMineBg: AppColors.tableMineBg,
@@ -160,8 +178,8 @@ class AppRadii {
   AppRadii._();
   static const xs = Radius.circular(8);
   static const sm = Radius.circular(12);
-  static const md = Radius.circular(16);
-  static const lg = Radius.circular(20);
+  static const md = Radius.circular(14);
+  static const lg = Radius.circular(18);
   static const xl = Radius.circular(28);
   static const pill = Radius.circular(9999);
 }
@@ -184,10 +202,10 @@ class AppTypography {
 
   static const TextStyle displayLg = TextStyle(
     fontFamily: cormorant,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w600,
     fontSize: 36,
     height: 1.1,
-    letterSpacing: -0.4,
+    letterSpacing: -0.54,
   );
 
   static const TextStyle displayMd = TextStyle(
@@ -196,6 +214,22 @@ class AppTypography {
     fontSize: 28,
     height: 1.15,
     letterSpacing: -0.3,
+  );
+
+  static const TextStyle tableName = TextStyle(
+    fontFamily: cormorant,
+    fontWeight: FontWeight.w600,
+    fontSize: 27,
+    height: 1.1,
+    letterSpacing: -0.405,
+  );
+
+  static const TextStyle sheetTitle = TextStyle(
+    fontFamily: cormorant,
+    fontWeight: FontWeight.w600,
+    fontSize: 26,
+    height: 1.15,
+    letterSpacing: -0.39,
   );
 
   static const TextStyle headline = TextStyle(
@@ -243,6 +277,22 @@ class AppTypography {
     letterSpacing: 0.6,
   );
 
+  static const TextStyle pill = TextStyle(
+    fontFamily: inter,
+    fontWeight: FontWeight.w700,
+    fontSize: 9.5,
+    height: 1.2,
+    letterSpacing: 0.4,
+  );
+
+  static const TextStyle navLabel = TextStyle(
+    fontFamily: inter,
+    fontWeight: FontWeight.w700,
+    fontSize: 9,
+    height: 1.2,
+    letterSpacing: 0.3,
+  );
+
   static const TextStyle mono = TextStyle(
     fontFamily: 'monospace',
     fontWeight: FontWeight.w500,
@@ -254,9 +304,22 @@ class AppShadows {
   AppShadows._();
 
   static const List<BoxShadow> card = [
-    BoxShadow(color: Color(0x0A140E08), blurRadius: 2, offset: Offset(0, 1)),
-    BoxShadow(color: Color(0x0D140E08), blurRadius: 10, offset: Offset(0, 4)),
-    BoxShadow(color: Color(0x0D140E08), blurRadius: 24, offset: Offset(0, 12)),
+    BoxShadow(color: Color(0x081A130C), blurRadius: 2, offset: Offset(0, 1)),
+    BoxShadow(
+      color: Color(0x331A130C),
+      blurRadius: 24,
+      offset: Offset(0, 10),
+      spreadRadius: -18,
+    ),
+  ];
+
+  static const List<BoxShadow> terraWash = [
+    BoxShadow(
+      color: Color(0x66E05D38),
+      blurRadius: 30,
+      offset: Offset(0, 14),
+      spreadRadius: -18,
+    ),
   ];
 
   static const List<BoxShadow> elevated = [

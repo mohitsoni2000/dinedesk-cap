@@ -19,7 +19,7 @@ class AppTheme {
       scaffoldBackgroundColor: Colors.transparent,
       colorScheme: ColorScheme(
         brightness: p.brightness,
-        primary: AppColors.terra500,
+        primary: AppColors.terra,
         onPrimary: Colors.white,
         secondary: AppColors.violet,
         onSecondary: Colors.white,

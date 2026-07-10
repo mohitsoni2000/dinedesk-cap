@@ -6,9 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
+import 'app_surface.dart';
 import 'kot_edit_sheet.dart';
 import 'liquid_chrome.dart';
-import 'liquid_glass_surface.dart';
 import 'sheet_handle.dart';
 
 class KotHistorySheet extends ConsumerWidget {
@@ -56,10 +56,8 @@ class KotHistorySheet extends ConsumerWidget {
       maxChildSize: 0.9,
       minChildSize: 0.4,
       expand: false,
-      builder: (_, scroll) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scroll) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.zero,
         child: Column(
           children: [
@@ -69,10 +67,10 @@ class KotHistorySheet extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Row(
                 children: [
-                  Icon(Icons.history, color: context.palette.ink70, size: 20),
+                  const Icon(Icons.history, color: AppColors.terra, size: 20),
                   const SizedBox(width: 8),
                   Text('KOT History · $tableDisplay',
-                      style: AppTypography.title),
+                      style: AppTypography.sheetTitle),
                   const Spacer(),
                   Text('${tableOrders.length} orders',
                       style: AppTypography.caption),
@@ -104,7 +102,8 @@ class KotHistorySheet extends ConsumerWidget {
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (_, i) {
                         final order = tableOrders[i];
-                        return _KotCard(order: order);
+                        return _KotCard(
+                            order: order, index: tableOrders.length - i);
                       },
                     ),
             ),
@@ -126,7 +125,8 @@ class KotHistorySheet extends ConsumerWidget {
 
 class _KotCard extends ConsumerWidget {
   final HistoryOrder order;
-  const _KotCard({required this.order});
+  final int index;
+  const _KotCard({required this.order, required this.index});
 
   Color get _statusColor => switch (order.status) {
         OrderStatus.sent => AppColors.success,
@@ -151,12 +151,14 @@ class _KotCard extends ConsumerWidget {
     final canEdit = ref.watch(flagsProvider).kotEdit &&
         _isEditable &&
         !ref.watch(isWaiterProvider);
+    final myId = ref.watch(operatorProvider)?.username;
+    final isMine = order.createdBy != null && order.createdBy == myId;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: context.palette.surface,
         borderRadius: const BorderRadius.all(AppRadii.md),
-        border: Border.all(color: context.palette.ink10),
+        border: Border.all(color: AppColors.hairline),
         boxShadow: AppShadows.card,
       ),
       child: Column(
@@ -179,7 +181,7 @@ class _KotCard extends ConsumerWidget {
                   children: [
                     Row(
                       children: [
-                        Text(order.id,
+                        Text('KOT #$index',
                             style: AppTypography.bodyMd
                                 .copyWith(fontWeight: FontWeight.w600)),
                         const SizedBox(width: 8),
@@ -194,10 +196,28 @@ class _KotCard extends ConsumerWidget {
                               style: AppTypography.micro.copyWith(
                                   color: _statusColor, letterSpacing: 0.6)),
                         ),
+                        if (isMine) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: const BoxDecoration(
+                              color: AppColors.terraSoft,
+                              borderRadius:
+                                  BorderRadius.all(AppRadii.pill),
+                            ),
+                            child: Text('YOU',
+                                style: AppTypography.pill.copyWith(
+                                    color: AppColors.terraDeep)),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text('${order.time} · ${order.itemCount} items',
+                    Text(
+                        isMine || order.createdBy == null
+                            ? '${order.time} · ${order.itemCount} items'
+                            : '${order.createdBy} · ${order.time} · ${order.itemCount} items',
                         style: AppTypography.caption),
                   ],
                 ),
@@ -211,7 +231,7 @@ class _KotCard extends ConsumerWidget {
             const SizedBox(height: 8),
             Divider(height: 1, color: context.palette.ink10),
             const SizedBox(height: 8),
-            for (final line in order.lines.take(5))
+            for (final line in order.lines)
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Row(
@@ -231,10 +251,6 @@ class _KotCard extends ConsumerWidget {
                   ],
                 ),
               ),
-            if (order.lines.length > 5)
-              Text('+${order.lines.length - 5} more items',
-                  style: AppTypography.micro
-                      .copyWith(color: context.palette.ink50)),
           ],
           if (canEdit) ...[
             const SizedBox(height: 10),

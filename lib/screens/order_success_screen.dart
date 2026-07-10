@@ -7,7 +7,6 @@ import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_mesh_background.dart';
 import '../widgets/animated_check_draw.dart';
 import '../widgets/confetti_burst.dart';
 
@@ -79,7 +78,8 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return LiquidMeshBackground(
+    return ColoredBox(
+      color: AppColors.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: Stack(
@@ -108,8 +108,9 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                       );
                     },
                     child: Column(children: [
-                      const Text('Sent to Kitchen',
-                          style: AppTypography.displayMd),
+                      Text('Sent to Kitchen',
+                          style: AppTypography.displayMd
+                              .copyWith(color: context.palette.ink)),
                       const SizedBox(height: 24),
 
                       Container(

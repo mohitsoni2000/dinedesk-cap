@@ -266,25 +266,32 @@ class _LiquidSecondaryButtonState extends State<LiquidSecondaryButton> {
         builder: (BuildContext _, double scale, Widget? child) {
           return Transform.scale(scale: scale, child: child);
         },
-        child: LiquidGlassSurface(
-          borderRadius: const BorderRadius.all(AppRadii.md),
+        child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          blur: 16,
-          thickness: 8,
-          skipBlur: true,
+          decoration: BoxDecoration(
+            color: context.palette.surface,
+            borderRadius: const BorderRadius.all(AppRadii.md),
+            border: Border.all(
+                color: enabled ? AppColors.hairline : context.palette.ink05),
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (widget.leadingIcon != null) ...[
-                Icon(widget.leadingIcon, color: context.palette.ink, size: 20),
+                Icon(widget.leadingIcon,
+                    color: enabled ? context.palette.ink : context.palette.ink30,
+                    size: 20),
                 const SizedBox(width: 8),
               ],
               Flexible(
                 child: Text(widget.label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodyMd
-                        .copyWith(fontWeight: FontWeight.w600)),
+                    style: AppTypography.bodyMd.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: enabled
+                            ? context.palette.ink
+                            : context.palette.ink30)),
               ),
             ],
           ),

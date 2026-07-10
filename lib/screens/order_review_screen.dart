@@ -13,8 +13,8 @@ import '../widgets/app_card.dart';
 import '../widgets/customer_sheet.dart';
 import '../widgets/quick_action_tile.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_mesh_background.dart';
 import '../widgets/order_submitting_overlay.dart';
+import '../widgets/payment_sheet.dart';
 import '../widgets/stepper_button.dart';
 
 class OrderReviewScreen extends ConsumerStatefulWidget {
@@ -143,6 +143,32 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           order['status']?.toString() != 'cancelled';
     }).firstOrNull;
     return active?['id']?.toString();
+  }
+
+  List<BillInfo> _currentBills() {
+    final slotKey = widget.isRoom ? 'room_id' : 'table_id';
+    final orderMap = ref.read(activeOrdersProvider).where((o) {
+      return o[slotKey]?.toString() == widget.tableId;
+    }).firstOrNull;
+    final billsRaw = orderMap?['bills'];
+    if (billsRaw is! List) return [];
+    return billsRaw
+        .whereType<Map>()
+        .map((b) => BillInfo.fromMap(Map<String, dynamic>.from(b)))
+        .where((b) => b.id.isNotEmpty)
+        .toList();
+  }
+
+  void _openBilling() {
+    final bills = _currentBills();
+    if (bills.isEmpty) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(const SnackBar(
+            content: Text('No bill found for this table')));
+      return;
+    }
+    PaymentSheet.show(context, bills: bills);
   }
 
   String? _orderIdFromResponse(
@@ -743,8 +769,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
             0);
     final billAlreadyGenerated = activeBillCount > 0;
 
-    return LiquidMeshBackground(
-      animate: false,
+    return ColoredBox(
+      color: AppColors.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
@@ -754,15 +780,41 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                 tag: HeroTags.cartBar,
                 child: Material(
                   color: Colors.transparent,
-                  child: LiquidAppBar(
-                    title: widget.isRoom
-                        ? 'Review · Room $tableDisplay'
-                        : 'Review · $tableDisplay',
-                    leading: IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: cart.isEmpty
-                          ? null
-                          : () => context.pop(),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                    child: Row(
+                      children: [
+                        Pressable(
+                          onTap: cart.isEmpty ? null : () => context.pop(),
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: context.palette.surface,
+                              borderRadius:
+                                  const BorderRadius.all(AppRadii.sm),
+                              border: Border.all(color: AppColors.hairline),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(Icons.arrow_back,
+                                size: 18,
+                                color: cart.isEmpty
+                                    ? context.palette.ink30
+                                    : context.palette.ink70),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            widget.isRoom
+                                ? 'Review · Room $tableDisplay'
+                                : 'Review · $tableDisplay',
+                            style: AppTypography.sheetTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -815,6 +867,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                 child: cart.isEmpty
                     ? _EmptyCartGuard(
                         onBackToMenu: () => context.pop(),
+                        billAlreadyGenerated: billAlreadyGenerated,
+                        onOpenBilling:
+                            flags.billingButton ? _openBilling : null,
                       )
                     : ListView(
                         padding: EdgeInsets.fromLTRB(
@@ -1125,15 +1180,18 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                       style: AppTypography.caption,
                                       textAlign: TextAlign.right,
                                     ),
-                                    Divider(
-                                      height: 16,
-                                      color: context.palette.ink10,
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                          vertical: 10),
+                                      child: _DashedDivider(),
                                     ),
                                     Row(
                                       children: [
-                                        const Text(
+                                        Text(
                                           'Total',
-                                          style: AppTypography.title,
+                                          style: AppTypography.title.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 15.5),
                                         ),
                                         const Spacer(),
                                         Hero(
@@ -1180,19 +1238,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: _orderType == _OrderType.dineIn
-                                      ? (context.palette.isDark
-                                          ? AppColors.terra600
-                                          : AppColors.ink)
-                                      : (context.palette.isDark
-                                          ? Colors.white
-                                              .withValues(alpha: 0.08)
-                                          : Colors.white
-                                              .withValues(alpha: 0.5)),
+                                      ? AppColors.ink
+                                      : context.palette.surface,
                                   borderRadius: const BorderRadius.horizontal(
                                     left: AppRadii.sm,
                                   ),
                                   border:
-                                      Border.all(color: context.palette.ink10),
+                                      Border.all(color: AppColors.hairline),
                                 ),
                                 alignment: Alignment.center,
                                 child: Row(
@@ -1234,19 +1286,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: _orderType == _OrderType.takeaway
-                                      ? (context.palette.isDark
-                                          ? AppColors.terra600
-                                          : AppColors.ink)
-                                      : (context.palette.isDark
-                                          ? Colors.white
-                                              .withValues(alpha: 0.08)
-                                          : Colors.white
-                                              .withValues(alpha: 0.5)),
+                                      ? AppColors.ink
+                                      : context.palette.surface,
                                   borderRadius: const BorderRadius.horizontal(
                                     right: AppRadii.sm,
                                   ),
                                   border:
-                                      Border.all(color: context.palette.ink10),
+                                      Border.all(color: AppColors.hairline),
                                 ),
                                 alignment: Alignment.center,
                                 child: Row(
@@ -1348,14 +1394,21 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                         ),
                       ],
                       if (billAlreadyGenerated) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Bill already generated — go back to collect payment',
-                          style: AppTypography.caption.copyWith(
-                            color: context.palette.ink50,
+                        const SizedBox(height: 8),
+                        if (flags.billingButton)
+                          LiquidSecondaryButton(
+                            label: 'Billing',
+                            leadingIcon: Icons.receipt_long,
+                            onPressed: _openBilling,
+                          )
+                        else
+                          Text(
+                            'Bill already generated — go back to collect payment',
+                            style: AppTypography.caption.copyWith(
+                              color: context.palette.ink50,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
-                        ),
                       ],
                     ],
                   ),
@@ -1554,7 +1607,13 @@ class _KotRow extends StatelessWidget {
 
 class _EmptyCartGuard extends ConsumerWidget {
   final VoidCallback onBackToMenu;
-  const _EmptyCartGuard({required this.onBackToMenu});
+  final bool billAlreadyGenerated;
+  final VoidCallback? onOpenBilling;
+  const _EmptyCartGuard({
+    required this.onBackToMenu,
+    this.billAlreadyGenerated = false,
+    this.onOpenBilling,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1590,6 +1649,14 @@ class _EmptyCartGuard extends ConsumerWidget {
               leadingIcon: Icons.add,
               onPressed: () => context.pop(),
             ),
+            if (billAlreadyGenerated && onOpenBilling != null) ...[
+              const SizedBox(height: 8),
+              LiquidSecondaryButton(
+                label: 'Billing',
+                leadingIcon: Icons.receipt_long,
+                onPressed: onOpenBilling!,
+              ),
+            ],
             const SizedBox(height: 12),
             Builder(
               builder: (_) {
@@ -1684,6 +1751,33 @@ class _EmptyCartGuard extends ConsumerWidget {
     ).then((confirmed) {
       if (confirmed == true) onBackToMenu();
     });
+  }
+}
+
+class _DashedDivider extends StatelessWidget {
+  const _DashedDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 1,
+      child: LayoutBuilder(builder: (_, constraints) {
+        const dashWidth = 5.0;
+        const gap = 4.0;
+        final count = (constraints.maxWidth / (dashWidth + gap)).floor();
+        return Row(
+          children: List.generate(
+            count,
+            (_) => Container(
+              width: dashWidth,
+              height: 1,
+              margin: const EdgeInsets.only(right: gap),
+              color: AppColors.hairline,
+            ),
+          ),
+        );
+      }),
+    );
   }
 }
 

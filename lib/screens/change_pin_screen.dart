@@ -6,10 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
+import '../motion/motion.dart';
 import '../theme/tokens.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_glass_surface.dart';
-import '../widgets/liquid_mesh_background.dart';
 import '../widgets/numeric_keyboard.dart';
 import '../widgets/sheet_handle.dart';
 
@@ -122,10 +122,8 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
       enableDrag: false,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.32),
-      builder: (_) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const SheetHandle(),
@@ -141,7 +139,7 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
                 color: AppColors.success, size: 32),
           ),
           const SizedBox(height: 12),
-          const Text('PIN updated', style: AppTypography.title),
+          const Text('PIN updated', style: AppTypography.sheetTitle),
           const SizedBox(height: 4),
           Text('Use your new PIN next sign-in.',
               style: context.palette.caption),
@@ -161,26 +159,21 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return LiquidMeshBackground(
+    return ColoredBox(
+      color: AppColors.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
           child: Column(
             children: [
-              LiquidAppBar(
-                title: 'Change PIN',
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => context.pop(),
-                ),
-              ),
+              _ChangePinHeader(onBack: () => context.pop()),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(_heading, style: AppTypography.title),
+                      Text(_heading, style: AppTypography.sheetTitle),
                       const SizedBox(height: 16),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -192,11 +185,14 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
                             height: 18,
                             decoration: BoxDecoration(
                               color: filled
-                                  ? context.palette.ink
+                                  ? AppColors.terra
                                   : Colors.transparent,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                  color: context.palette.ink30, width: 1.5),
+                                  color: filled
+                                      ? AppColors.terra
+                                      : context.palette.ink30,
+                                  width: 1.5),
                             ),
                           );
                         }),
@@ -235,6 +231,39 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ChangePinHeader extends StatelessWidget {
+  final VoidCallback onBack;
+  const _ChangePinHeader({required this.onBack});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
+      child: Row(
+        children: [
+          Pressable(
+            onTap: onBack,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: context.palette.surface,
+                borderRadius: const BorderRadius.all(AppRadii.sm),
+                border: Border.all(color: AppColors.hairline),
+              ),
+              alignment: Alignment.center,
+              child: Icon(Icons.arrow_back,
+                  size: 18, color: context.palette.ink70),
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Text('Change PIN', style: AppTypography.sheetTitle),
+        ],
       ),
     );
   }

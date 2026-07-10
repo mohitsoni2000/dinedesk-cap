@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/tokens.dart';
-import 'liquid_glass_surface.dart';
 
 class StepperButton extends StatefulWidget {
   const StepperButton({
@@ -60,27 +59,24 @@ class _StepperButtonState extends State<StepperButton> {
   @override
   Widget build(BuildContext context) {
     final visual = widget.glass
-        ? LiquidGlassSurface(
-            borderRadius: BorderRadius.circular(14),
-            blur: 14,
-            thickness: 6,
-            skipBlur: true,
-            child: SizedBox(
-              width: 30,
-              height: 30,
-              child: Center(
-                child: Icon(widget.icon,
-                    size: AppIconSizes.control, color: AppColors.ink),
-              ),
+        ? Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: context.palette.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.hairline),
             ),
+            child: Icon(widget.icon,
+                size: AppIconSizes.control, color: AppColors.ink),
           )
         : Container(
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.7),
+              color: context.palette.surface,
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.ink10),
+              border: Border.all(color: AppColors.hairline),
             ),
             child: Icon(widget.icon,
                 size: AppIconSizes.standard, color: AppColors.ink),

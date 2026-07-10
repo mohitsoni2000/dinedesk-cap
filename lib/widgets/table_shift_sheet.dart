@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
+import 'app_surface.dart';
 import 'liquid_chrome.dart';
-import 'liquid_glass_surface.dart';
 import 'sheet_handle.dart';
 
 class TableShiftSheet extends ConsumerStatefulWidget {
@@ -71,7 +71,6 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final selectedFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     final tables = ref.watch(tablesProvider);
     final candidates = tables
         .where((t) =>
@@ -84,10 +83,8 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
       maxChildSize: 0.92,
       minChildSize: 0.5,
       expand: false,
-      builder: (_, scroll) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scroll) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.zero,
         child: Column(
           children: [
@@ -104,7 +101,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Shift ${widget.origin.id}',
-                            style: AppTypography.title),
+                            style: AppTypography.sheetTitle),
                         const SizedBox(height: 2),
                         const Text(
                           'Move entire order to a free table',
@@ -122,7 +119,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            Divider(height: 1, color: palette.ink10),
+            Divider(height: 1, color: AppColors.hairline),
             Expanded(
               child: candidates.isEmpty
                   ? const Center(
@@ -155,14 +152,15 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                 horizontal: 16, vertical: 14),
                             decoration: BoxDecoration(
                               color: on
-                                  ? selectedFill
-                                  : palette.isDark
-                                      ? Colors.white.withValues(alpha: 0.08)
-                                      : Colors.white.withValues(alpha: 0.6),
+                                  ? AppColors.terraSoft
+                                  : palette.surface,
                               borderRadius:
                                   const BorderRadius.all(AppRadii.md),
                               border: Border.all(
-                                  color: on ? selectedFill : palette.ink10),
+                                  color: on
+                                      ? AppColors.terra
+                                      : AppColors.hairline,
+                                  width: on ? 1.5 : 1),
                             ),
                             child: Row(
                               children: [
@@ -170,9 +168,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                   width: 36,
                                   height: 36,
                                   decoration: BoxDecoration(
-                                    color: (on
-                                            ? Colors.white
-                                            : AppColors.success)
+                                    color: AppColors.success
                                         .withValues(alpha: 0.12),
                                     borderRadius:
                                         BorderRadius.circular(10),
@@ -180,9 +176,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                   child: Icon(
                                       Icons.table_restaurant_outlined,
                                       size: 18,
-                                      color: on
-                                          ? Colors.white
-                                          : AppColors.success),
+                                      color: AppColors.success),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
@@ -194,7 +188,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                           style: AppTypography.bodyMd
                                               .copyWith(
                                             color: on
-                                                ? Colors.white
+                                                ? AppColors.terraDeep
                                                 : palette.ink,
                                             fontWeight: FontWeight.w600,
                                           )),
@@ -203,8 +197,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                           style: AppTypography.caption
                                               .copyWith(
                                             color: on
-                                                ? Colors.white
-                                                    .withValues(alpha: 0.7)
+                                                ? AppColors.terraInk
                                                 : palette.ink70,
                                           )),
                                     ],
@@ -215,7 +208,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                       ? Icons.check_circle
                                       : Icons.radio_button_unchecked,
                                   color:
-                                      on ? Colors.white : palette.ink30,
+                                      on ? AppColors.terra : palette.ink30,
                                 ),
                               ],
                             ),

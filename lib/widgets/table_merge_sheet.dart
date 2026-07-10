@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_glass_surface.dart';
 import 'sheet_handle.dart';
 
 class TableMergeSheet extends ConsumerStatefulWidget {
@@ -36,7 +36,6 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final selectedFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     final tables = ref.watch(tablesProvider);
 
     final candidates = tables
@@ -50,10 +49,8 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
       maxChildSize: 0.92,
       minChildSize: 0.5,
       expand: false,
-      builder: (_, scroll) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scroll) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.zero,
         child: Column(
           children: [
@@ -69,7 +66,7 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Merge into ${widget.origin.id}',
-                          style: AppTypography.title),
+                          style: AppTypography.sheetTitle),
                       const SizedBox(height: 2),
                       Text(
                         'Pick a table to absorb into this one',
@@ -86,7 +83,7 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            Divider(height: 1, color: palette.ink10),
+            Divider(height: 1, color: AppColors.hairline),
             Expanded(
               child: candidates.isEmpty
                   ? const Center(
@@ -119,13 +116,14 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                                 horizontal: 16, vertical: 14),
                             decoration: BoxDecoration(
                               color: on
-                                  ? selectedFill
-                                  : palette.isDark
-                                      ? Colors.white.withValues(alpha: 0.08)
-                                      : Colors.white.withValues(alpha: 0.6),
+                                  ? AppColors.terraSoft
+                                  : palette.surface,
                               borderRadius: const BorderRadius.all(AppRadii.md),
                               border: Border.all(
-                                  color: on ? selectedFill : palette.ink10),
+                                  color: on
+                                      ? AppColors.terra
+                                      : AppColors.hairline,
+                                  width: on ? 1.5 : 1),
                             ),
                             child: Row(
                               children: [
@@ -133,17 +131,15 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                                   width: 36,
                                   height: 36,
                                   decoration: BoxDecoration(
-                                    color: (on
-                                            ? Colors.white
-                                            : AppColors.terra400)
-                                        .withValues(alpha: on ? 0.15 : 0.10),
+                                    color: AppColors.terra
+                                        .withValues(alpha: on ? 0.18 : 0.10),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Icon(Icons.table_restaurant_outlined,
                                       size: 18,
                                       color: on
-                                          ? Colors.white
-                                          : AppColors.terra600),
+                                          ? AppColors.terraDeep
+                                          : AppColors.terra),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
@@ -152,15 +148,15 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                                   children: [
                                     Text(t.id,
                                         style: AppTypography.bodyMd.copyWith(
-                                          color:
-                                              on ? Colors.white : palette.ink,
+                                          color: on
+                                              ? AppColors.terraDeep
+                                              : palette.ink,
                                           fontWeight: FontWeight.w600,
                                         )),
                                     Text('${t.seats} seats · ${t.state.name}',
                                         style: AppTypography.caption.copyWith(
                                           color: on
-                                              ? Colors.white
-                                                  .withValues(alpha: 0.7)
+                                              ? AppColors.terraInk
                                               : palette.ink70,
                                         )),
                                   ],
@@ -169,7 +165,8 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                                   on
                                       ? Icons.check_circle
                                       : Icons.radio_button_unchecked,
-                                  color: on ? Colors.white : palette.ink30,
+                                  color:
+                                      on ? AppColors.terra : palette.ink30,
                                 ),
                               ],
                             ),

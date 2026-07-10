@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
-import '../widgets/liquid_glass_surface.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/liquid_chrome.dart';
 import 'sheet_handle.dart';
 import 'stepper_button.dart';
@@ -146,10 +146,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
       maxChildSize: 0.95,
       minChildSize: 0.5,
       expand: false,
-      builder: (_, scroll) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scroll) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.zero,
         child: Column(
           children: [
@@ -205,17 +203,17 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                                   horizontal: 14, vertical: 10),
                               decoration: BoxDecoration(
                                 color: _selectedVariationId == variation.id
-                                    ? AppColors.terra500.withValues(alpha: 0.10)
-                                    : context.palette.isDark
-                                        ? Colors.white.withValues(alpha: 0.08)
-                                        : Colors.white.withValues(alpha: 0.6),
+                                    ? AppColors.terraSoft
+                                    : context.palette.surface,
                                 borderRadius:
                                     const BorderRadius.all(AppRadii.sm),
                                 border: Border.all(
                                   color: _selectedVariationId == variation.id
-                                      ? AppColors.terra500
-                                          .withValues(alpha: 0.5)
-                                      : context.palette.ink10,
+                                      ? AppColors.terra
+                                      : AppColors.hairline,
+                                  width: _selectedVariationId == variation.id
+                                      ? 1.5
+                                      : 1,
                                 ),
                               ),
                               child: Row(
@@ -228,13 +226,17 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                                           _selectedVariationId == variation.id
                                               ? FontWeight.w600
                                               : FontWeight.w400,
+                                      color: _selectedVariationId ==
+                                              variation.id
+                                          ? AppColors.terraDeep
+                                          : context.palette.ink,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
                                     formatRupeesCompact(variation.price),
                                     style: AppTypography.caption.copyWith(
-                                      color: AppColors.terra600,
+                                      color: AppColors.terraDeep,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -255,13 +257,17 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                       style: AppTypography.micro.copyWith(letterSpacing: 1.2),
                     ),
                     const SizedBox(height: 8),
-                    LiquidGlassSurface(
-                      borderRadius: const BorderRadius.all(AppRadii.sm),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: context.palette.surface,
+                        borderRadius: const BorderRadius.all(AppRadii.sm),
+                        border: Border.all(
+                            color: AppColors.hairline, width: 1.5),
+                      ),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      blur: 18,
-                      thickness: 8,
                       child: TextField(
                         controller: _weightController,
+                        cursorColor: AppColors.terra,
                         keyboardType:
                             const TextInputType.numberWithOptions(decimal: true),
                         decoration: InputDecoration(
@@ -392,14 +398,18 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                   Text('SPECIAL NOTE',
                       style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 8),
-                  LiquidGlassSurface(
-                    borderRadius: const BorderRadius.all(AppRadii.sm),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: context.palette.surface,
+                      borderRadius: const BorderRadius.all(AppRadii.sm),
+                      border:
+                          Border.all(color: AppColors.hairline, width: 1.5),
+                    ),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    blur: 18,
-                    thickness: 8,
                     child: TextField(
                       focusNode: _noteFocusNode,
+                      cursorColor: AppColors.terra,
                       decoration: const InputDecoration(
                         border: InputBorder.none,
                         hintText: 'Allergies, prep notes…',
@@ -519,16 +529,11 @@ class _OptionTile extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: selected
-                ? AppColors.terra500.withValues(alpha: 0.10)
-                : context.palette.isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : Colors.white.withValues(alpha: 0.6),
+            color: selected ? AppColors.terraSoft : context.palette.surface,
             borderRadius: const BorderRadius.all(AppRadii.sm),
             border: Border.all(
-              color: selected
-                  ? AppColors.terra500.withValues(alpha: 0.5)
-                  : context.palette.ink10,
+              color: selected ? AppColors.terra : AppColors.hairline,
+              width: selected ? 1.5 : 1,
             ),
           ),
           child: Row(
@@ -538,12 +543,11 @@ class _OptionTile extends StatelessWidget {
                 width: 18,
                 height: 18,
                 decoration: BoxDecoration(
-                  color: selected ? AppColors.terra500 : Colors.transparent,
+                  color: selected ? AppColors.terra : Colors.transparent,
                   shape: multiSelect ? BoxShape.rectangle : BoxShape.circle,
                   borderRadius: multiSelect ? BorderRadius.circular(4) : null,
                   border: Border.all(
-                    color:
-                        selected ? AppColors.terra500 : context.palette.ink30,
+                    color: selected ? AppColors.terra : context.palette.ink30,
                     width: 1.5,
                   ),
                 ),
@@ -556,13 +560,16 @@ class _OptionTile extends StatelessWidget {
                 child: Text(label,
                     style: AppTypography.bodyMd.copyWith(
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      color: selected
+                          ? AppColors.terraDeep
+                          : context.palette.ink,
                     )),
               ),
               if (showPrice)
                 Text(priceLabel,
                     style: AppTypography.caption.copyWith(
                       color: priceModifier > 0
-                          ? AppColors.terra600
+                          ? AppColors.terraDeep
                           : AppColors.success,
                       fontWeight: FontWeight.w600,
                     )),

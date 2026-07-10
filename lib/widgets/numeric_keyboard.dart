@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/tokens.dart';
-import 'liquid_glass_surface.dart';
 
 class NumericKeyboard extends StatelessWidget {
   final void Function(String value) onChanged;
@@ -72,9 +71,7 @@ class NumericKeyboard extends StatelessWidget {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [AppColors.terra400, AppColors.terra600],
-                    ),
+                    color: AppColors.terra,
                     borderRadius: BorderRadius.all(AppRadii.md),
                     boxShadow: AppShadows.terraGlow,
                   ),
@@ -99,21 +96,51 @@ class NumericKeyboard extends StatelessWidget {
     if (k.isEmpty) return const SizedBox(height: 56);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: LiquidGlassSurface(
-        borderRadius: const BorderRadius.all(AppRadii.md),
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        blur: 18,
-        thickness: 8,
+      child: _NumKey(
         onTap: () => _press(k),
-        child: Center(
-          child: k == 'del'
-              ? Icon(Icons.backspace_outlined, color: context.palette.ink)
-              : Text(
-                  k,
-                  style: AppTypography.headline
-                      .copyWith(fontWeight: FontWeight.w500),
-                ),
+        child: k == 'del'
+            ? Icon(Icons.backspace_outlined, color: context.palette.ink)
+            : Text(
+                k,
+                style:
+                    AppTypography.headline.copyWith(fontWeight: FontWeight.w500),
+              ),
+      ),
+    );
+  }
+}
+
+class _NumKey extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _NumKey({required this.child, required this.onTap});
+
+  @override
+  State<_NumKey> createState() => _NumKeyState();
+}
+
+class _NumKeyState extends State<_NumKey> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        transform: Matrix4.diagonal3Values(
+            _pressed ? 0.96 : 1.0, _pressed ? 0.96 : 1.0, 1.0),
+        transformAlignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: _pressed ? AppColors.terraSoft : context.palette.surface,
+          borderRadius: const BorderRadius.all(AppRadii.md),
+          border: Border.all(color: AppColors.hairline),
         ),
+        child: Center(child: widget.child),
       ),
     );
   }

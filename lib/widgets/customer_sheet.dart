@@ -9,8 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_glass_surface.dart';
 import 'sheet_handle.dart';
 
 class CustomerSheet {
@@ -150,10 +150,8 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
       maxChildSize: 0.95,
       minChildSize: 0.5,
       expand: false,
-      builder: (_, scroll) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scroll) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.zero,
         child: Column(
           children: [
@@ -165,20 +163,24 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Find Customer', style: AppTypography.title),
+                  const Text('Find Customer', style: AppTypography.sheetTitle),
                   const SizedBox(height: 4),
                   const Text('Search by name or phone',
                       style: AppTypography.caption),
                   const SizedBox(height: 12),
 
-                  LiquidGlassSurface(
-                    borderRadius: const BorderRadius.all(AppRadii.sm),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: context.palette.surface,
+                      borderRadius: const BorderRadius.all(AppRadii.sm),
+                      border: Border.all(
+                          color: AppColors.hairline, width: 1.5),
+                    ),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                    blur: 18,
-                    thickness: 8,
                     child: TextField(
                       controller: _search,
+                      cursorColor: AppColors.terra,
                       textInputAction: TextInputAction.search,
                       decoration: InputDecoration(
                         border: InputBorder.none,
@@ -194,7 +196,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            Divider(height: 1, color: context.palette.ink10),
+            Divider(height: 1, color: AppColors.hairline),
             Expanded(
               child: _showCreate
                   ? _buildCreateForm(scroll)
@@ -250,7 +252,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
             height: 24,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: AppColors.terra500,
+              color: AppColors.terra,
             ),
           ),
         ),
@@ -315,15 +317,15 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
               Container(
                 width: 40,
                 height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.terra500.withValues(alpha: 0.10),
+                decoration: const BoxDecoration(
+                  color: AppColors.terraSoft,
                   shape: BoxShape.circle,
                 ),
                 child: Center(
                   child: Text(
                     name.isNotEmpty ? name[0].toUpperCase() : '?',
-                    style:
-                        AppTypography.title.copyWith(color: AppColors.terra600),
+                    style: AppTypography.title
+                        .copyWith(color: AppColors.terraDeep),
                   ),
                 ),
               ),
@@ -437,13 +439,16 @@ class _FormField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LiquidGlassSurface(
-      borderRadius: const BorderRadius.all(AppRadii.sm),
+    return Container(
+      decoration: BoxDecoration(
+        color: context.palette.surface,
+        borderRadius: const BorderRadius.all(AppRadii.sm),
+        border: Border.all(color: AppColors.hairline, width: 1.5),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-      blur: 18,
-      thickness: 8,
       child: TextField(
         controller: controller,
+        cursorColor: AppColors.terra,
         keyboardType: keyboardType,
         maxLines: maxLines,
         decoration: InputDecoration(

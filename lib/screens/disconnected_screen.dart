@@ -8,16 +8,16 @@ import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/session_service.dart';
 import '../theme/tokens.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_glass_surface.dart';
-import '../widgets/liquid_mesh_background.dart';
 
 class DisconnectedScreen extends ConsumerWidget {
   const DisconnectedScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return LiquidMeshBackground(
+    return ColoredBox(
+      color: AppColors.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
@@ -37,9 +37,7 @@ class DisconnectedScreen extends ConsumerWidget {
               Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
-                  child: LiquidGlassSurface(
-                    blur: 32,
-                    thickness: 14,
+                  child: AppSurface(
                     borderRadius: const BorderRadius.all(AppRadii.lg),
                     padding: const EdgeInsets.all(28),
                     child: Column(

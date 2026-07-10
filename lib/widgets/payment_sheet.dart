@@ -9,8 +9,8 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
+import 'app_surface.dart';
 import 'liquid_chrome.dart';
-import 'liquid_glass_surface.dart';
 import 'sheet_handle.dart';
 
 class BillInfo {
@@ -316,10 +316,8 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       initialChildSize: 0.75,
       minChildSize: 0.4,
       maxChildSize: 0.95,
-      builder: (_, scrollCtrl) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scrollCtrl) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.fromLTRB(
             20, 12, 20, 28 + MediaQuery.of(context).viewPadding.bottom),
         child: ListView(
@@ -332,9 +330,9 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
             Row(
               children: [
                 const Icon(Icons.payment_outlined,
-                    color: AppColors.terra500, size: 22),
+                    color: AppColors.terra, size: 22),
                 const SizedBox(width: 10),
-                const Text('Collect Payment', style: AppTypography.title),
+                const Text('Collect Payment', style: AppTypography.sheetTitle),
                 const Spacer(),
                 Text(formatRupeesCompact(widget.grandTotal),
                     style: AppTypography.headline),
@@ -487,12 +485,11 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                           _tenderedController.text = d.toString();
                           setState(() {});
                         },
-                        child: LiquidGlassSurface(
+                        child: AppSurface(
                           borderRadius: const BorderRadius.all(AppRadii.pill),
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 6),
-                          blur: 14,
-                          thickness: 6,
+                          shadow: const [],
                           child: Text('₹$d',
                               style: AppTypography.caption
                                   .copyWith(fontWeight: FontWeight.w600)),
@@ -523,12 +520,11 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
               for (int i = 0; i < _splits.length; i++)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),
-                  child: LiquidGlassSurface(
+                  child: AppSurface(
                     borderRadius: const BorderRadius.all(AppRadii.sm),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 10),
-                    blur: 16,
-                    thickness: 8,
+                    shadow: const [],
                     child: Row(children: [
                       Icon(_modeIcon(_splits[i].mode),
                           size: 16, color: context.palette.ink70),
@@ -665,16 +661,19 @@ class _InputField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LiquidGlassSurface(
-      borderRadius: const BorderRadius.all(AppRadii.sm),
+    return Container(
+      decoration: BoxDecoration(
+        color: context.palette.surface,
+        borderRadius: const BorderRadius.all(AppRadii.sm),
+        border: Border.all(color: AppColors.hairline, width: 1.5),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      blur: 18,
-      thickness: 8,
       child: TextField(
         controller: controller,
         keyboardType: keyboardType,
         style: AppTypography.bodyMd,
         onChanged: onChanged,
+        cursorColor: AppColors.terra,
         decoration: InputDecoration(
           border: InputBorder.none,
           hintText: hint,
@@ -703,30 +702,28 @@ class _ModeChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final selectedFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: selected
-              ? selectedFill
-              : palette.isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : Colors.white.withValues(alpha: 0.6),
+          color: selected ? AppColors.terraSoft : palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.sm),
-          border: Border.all(color: selected ? selectedFill : palette.ink10),
+          border: Border.all(
+              color: selected ? AppColors.terra : AppColors.hairline,
+              width: selected ? 1.5 : 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon,
-                size: 16, color: selected ? Colors.white : palette.ink70),
+                size: 16,
+                color: selected ? AppColors.terraDeep : palette.ink70),
             const SizedBox(width: 6),
             Text(label,
                 style: AppTypography.bodyMd.copyWith(
-                    color: selected ? Colors.white : palette.ink,
+                    color: selected ? AppColors.terraDeep : palette.ink,
                     fontWeight: FontWeight.w600)),
           ],
         ),

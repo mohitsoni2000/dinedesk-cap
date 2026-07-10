@@ -42,7 +42,7 @@ class ReadyOrdersBanner extends ConsumerWidget {
   }
 }
 
-class _ReadyCard extends StatelessWidget {
+class _ReadyCard extends StatefulWidget {
   final ReadyTicket ticket;
   final int extra;
   final VoidCallback onDismiss;
@@ -53,74 +53,119 @@ class _ReadyCard extends StatelessWidget {
   });
 
   @override
+  State<_ReadyCard> createState() => _ReadyCardState();
+}
+
+class _ReadyCardState extends State<_ReadyCard>
+    with SingleTickerProviderStateMixin {
+  static const _deepGreen = Color(0xFF0F5E30);
+
+  late final AnimationController _wiggle = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _wiggle.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onDismiss,
-        borderRadius: const BorderRadius.all(AppRadii.md),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: const BoxDecoration(
-            color: AppColors.success,
-            borderRadius: BorderRadius.all(AppRadii.md),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.scrim,
-                blurRadius: 12,
-                offset: Offset(0, 4),
-              ),
-            ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: const BoxDecoration(
+        color: _deepGreen,
+        borderRadius: BorderRadius.all(AppRadii.md),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.scrim,
+            blurRadius: 12,
+            offset: Offset(0, 4),
           ),
-          child: Row(
-            children: [
-              const Icon(Icons.restaurant, color: Colors.white, size: 22),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Food ready · ${ticket.tableName}',
-                      style: AppTypography.bodyMd.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (ticket.itemLabels.isNotEmpty)
-                      Text(
-                        ticket.itemLabels.join(' · '),
-                        style: AppTypography.micro.copyWith(
-                          color: Colors.white.withValues(alpha: 0.9),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                  ],
-                ),
-              ),
-              if (extra > 0)
-                Container(
-                  margin: const EdgeInsets.only(left: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.25),
-                    borderRadius: BorderRadius.circular(10),
+        ],
+      ),
+      child: Row(
+        children: [
+          AnimatedBuilder(
+            animation: _wiggle,
+            builder: (_, child) {
+              final t = _wiggle.value;
+
+              final wiggle = t < 0.5
+                  ? (t < 0.125
+                      ? t * 8
+                      : t < 0.375
+                          ? 1 - (t - 0.125) * 8
+                          : (t - 0.375) * 8 - 1)
+                  : 0.0;
+              return Transform.rotate(angle: wiggle * 0.18, child: child);
+            },
+            child: const Icon(Icons.notifications_active,
+                color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Food ready · ${widget.ticket.tableName}',
+                  style: AppTypography.bodyMd.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
                   ),
-                  child: Text(
-                    '+$extra',
+                ),
+                if (widget.ticket.itemLabels.isNotEmpty)
+                  Text(
+                    widget.ticket.itemLabels.join(' · '),
                     style: AppTypography.micro.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
+                      color: Colors.white.withValues(alpha: 0.9),
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+          if (widget.extra > 0)
+            Container(
+              margin: const EdgeInsets.only(left: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '+${widget.extra}',
+                style: AppTypography.micro.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          const SizedBox(width: 8),
+          Material(
+            color: Colors.white,
+            borderRadius: const BorderRadius.all(AppRadii.sm),
+            child: InkWell(
+              onTap: widget.onDismiss,
+              borderRadius: const BorderRadius.all(AppRadii.sm),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Text(
+                  'Serve',
+                  style: AppTypography.caption.copyWith(
+                    color: _deepGreen,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              const SizedBox(width: 6),
-              const Icon(Icons.close, color: Colors.white, size: 18),
-            ],
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

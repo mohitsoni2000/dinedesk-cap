@@ -8,7 +8,7 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
 import '../utils/socket_helpers.dart';
-import 'liquid_glass_surface.dart';
+import 'app_surface.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
@@ -152,10 +152,8 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       initialChildSize: 0.55,
       minChildSize: 0.35,
       maxChildSize: 0.88,
-      builder: (_, scrollCtrl) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scrollCtrl) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.fromLTRB(
             20, 12, 20, 28 + MediaQuery.of(context).viewPadding.bottom),
         child: ListView(
@@ -170,9 +168,9 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
             Row(
               children: [
                 const Icon(Icons.discount_outlined,
-                    color: AppColors.terra500, size: 22),
+                    color: AppColors.terra, size: 22),
                 const SizedBox(width: 10),
-                const Text('Apply Discount', style: AppTypography.title),
+                const Text('Apply Discount', style: AppTypography.sheetTitle),
                 const Spacer(),
                 Text('Order: ${formatRupeesCompact(widget.orderTotal)}',
                     style: AppTypography.caption),
@@ -269,13 +267,16 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
               Text('VALUE',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 8),
-              LiquidGlassSurface(
-                borderRadius: const BorderRadius.all(AppRadii.sm),
+              Container(
+                decoration: BoxDecoration(
+                  color: context.palette.surface,
+                  borderRadius: const BorderRadius.all(AppRadii.sm),
+                  border: Border.all(color: AppColors.hairline, width: 1.5),
+                ),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                blur: 18,
-                thickness: 8,
                 child: TextField(
                   controller: _valueController,
+                  cursorColor: AppColors.terra,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   style: AppTypography.headline,
@@ -338,13 +339,16 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
               Text('LABEL (OPTIONAL)',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 8),
-              LiquidGlassSurface(
-                borderRadius: const BorderRadius.all(AppRadii.sm),
+              Container(
+                decoration: BoxDecoration(
+                  color: context.palette.surface,
+                  borderRadius: const BorderRadius.all(AppRadii.sm),
+                  border: Border.all(color: AppColors.hairline, width: 1.5),
+                ),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                blur: 18,
-                thickness: 8,
                 child: TextField(
                   controller: _labelController,
+                  cursorColor: AppColors.terra,
                   style: AppTypography.bodyMd,
                   decoration: const InputDecoration(
                     border: InputBorder.none,
@@ -409,33 +413,31 @@ class _TabChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final selectedFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: selected
-              ? selectedFill
-              : palette.isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : Colors.white.withValues(alpha: 0.6),
+          color: selected ? AppColors.terraSoft : palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.sm),
-          border: Border.all(color: selected ? selectedFill : palette.ink10),
+          border: Border.all(
+              color: selected ? AppColors.terra : AppColors.hairline,
+              width: selected ? 1.5 : 1),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon,
-                size: 16, color: selected ? Colors.white : palette.ink70),
+                size: 16,
+                color: selected ? AppColors.terraDeep : palette.ink70),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
                 label,
                 style: AppTypography.bodyMd.copyWith(
-                  color: selected ? Colors.white : palette.ink,
+                  color: selected ? AppColors.terraDeep : palette.ink,
                   fontWeight: FontWeight.w600,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -468,14 +470,10 @@ class _PresetChip extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: selected
-              ? AppColors.terra500.withValues(alpha: 0.14)
-              : context.palette.isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : Colors.white.withValues(alpha: 0.6),
+          color: selected ? AppColors.terraSoft : context.palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.sm),
           border: Border.all(
-            color: selected ? AppColors.terra500 : context.palette.ink10,
+            color: selected ? AppColors.terra : AppColors.hairline,
             width: selected ? 1.5 : 1.0,
           ),
         ),
@@ -487,13 +485,14 @@ class _PresetChip extends StatelessWidget {
                 style: AppTypography.bodyMd.copyWith(
                   fontWeight: FontWeight.w600,
                   color:
-                      selected ? AppColors.terra600 : context.palette.ink,
+                      selected ? AppColors.terraDeep : context.palette.ink,
                 )),
             const SizedBox(height: 2),
             Text(value,
                 style: AppTypography.caption.copyWith(
-                  color:
-                      selected ? AppColors.terra500 : context.palette.ink70,
+                  color: selected
+                      ? AppColors.terraInk
+                      : context.palette.ink70,
                 )),
           ],
         ),

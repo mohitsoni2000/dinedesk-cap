@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../theme/tokens.dart';
-import '../widgets/liquid_glass_surface.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/pin_pad.dart';
 import 'sheet_handle.dart';
 
@@ -96,10 +96,8 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
   Widget build(BuildContext context) {
     final bottomPad = MediaQuery.of(context).viewPadding.bottom;
 
-    return LiquidGlassSurface(
-      blur: 30,
-      thickness: 14,
-      borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+    return AppSurface(
+      borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
       padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottomPad),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -112,16 +110,16 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
           Container(
             width: 48,
             height: 48,
-            decoration: BoxDecoration(
-              color: AppColors.terra500.withValues(alpha: 0.12),
+            decoration: const BoxDecoration(
+              color: AppColors.terraSoft,
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.lock_outline,
-                color: AppColors.terra600, size: 24),
+                color: AppColors.terraDeep, size: 24),
           ),
           const SizedBox(height: 12),
 
-          const Text('Verify PIN', style: AppTypography.title),
+          const Text('Verify PIN', style: AppTypography.sheetTitle),
           const SizedBox(height: 4),
           Text(
             'Enter your PIN to $_actionLabel',
@@ -141,10 +139,9 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
                 height: 14,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: filled ? AppColors.terra500 : Colors.transparent,
+                  color: filled ? AppColors.terra : Colors.transparent,
                   border: Border.all(
-                    color:
-                        filled ? AppColors.terra500 : context.palette.ink30,
+                    color: filled ? AppColors.terra : context.palette.ink30,
                     width: 1.5,
                   ),
                 ),

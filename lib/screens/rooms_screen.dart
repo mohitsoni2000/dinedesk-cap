@@ -8,7 +8,6 @@ import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_glass_surface.dart';
 
 class RoomsScreen extends ConsumerStatefulWidget {
   const RoomsScreen({super.key});
@@ -160,13 +159,16 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
             if (_searchOpen)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: LiquidGlassSurface(
-                  borderRadius: const BorderRadius.all(AppRadii.sm),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: context.palette.surface,
+                    borderRadius: const BorderRadius.all(AppRadii.sm),
+                    border: Border.all(color: AppColors.hairline, width: 1.5),
+                  ),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  blur: 20,
-                  thickness: 10,
                   child: TextField(
                     autofocus: true,
+                    cursorColor: AppColors.terra,
                     decoration: InputDecoration(
                       border: InputBorder.none,
                       hintText: 'Search room number or guest…',

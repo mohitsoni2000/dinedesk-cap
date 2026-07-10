@@ -9,7 +9,6 @@ import '../data/providers.dart';
 import '../services/session_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_glass_surface.dart';
 
 class ForceDisconnectedScreen extends ConsumerWidget {
   const ForceDisconnectedScreen({super.key});
@@ -35,11 +34,13 @@ class ForceDisconnectedScreen extends ConsumerWidget {
             Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: LiquidGlassSurface(
-                  blur: 32,
-                  thickness: 14,
-                  tint: Colors.white.withValues(alpha: 0.06),
-                  borderRadius: const BorderRadius.all(AppRadii.lg),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: const BorderRadius.all(AppRadii.lg),
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.12)),
+                  ),
                   padding: const EdgeInsets.all(28),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,

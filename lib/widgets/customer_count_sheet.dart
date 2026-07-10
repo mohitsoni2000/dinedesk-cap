@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../data/providers.dart';
 import '../theme/tokens.dart';
-import '../widgets/liquid_glass_surface.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/liquid_chrome.dart';
 import 'sheet_handle.dart';
 
@@ -40,10 +40,8 @@ class _CustomerCountSheetState extends State<_CustomerCountSheet> {
   @override
   Widget build(BuildContext context) {
     final overSeated = _count > widget.table.seats;
-    return LiquidGlassSurface(
-      blur: 30,
-      thickness: 14,
-      borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+    return AppSurface(
+      borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
       padding: EdgeInsets.fromLTRB(
           20, 12, 20, 28 + MediaQuery.of(context).viewPadding.bottom),
       child: Column(
@@ -70,7 +68,7 @@ class _CustomerCountSheetState extends State<_CustomerCountSheet> {
                         .copyWith(fontWeight: FontWeight.w700)),
               ),
               const SizedBox(width: 10),
-              const Text('How many guests?', style: AppTypography.title),
+              const Text('How many guests?', style: AppTypography.sheetTitle),
             ],
           ),
           const SizedBox(height: 4),
@@ -171,11 +169,7 @@ class _StepperBtn extends StatelessWidget {
         width: 56,
         height: 56,
         decoration: BoxDecoration(
-          gradient: enabled
-              ? const LinearGradient(
-                  colors: [AppColors.terra400, AppColors.terra600])
-              : null,
-          color: enabled ? null : context.palette.ink05,
+          color: enabled ? AppColors.terra : context.palette.ink05,
           shape: BoxShape.circle,
           boxShadow: enabled ? AppShadows.terraGlow : null,
         ),
@@ -195,24 +189,21 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final selectedFill = palette.isDark ? AppColors.terra600 : AppColors.ink;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
-          color: selected
-              ? selectedFill
-              : palette.isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : Colors.white.withValues(alpha: 0.6),
+          color: selected ? AppColors.terraSoft : palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.pill),
-          border: Border.all(color: selected ? selectedFill : palette.ink10),
+          border: Border.all(
+              color: selected ? AppColors.terra : AppColors.hairline,
+              width: selected ? 1.5 : 1),
         ),
         child: Text(label,
             style: AppTypography.bodyMd.copyWith(
-              color: selected ? Colors.white : palette.ink,
+              color: selected ? AppColors.terraDeep : palette.ink,
               fontWeight: FontWeight.w600,
             )),
       ),

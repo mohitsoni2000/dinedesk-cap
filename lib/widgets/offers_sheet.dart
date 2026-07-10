@@ -8,7 +8,7 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
 import '../utils/socket_helpers.dart';
-import 'liquid_glass_surface.dart';
+import 'app_surface.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
@@ -181,10 +181,8 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
       initialChildSize: 0.6,
       minChildSize: 0.35,
       maxChildSize: 0.9,
-      builder: (_, scrollCtrl) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scrollCtrl) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.fromLTRB(
             20, 12, 20, 16 + MediaQuery.of(context).viewPadding.bottom),
         child: ListView(
@@ -195,9 +193,9 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
             Row(
               children: [
                 const Icon(Icons.local_activity_outlined,
-                    color: AppColors.terra500, size: 22),
+                    color: AppColors.terra, size: 22),
                 const SizedBox(width: 10),
-                const Text('Offers', style: AppTypography.title),
+                const Text('Offers', style: AppTypography.sheetTitle),
                 const Spacer(),
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(_resultForCaller()),
@@ -250,10 +248,8 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
                     Chip(
                       label: Text(o.name, style: AppTypography.caption),
                       avatar: const Icon(Icons.auto_awesome, size: 14),
-                      backgroundColor: context.palette.isDark
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : Colors.white.withValues(alpha: 0.6),
-                      side: BorderSide(color: context.palette.ink10),
+                      backgroundColor: context.palette.surface,
+                      side: const BorderSide(color: AppColors.hairline),
                     ),
                 ],
               ),
@@ -272,13 +268,16 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
             Text('HAVE A COUPON CODE?',
                 style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
             const SizedBox(height: 8),
-            LiquidGlassSurface(
-              borderRadius: const BorderRadius.all(AppRadii.sm),
+            Container(
+              decoration: BoxDecoration(
+                color: context.palette.surface,
+                borderRadius: const BorderRadius.all(AppRadii.sm),
+                border: Border.all(color: AppColors.hairline, width: 1.5),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              blur: 18,
-              thickness: 8,
               child: TextField(
                 controller: _couponController,
+                cursorColor: AppColors.terra,
                 textCapitalization: TextCapitalization.characters,
                 decoration: InputDecoration(
                   border: InputBorder.none,
@@ -321,11 +320,10 @@ class _OfferTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LiquidGlassSurface(
+    return AppSurface(
       borderRadius: const BorderRadius.all(AppRadii.sm),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      blur: 18,
-      thickness: 8,
+      shadow: const [],
       child: Row(
         children: [
           Expanded(
@@ -359,11 +357,10 @@ class _AppliedOfferTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LiquidGlassSurface(
+    return AppSurface(
       borderRadius: const BorderRadius.all(AppRadii.sm),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      blur: 18,
-      thickness: 8,
+      shadow: const [],
       child: Row(
         children: [
           const Icon(Icons.check_circle, color: AppColors.success, size: 18),

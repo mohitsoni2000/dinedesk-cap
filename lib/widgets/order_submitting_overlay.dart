@@ -4,7 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
-import 'liquid_glass_surface.dart';
+import 'app_surface.dart';
 
 class OrderSubmittingOverlay {
 
@@ -62,9 +62,7 @@ class _OverlayState extends State<_Overlay>
     return PopScope(
       canPop: false,
       child: Center(
-        child: LiquidGlassSurface(
-          blur: 32,
-          thickness: 14,
+        child: AppSurface(
           borderRadius: const BorderRadius.all(AppRadii.lg),
           padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
           child: Column(
@@ -76,9 +74,7 @@ class _OverlayState extends State<_Overlay>
                   width: 56,
                   height: 56,
                   decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [AppColors.terra400, AppColors.terra600],
-                    ),
+                    color: AppColors.terra,
                     shape: BoxShape.circle,
                     boxShadow: AppShadows.terraGlow,
                   ),
@@ -88,7 +84,7 @@ class _OverlayState extends State<_Overlay>
               ),
               const SizedBox(height: 20),
               const Text('Sending to kitchen\u2026',
-                  style: AppTypography.title),
+                  style: AppTypography.sheetTitle),
               const SizedBox(height: 6),
               const Text('Printing KOTs', style: AppTypography.caption),
             ],

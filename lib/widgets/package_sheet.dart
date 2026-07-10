@@ -6,8 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
+import 'app_surface.dart';
 import 'liquid_chrome.dart';
-import 'liquid_glass_surface.dart';
 import 'sheet_handle.dart';
 
 class PackageSheet extends ConsumerWidget {
@@ -39,10 +39,8 @@ class PackageSheet extends ConsumerWidget {
       maxChildSize: 0.9,
       minChildSize: 0.4,
       expand: false,
-      builder: (_, scroll) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scroll) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.zero,
         child: Column(
           children: [
@@ -55,14 +53,14 @@ class PackageSheet extends ConsumerWidget {
                   const Icon(Icons.inventory_2_outlined,
                       color: AppColors.violet, size: 20),
                   const SizedBox(width: 8),
-                  const Text('Packages', style: AppTypography.title),
+                  const Text('Packages', style: AppTypography.sheetTitle),
                   const Spacer(),
                   Text('${packages.length} available',
                       style: AppTypography.caption),
                 ],
               ),
             ),
-            Divider(height: 1, color: context.palette.ink10),
+            Divider(height: 1, color: AppColors.hairline),
             Expanded(
               child: packages.isEmpty
                   ? Center(

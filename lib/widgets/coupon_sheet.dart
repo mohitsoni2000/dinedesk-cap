@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../theme/tokens.dart';
+import 'app_surface.dart';
 import 'liquid_chrome.dart';
-import 'liquid_glass_surface.dart';
 import 'sheet_handle.dart';
 
 class CouponSheet extends ConsumerStatefulWidget {
@@ -83,10 +83,8 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
       maxChildSize: 0.7,
       minChildSize: 0.3,
       expand: false,
-      builder: (_, scroll) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scroll) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.zero,
         child: Column(
           children: [
@@ -97,26 +95,30 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
               child: Row(
                 children: [
                   Icon(Icons.local_offer_outlined,
-                      color: AppColors.terra600, size: 20),
+                      color: AppColors.terra, size: 20),
                   SizedBox(width: 8),
-                  Text('Apply Coupon', style: AppTypography.title),
+                  Text('Apply Coupon', style: AppTypography.sheetTitle),
                 ],
               ),
             ),
-            Divider(height: 1, color: context.palette.ink10),
+            Divider(height: 1, color: AppColors.hairline),
             Expanded(
               child: ListView(
                 controller: scroll,
                 padding: const EdgeInsets.all(16),
                 children: [
-                  LiquidGlassSurface(
-                    borderRadius: const BorderRadius.all(AppRadii.sm),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: context.palette.surface,
+                      borderRadius: const BorderRadius.all(AppRadii.sm),
+                      border:
+                          Border.all(color: AppColors.hairline, width: 1.5),
+                    ),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                    blur: 18,
-                    thickness: 8,
                     child: TextField(
                       controller: _code,
+                      cursorColor: AppColors.terra,
                       textCapitalization: TextCapitalization.characters,
                       decoration: InputDecoration(
                         border: InputBorder.none,

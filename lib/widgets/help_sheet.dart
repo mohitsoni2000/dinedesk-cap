@@ -3,8 +3,8 @@
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
+import 'app_surface.dart';
 import 'liquid_chrome.dart';
-import 'liquid_glass_surface.dart';
 import 'sheet_handle.dart';
 
 class HelpSheet {
@@ -29,10 +29,8 @@ class _HelpSheet extends StatelessWidget {
       maxChildSize: 0.95,
       minChildSize: 0.5,
       expand: false,
-      builder: (_, scroll) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scroll) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.zero,
         child: Column(
           children: [
@@ -45,7 +43,7 @@ class _HelpSheet extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.lg, vertical: 8),
                 children: const [
-                  Text('Help', style: AppTypography.displayMd),
+                  Text('Help', style: AppTypography.sheetTitle),
                   SizedBox(height: 4),
                   Text('Pair, sign in, and troubleshoot',
                       style: AppTypography.caption),
@@ -157,9 +155,7 @@ class _Step extends StatelessWidget {
             width: 24,
             height: 24,
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppColors.terra400, AppColors.terra600],
-              ),
+              color: AppColors.terra,
               shape: BoxShape.circle,
             ),
             child: Center(
@@ -204,11 +200,9 @@ class _ContactRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: context.palette.isDark
-            ? Colors.white.withValues(alpha: 0.08)
-            : Colors.white.withValues(alpha: 0.5),
+        color: context.palette.surface,
         borderRadius: const BorderRadius.all(AppRadii.sm),
-        border: Border.all(color: context.palette.ink10),
+        border: Border.all(color: AppColors.hairline),
       ),
       child: Row(
         children: [

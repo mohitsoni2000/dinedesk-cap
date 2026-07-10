@@ -7,8 +7,8 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
+import 'app_surface.dart';
 import 'liquid_chrome.dart';
-import 'liquid_glass_surface.dart';
 import 'sheet_handle.dart';
 
 class KotEditSheet extends ConsumerStatefulWidget {
@@ -113,10 +113,8 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
       maxChildSize: 0.9,
       minChildSize: 0.5,
       expand: false,
-      builder: (_, scroll) => LiquidGlassSurface(
-        blur: 30,
-        thickness: 14,
-        borderRadius: const BorderRadius.vertical(top: AppRadii.lg),
+      builder: (_, scroll) => AppSurface(
+        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.zero,
         child: Column(
           children: [
@@ -129,11 +127,11 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
                   const Icon(Icons.edit_note, color: AppColors.warn, size: 20),
                   const SizedBox(width: 8),
                   Text('Edit KOT · ${widget.order.id}',
-                      style: AppTypography.title),
+                      style: AppTypography.sheetTitle),
                 ],
               ),
             ),
-            Divider(height: 1, color: context.palette.ink10),
+            Divider(height: 1, color: AppColors.hairline),
             Expanded(
               child: ListView(
                 controller: scroll,
@@ -147,20 +145,24 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
                       }),
                     ),
                     if (i < _lines.length - 1)
-                      Divider(height: 1, color: context.palette.ink10),
+                      Divider(height: 1, color: AppColors.hairline),
                   ],
                   const SizedBox(height: 16),
                   Text('REASON FOR EDIT',
                       style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 8),
-                  LiquidGlassSurface(
-                    borderRadius: const BorderRadius.all(AppRadii.sm),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: context.palette.surface,
+                      borderRadius: const BorderRadius.all(AppRadii.sm),
+                      border: Border.all(
+                          color: AppColors.hairline, width: 1.5),
+                    ),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    blur: 18,
-                    thickness: 8,
                     child: TextField(
                       controller: _reason,
+                      cursorColor: AppColors.terra,
                       maxLines: 2,
                       decoration: const InputDecoration(
                         border: InputBorder.none,
@@ -251,10 +253,10 @@ class _EditRow extends StatelessWidget {
                 ],
               ),
             ),
-            LiquidGlassSurface(
+            AppSurface(
               borderRadius: BorderRadius.circular(18),
-              blur: 14,
-              thickness: 6,
+              padding: EdgeInsets.zero,
+              shadow: const [],
               onTap: () {
                 if (line.currentQty > 0) onQtyChanged(line.currentQty - 1);
               },
@@ -276,10 +278,10 @@ class _EditRow extends StatelessWidget {
                               ? AppColors.warn
                               : context.palette.ink)),
                 )),
-            LiquidGlassSurface(
+            AppSurface(
               borderRadius: BorderRadius.circular(18),
-              blur: 14,
-              thickness: 6,
+              padding: EdgeInsets.zero,
+              shadow: const [],
               onTap: () => onQtyChanged(line.currentQty + 1),
               child: SizedBox(
                 width: 36,

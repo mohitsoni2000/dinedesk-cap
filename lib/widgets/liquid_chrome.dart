@@ -3,46 +3,6 @@
 import 'package:flutter/material.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
-import 'liquid_glass_surface.dart';
-
-class LiquidAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final String title;
-  final Widget? leading;
-  final List<Widget> actions;
-  const LiquidAppBar({
-    super.key,
-    required this.title,
-    this.leading,
-    this.actions = const [],
-  });
-
-  @override
-  Size get preferredSize => const Size.fromHeight(56);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      child: LiquidGlassSurface(
-        borderRadius: const BorderRadius.all(AppRadii.md),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        blur: 24,
-        thickness: 10,
-        child: Row(
-          children: [
-            if (leading != null) leading!,
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(title,
-                  style: AppTypography.title, overflow: TextOverflow.ellipsis),
-            ),
-            ...actions,
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class LiquidBottomNav extends StatelessWidget {
   final int currentIndex;
@@ -141,13 +101,13 @@ class LiquidPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LiquidGlassSurface(
-      borderRadius: const BorderRadius.all(AppRadii.pill),
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      blur: 18,
-      thickness: 8,
-      skipBlur: true,
-      tint: tint,
+      decoration: BoxDecoration(
+        color: tint ?? context.palette.surface,
+        borderRadius: const BorderRadius.all(AppRadii.pill),
+        border: Border.all(color: AppColors.hairline),
+      ),
       child: DefaultTextStyle.merge(
         style: AppTypography.caption.copyWith(fontWeight: FontWeight.w600),
         child: child,

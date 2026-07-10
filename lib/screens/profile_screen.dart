@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/currency.dart';
 import '../data/providers.dart';
 import '../services/session_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/liquid_chrome.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -26,89 +28,129 @@ class ProfileScreen extends ConsumerWidget {
     final restaurantIp = restaurant?.adminIp ?? '';
     final conn = ref.watch(connectionProvider);
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Column(
-          children: [
-            const LiquidAppBar(title: 'Profile'),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                children: [
+    final today = ref.watch(historyProvider.select((history) {
+      final now = DateTime.now();
+      final todayStr =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      return history
+          .where((o) => o.date == todayStr && o.status != OrderStatus.cancelled)
+          .fold<double>(0, (s, o) => s + o.total);
+    }));
 
-                  AppCard(
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 56,
-                          height: 56,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [AppColors.terra400, AppColors.terra600],
+    return ColoredBox(
+      color: AppColors.paper,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Profile', style: AppTypography.displayLg),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  children: [
+                    AppSurface(
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 54,
+                            height: 54,
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [AppColors.terra, AppColors.terraDeep],
+                              ),
+                              shape: BoxShape.circle,
                             ),
-                            shape: BoxShape.circle,
+                            child: Center(
+                              child: Text(
+                                  opName.isNotEmpty
+                                      ? opName[0].toUpperCase()
+                                      : '?',
+                                  style: AppTypography.headline
+                                      .copyWith(color: Colors.white)),
+                            ),
                           ),
-                          child: Center(
-                            child: Text(
-                                opName.isNotEmpty
-                                    ? opName[0].toUpperCase()
-                                    : '?',
-                                style: AppTypography.headline
-                                    .copyWith(color: Colors.white)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(opName, style: AppTypography.title),
+                                const SizedBox(height: 2),
+                                Text('@$opUsername · $opRole · $restaurantName',
+                                    style: context.palette.caption,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                const SizedBox(height: 6),
+                                if (opShift.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.terraSoft,
+                                      borderRadius:
+                                          BorderRadius.all(AppRadii.pill),
+                                    ),
+                                    child: Text(
+                                      '${opShift.toUpperCase()} SHIFT',
+                                      style: AppTypography.pill.copyWith(
+                                          color: AppColors.terraInk),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    Text("TODAY'S SHIFT",
+                        style: context.palette.micro
+                            .copyWith(letterSpacing: 1.4)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(opName, style: AppTypography.title),
-                              const SizedBox(height: 2),
-                              Text('@$opUsername · $opRole',
-                                  style: context.palette.caption),
-                              const SizedBox(height: 4),
-                              Text(opShift,
-                                  style: AppTypography.caption.copyWith(
-                                      color: AppColors.terra600,
-                                      fontWeight: FontWeight.w600)),
-                            ],
-                          ),
-                        ),
+                            child: _Kpi(
+                          value: '${stats.ordersToday}',
+                          label: 'Orders',
+                          tint: AppColors.terra,
+                        )),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: _Kpi(
+                          value: '${stats.tablesServed}',
+                          label: 'Tables',
+                          tint: AppColors.violet,
+                        )),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  Text("TODAY'S SHIFT",
-                      style:
-                          context.palette.micro.copyWith(letterSpacing: 1.4)),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                          child: _Kpi(
-                        value: '${stats.ordersToday}',
-                        label: 'Orders',
-                        tint: AppColors.terra500,
-                      )),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: _Kpi(
-                        value: '${stats.tablesServed}',
-                        label: 'Tables',
-                        tint: AppColors.violet,
-                      )),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: _Kpi(
-                        value: '${stats.itemsSold}',
-                        label: 'Items',
-                        tint: AppColors.success,
-                      )),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                            child: _Kpi(
+                          value: '${stats.itemsSold}',
+                          label: 'Items',
+                          tint: AppColors.success,
+                        )),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: _Kpi(
+                          value: formatRupeesCompact(today),
+                          label: 'Sales',
+                          tint: AppColors.teal,
+                        )),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
 
                   Text('PAIRED WITH',
                       style:
@@ -215,6 +257,7 @@ class ProfileScreen extends ConsumerWidget {
           ],
         ),
       ),
+      ),
     );
   }
 }
@@ -236,7 +279,8 @@ class _Kpi extends StatelessWidget {
             decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
           ),
           const SizedBox(height: 8),
-          Text(value, style: AppTypography.displayMd),
+          Text(value,
+              style: AppTypography.headline.copyWith(fontSize: 22)),
           const SizedBox(height: 2),
           Text(label, style: context.palette.caption),
         ],

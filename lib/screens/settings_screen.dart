@@ -8,6 +8,7 @@ import '../data/providers.dart';
 import '../theme/theme_mode_provider.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/liquid_chrome.dart';
 
 class _SettingsState {
@@ -70,143 +71,144 @@ class SettingsScreen extends ConsumerWidget {
     final restaurantName = restaurant?.name ?? 'Restaurant';
     final settings = ref.watch(_settingsProvider);
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Column(
-          children: [
-            const LiquidAppBar(title: 'Settings'),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                children: [
-                  Text('PREFERENCES',
-                      style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
-                  const SizedBox(height: 8),
-                  AppCard(
-                    padding: EdgeInsets.zero,
-                    child: Column(children: [
-
-                      ListTile(
-                        leading: Icon(Icons.notifications_outlined,
-                            color: context.palette.ink70),
-                        title: const Text('Notifications',
-                            style: AppTypography.bodyMd),
-                        subtitle: Text(
-                          settings.soundEnabled && settings.hapticEnabled
+    return ColoredBox(
+      color: AppColors.paper,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Settings', style: AppTypography.displayLg),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  children: [
+                    Text('FEEDBACK',
+                        style: AppTypography.micro
+                            .copyWith(letterSpacing: 1.4)),
+                    const SizedBox(height: 8),
+                    AppSurface(
+                      padding: EdgeInsets.zero,
+                      child: Column(children: [
+                        _SettingsRow(
+                          icon: Icons.notifications_outlined,
+                          title: 'Notifications',
+                          subtitle: settings.soundEnabled &&
+                                  settings.hapticEnabled
                               ? 'Sound & haptics on'
-                              : !settings.soundEnabled && !settings.hapticEnabled
+                              : !settings.soundEnabled &&
+                                      !settings.hapticEnabled
                                   ? 'All notifications off'
                                   : settings.soundEnabled
                                       ? 'Sound on, haptics off'
                                       : 'Haptics on, sound off',
-                          style: AppTypography.caption,
+                          onTap: () =>
+                              _showNotificationsSheet(context, ref, settings),
                         ),
-                        trailing:
-                            Icon(Icons.chevron_right, color: context.palette.ink30),
-                        onTap: () =>
-                            _showNotificationsSheet(context, ref, settings),
-                      ),
-                      Divider(height: 1, color: context.palette.ink10),
-
-                      ListTile(
-                        leading: Icon(Icons.palette_outlined,
-                            color: context.palette.ink70),
-                        title: const Text('Appearance',
-                            style: AppTypography.bodyMd),
-                        subtitle: Text(
-                            switch (ref.watch(themeModeProvider)) {
-                              ThemeMode.system => 'System · follows device',
-                              ThemeMode.light => 'Light theme',
-                              ThemeMode.dark => 'Dark theme',
-                            },
-                            style: AppTypography.caption),
-                        trailing:
-                            Icon(Icons.chevron_right, color: context.palette.ink30),
-                        onTap: () => _showAppearanceSheet(context),
-                      ),
-                      Divider(height: 1, color: context.palette.ink10),
-
-                      ListTile(
-                        leading: Icon(Icons.info_outline,
-                            color: context.palette.ink70),
-                        title: const Text('About Command.Crew',
-                            style: AppTypography.bodyMd),
-                        subtitle: Text('v2.0 · $restaurantName',
-                            style: AppTypography.caption),
-                        trailing:
-                            Icon(Icons.chevron_right, color: context.palette.ink30),
-                        onTap: () => _showAboutSheet(context, restaurantName),
-                      ),
-                    ]),
-                  ),
-                  const SizedBox(height: 24),
-
-                  if (kDebugMode) ...[
-                    Text('DEBUG',
-                        style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
-                    const SizedBox(height: 8),
-                    AppCard(
-                      padding: EdgeInsets.zero,
-                      child: Column(children: [
-                        SwitchListTile(
-                          value: !conn.online,
-                          activeThumbColor: AppColors.terra500,
-                          title: const Text('Simulate offline',
-                              style: AppTypography.bodyMd),
-                          subtitle: Text(
-                            conn.online
-                                ? 'Tap to drop the WS connection'
-                                : 'Banner countdown active · 2:00 → /disconnected',
-                            style: AppTypography.caption,
-                          ),
-                          onChanged: (v) {
-                            final restaurant = ref.read(restaurantProvider);
-                            ref.read(connectionProvider.notifier).state = v
-                                ? const ConnectionStatus(
-                                    online: false,
-                                    label: 'Last sync 12s ago',
-                                    secondsRemaining: 120)
-                                : ConnectionStatus(
-                                    online: true,
-                                    label:
-                                        'Connected · ${restaurant?.name ?? 'Restaurant'}');
+                        Divider(height: 1, color: AppColors.hairline),
+                        _SettingsRow(
+                          icon: Icons.palette_outlined,
+                          title: 'Appearance',
+                          subtitle: switch (ref.watch(themeModeProvider)) {
+                            ThemeMode.system => 'System · follows device',
+                            ThemeMode.light => 'Light theme',
+                            ThemeMode.dark => 'Dark theme',
                           },
-                        ),
-                        Divider(height: 1, color: context.palette.ink10),
-                        ListTile(
-                          leading: const Icon(Icons.wifi_off_rounded,
-                              color: AppColors.warn),
-                          title: Text('Disconnected screen',
-                              style: AppTypography.bodyMd
-                                  .copyWith(color: AppColors.warn)),
-                          subtitle: const Text('Preview the timeout state',
-                              style: AppTypography.caption),
-                          trailing: Icon(Icons.chevron_right,
-                              color: context.palette.ink30),
-                          onTap: () => context.push('/disconnected'),
-                        ),
-                        Divider(height: 1, color: context.palette.ink10),
-                        ListTile(
-                          leading: const Icon(Icons.power_off_rounded,
-                              color: AppColors.danger),
-                          title: Text('Force-disconnect screen',
-                              style: AppTypography.bodyMd
-                                  .copyWith(color: AppColors.danger)),
-                          subtitle: const Text(
-                              'Preview the kicked-device blocker',
-                              style: AppTypography.caption),
-                          trailing: Icon(Icons.chevron_right,
-                              color: context.palette.ink30),
-                          onTap: () => context.push('/force-disconnected'),
+                          onTap: () => _showAppearanceSheet(context),
                         ),
                       ]),
                     ),
+                    const SizedBox(height: 24),
+
+                    Text('DEVICE',
+                        style: AppTypography.micro
+                            .copyWith(letterSpacing: 1.4)),
+                    const SizedBox(height: 8),
+                    AppSurface(
+                      padding: EdgeInsets.zero,
+                      child: Column(children: [
+                        _SettingsRow(
+                          icon: Icons.lock_reset_outlined,
+                          title: 'Change PIN',
+                          subtitle: 'Update your operator PIN',
+                          onTap: () => context.push('/change-pin'),
+                        ),
+                        Divider(height: 1, color: AppColors.hairline),
+                        _SettingsRow(
+                          icon: Icons.info_outline,
+                          title: 'About Command.Crew',
+                          subtitle: 'v2.0 · $restaurantName',
+                          onTap: () =>
+                              _showAboutSheet(context, restaurantName),
+                        ),
+                      ]),
+                    ),
+
+                    if (kDebugMode) ...[
+                      const SizedBox(height: 24),
+                      Text('DANGER ZONE',
+                          style: AppTypography.micro.copyWith(
+                              letterSpacing: 1.4, color: AppColors.danger)),
+                      const SizedBox(height: 8),
+                      AppSurface(
+                        padding: EdgeInsets.zero,
+                        border: Border.all(
+                            color: AppColors.danger.withValues(alpha: 0.25)),
+                        child: Column(children: [
+                          SwitchListTile(
+                            value: !conn.online,
+                            activeThumbColor: AppColors.terra,
+                            title: const Text('Simulate offline',
+                                style: AppTypography.bodyMd),
+                            subtitle: Text(
+                              conn.online
+                                  ? 'Tap to drop the WS connection'
+                                  : 'Banner countdown active · 15:00 → /disconnected',
+                              style: AppTypography.caption,
+                            ),
+                            onChanged: (v) {
+                              final restaurant = ref.read(restaurantProvider);
+                              ref.read(connectionProvider.notifier).state = v
+                                  ? const ConnectionStatus(
+                                      online: false,
+                                      label: 'Last sync 12s ago',
+                                      secondsRemaining: 900)
+                                  : ConnectionStatus(
+                                      online: true,
+                                      label:
+                                          'Connected · ${restaurant?.name ?? 'Restaurant'}');
+                            },
+                          ),
+                          Divider(height: 1, color: AppColors.hairline),
+                          _SettingsRow(
+                            icon: Icons.wifi_off_rounded,
+                            title: 'Disconnected screen',
+                            subtitle: 'Preview the timeout state',
+                            danger: true,
+                            onTap: () => context.push('/disconnected'),
+                          ),
+                          Divider(height: 1, color: AppColors.hairline),
+                          _SettingsRow(
+                            icon: Icons.power_off_rounded,
+                            title: 'Force-disconnect screen',
+                            subtitle: 'Preview the kicked-device blocker',
+                            danger: true,
+                            onTap: () => context.push('/force-disconnected'),
+                          ),
+                        ]),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -380,6 +382,44 @@ class SettingsScreen extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SettingsRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool danger;
+  const _SettingsRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = danger ? AppColors.danger : context.palette.ink;
+    return ListTile(
+      leading: Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: danger
+              ? AppColors.danger.withValues(alpha: 0.10)
+              : AppColors.terraSoft,
+          borderRadius: const BorderRadius.all(AppRadii.xs),
+        ),
+        child: Icon(icon,
+            size: 16, color: danger ? AppColors.danger : AppColors.terraDeep),
+      ),
+      title: Text(title, style: AppTypography.bodyMd.copyWith(color: fg)),
+      subtitle: Text(subtitle, style: AppTypography.caption),
+      trailing: Icon(Icons.chevron_right, color: context.palette.ink30),
+      onTap: onTap,
     );
   }
 }

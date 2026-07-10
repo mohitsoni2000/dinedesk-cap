@@ -10,14 +10,12 @@ import '../services/socket_service.dart';
 import '../models/server_models.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
-import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_mesh_background.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/item_detail_sheet.dart';
 import '../widgets/kot_history_sheet.dart';
 import '../widgets/quick_action_tile.dart';
 import '../widgets/package_sheet.dart';
-import '../widgets/liquid_glass_surface.dart';
 import '../widgets/payment_sheet.dart';
 import '../widgets/table_link_sheet.dart';
 import '../widgets/table_shift_sheet.dart';
@@ -434,17 +432,39 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     final tables = ref.watch(tablesProvider);
     final rooms = ref.watch(roomsProvider);
     final runningOrder = _runningOrder(tables);
-    final tableDisplay = widget.isRoom
-        ? (rooms
-                .where((r) => r.serverId == widget.tableId)
-                .map((r) => r.id)
-                .firstOrNull ??
-            widget.tableId)
-        : (tables
-                .where((t) => t.serverId == widget.tableId)
-                .map((t) => t.id)
-                .firstOrNull ??
-            widget.tableId);
+    final table = widget.isRoom
+        ? null
+        : tables.where((t) => t.serverId == widget.tableId).firstOrNull;
+    final room = widget.isRoom
+        ? rooms.where((r) => r.serverId == widget.tableId).firstOrNull
+        : null;
+    final tableDisplay =
+        widget.isRoom ? (room?.id ?? widget.tableId) : (table?.id ?? widget.tableId);
+    final opName = ref.watch(operatorProvider)?.name;
+    final kotCount = table?.kotCount ?? 0;
+
+    final String subLine;
+    if (widget.isRoom) {
+      subLine = (room?.guestName != null && room!.guestName!.isNotEmpty)
+          ? 'Serving · ${room.guestName}'
+          : 'New order';
+    } else if (table != null) {
+      final guests =
+          table.coverCount != null ? ' · ${table.coverCount} guests' : '';
+      switch (table.state) {
+        case TableState.mine:
+          subLine = 'Serving · ${(opName ?? 'You').split(' ').first} (you)$guests';
+        case TableState.other:
+          subLine =
+              'Serving · ${table.waiterName ?? 'another waiter'}$guests';
+        case TableState.reserved:
+          subLine = table.note ?? 'Reserved';
+        default:
+          subLine = 'New order';
+      }
+    } else {
+      subLine = 'New order';
+    }
 
     return PopScope(
       canPop: false,
@@ -457,8 +477,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
           _leaveOrder();
         }
       },
-      child: LiquidMeshBackground(
-        animate: false,
+      child: ColoredBox(
+        color: AppColors.paper,
         child: Scaffold(
           backgroundColor: Colors.transparent,
           body: SafeArea(
@@ -486,76 +506,105 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       ],
                     ),
                   ),
-                LiquidAppBar(
-                  title: widget.isRoom ? 'Room $tableDisplay' : 'Table $tableDisplay',
-                  leading: IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: () async {
-                      final ok = await _confirmDiscard();
-                      if (!context.mounted) return;
-                      if (ok) {
-                        ref.read(cartProvider.notifier).clear();
-                        _leaveOrder();
-                      }
-                    },
-                  ),
-                  actions: [
-                    Material(
-                      color: Colors.transparent,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: context.palette.tableMineBg,
-                          borderRadius: const BorderRadius.all(AppRadii.xs),
-                          border: Border.all(
-                              color: AppColors.terra400.withValues(alpha: 0.4)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Pressable(
+                        onTap: () async {
+                          final ok = await _confirmDiscard();
+                          if (!context.mounted) return;
+                          if (ok) {
+                            ref.read(cartProvider.notifier).clear();
+                            _leaveOrder();
+                          }
+                        },
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: context.palette.surface,
+                            borderRadius: const BorderRadius.all(AppRadii.sm),
+                            border: Border.all(color: AppColors.hairline),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(Icons.arrow_back,
+                              size: 18, color: context.palette.ink70),
                         ),
-                        child: Text(tableDisplay,
-                            style: AppTypography.caption
-                                .copyWith(fontWeight: FontWeight.w700)),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: Icon(_searchOpen ? Icons.close : Icons.search,
-                          color: context.palette.ink70),
-                      onPressed: () => setState(() {
-                        _searchOpen = !_searchOpen;
-                        if (!_searchOpen) _query = '';
-                      }),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.receipt_long,
-                          color: context.palette.ink70),
-                      tooltip: 'KOT History',
-                      onPressed: () =>
-                          KotHistorySheet.show(context, widget.tableId),
-                    ),
-
-                    Builder(builder: (_) {
-                      final tables = ref.watch(tablesProvider);
-                      final table = tables
-                          .where((t) => t.serverId == widget.tableId)
-                          .firstOrNull;
-                      final isTableAction =
-                          table != null &&
-                          (table.state == TableState.mine ||
-                              table.state == TableState.other);
-                      final linkGroups = ref.watch(linkGroupsProvider);
-                      final isLinked = linkGroups.values
-                          .any((ids) => ids.contains(widget.tableId));
-                      final flags = ref.watch(flagsProvider);
-
-                      final isWaiter = ref.watch(isWaiterProvider);
-                      if (!isTableAction && !flags.packages) {
-                        return const SizedBox.shrink();
-                      }
-                      return PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.isRoom
+                                  ? 'Room $tableDisplay'
+                                  : 'Table $tableDisplay',
+                              style: AppTypography.tableName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              subLine,
+                              style: AppTypography.caption
+                                  .copyWith(color: context.palette.ink50),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(_searchOpen ? Icons.close : Icons.search,
                             color: context.palette.ink70),
-                        tooltip: 'More',
-                        onSelected: (action) {
+                        onPressed: () => setState(() {
+                          _searchOpen = !_searchOpen;
+                          if (!_searchOpen) _query = '';
+                        }),
+                      ),
+                      IconButton(
+                        icon: _isSaving
+                            ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: context.palette.ink70,
+                                ),
+                              )
+                            : Icon(Icons.bookmark_border,
+                                color: context.palette.ink70),
+                        tooltip: 'Save & exit',
+                        onPressed: _isSaving
+                            ? null
+                            : () async {
+                                final cart = ref.read(cartProvider);
+                                if (cart.isEmpty) {
+                                  _leaveOrder();
+                                  return;
+                                }
+                                await _saveAndExitDraft();
+                              },
+                      ),
+                      Builder(builder: (_) {
+                        final isTableAction = table != null &&
+                            (table.state == TableState.mine ||
+                                table.state == TableState.other);
+                        final linkGroups = ref.watch(linkGroupsProvider);
+                        final isLinked = linkGroups.values
+                            .any((ids) => ids.contains(widget.tableId));
+                        final flags = ref.watch(flagsProvider);
+                        final isWaiter = ref.watch(isWaiterProvider);
+                        if (!isTableAction && !flags.packages) {
+                          return const SizedBox.shrink();
+                        }
+                        return PopupMenuButton<String>(
+                          icon: Icon(Icons.more_vert,
+                              color: context.palette.ink70),
+                          tooltip: 'More',
+                          onSelected: (action) {
                           switch (action) {
                             case 'shift':
                               if (table != null) {
@@ -632,42 +681,62 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             ),
                           ],
                         ],
-                      );
-                    }),
-                    IconButton(
-                      icon: _isSaving
-                          ? SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: context.palette.ink70,
+                        );
+                      }),
+                      const SizedBox(width: 4),
+                      Pressable(
+                        onTap: () =>
+                            KotHistorySheet.show(context, widget.tableId),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: context.palette.surface,
+                            borderRadius: const BorderRadius.all(AppRadii.sm),
+                            border: Border.all(color: AppColors.hairline),
+                          ),
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Center(
+                                child: Icon(Icons.receipt_long,
+                                    size: 18, color: context.palette.ink70),
                               ),
-                            )
-                          : Icon(Icons.bookmark_border,
-                              color: context.palette.ink70),
-                      tooltip: 'Save & exit',
-                      onPressed: _isSaving
-                          ? null
-                          : () async {
-                              final cart = ref.read(cartProvider);
-                              if (cart.isEmpty) {
-                                _leaveOrder();
-                                return;
-                              }
-                              await _saveAndExitDraft();
-                            },
-                    ),
-                  ],
+                              if (kotCount > 0)
+                                Positioned(
+                                  top: -4,
+                                  right: -4,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 5, vertical: 1),
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.terra,
+                                      borderRadius:
+                                          BorderRadius.all(AppRadii.pill),
+                                    ),
+                                    child: Text(
+                                      '$kotCount',
+                                      style: AppTypography.pill.copyWith(
+                                        color: Colors.white,
+                                        fontSize: 9,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 if (_searchOpen)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: LiquidGlassSurface(
+                    child: AppSurface(
+                      shadow: const [],
                       borderRadius: const BorderRadius.all(AppRadii.sm),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      blur: 20,
-                      thickness: 10,
                       child: TextField(
                         autofocus: true,
                         decoration: InputDecoration(
@@ -762,26 +831,15 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-
                                   color: pinnedIds.contains(item.id)
-                                      ? (context.palette.isDark
-                                          ? AppColors.terra600
-                                              .withValues(alpha: 0.28)
-                                          : AppColors.terra50)
-                                      : context.palette.isDark
-                                          ? Colors.white
-                                              .withValues(alpha: 0.08)
-                                          : Colors.white
-                                              .withValues(alpha: 0.6),
+                                      ? AppColors.terraSoft
+                                      : context.palette.surface,
                                   borderRadius:
                                       const BorderRadius.all(AppRadii.pill),
                                   border: Border.all(
                                     color: pinnedIds.contains(item.id)
-                                        ? AppColors.terra200
-                                        : context.palette.ink10,
-                                    style: pinnedIds.contains(item.id)
-                                        ? BorderStyle.solid
-                                        : BorderStyle.none,
+                                        ? AppColors.terra
+                                        : AppColors.hairline,
                                   ),
                                 ),
                                 child: Row(
@@ -823,7 +881,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
                 Builder(builder: (context) {
                   final recent = ref.watch(recentItemsProvider);
-                  if (recent.isEmpty) return const SizedBox.shrink();
+                  final quickAdd =
+                      recent.isNotEmpty ? recent : menu.take(6).toList();
+                  if (quickAdd.isEmpty) return const SizedBox.shrink();
                   return SizedBox(
                     height: AppTouchTargets.chip,
                     child: ListView(
@@ -834,12 +894,12 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 6),
                           alignment: Alignment.center,
-                          child: Text('RECENT',
+                          child: Text('QUICK ADD',
                               style: AppTypography.micro.copyWith(
                                   color: context.palette.ink50,
                                   letterSpacing: 1.0)),
                         ),
-                        for (final item in recent)
+                        for (final item in quickAdd)
                           Padding(
                             padding: const EdgeInsets.only(right: 6),
                             child: GestureDetector(
@@ -848,13 +908,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: context.palette.isDark
-                                      ? AppColors.terra600
-                                          .withValues(alpha: 0.28)
-                                      : AppColors.terra50,
+                                  color: AppColors.terraSoft,
                                   borderRadius:
                                       const BorderRadius.all(AppRadii.pill),
-                                  border: Border.all(color: AppColors.terra200),
+                                  border: Border.all(color: AppColors.terra),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -956,28 +1013,43 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                     for (int i = 0;
                                         i < entry.value.length;
                                         i++) ...[
-                                      _SwipeToAddWrapper(
-                                        readOnly: _readOnly,
-                                        onDragTick: () => ref
-                                            .read(feedbackServiceProvider)
-                                            .fire(const FeedbackDragTick()),
-                                        onSwipeConfirm: () => ref
-                                            .read(feedbackServiceProvider)
-                                            .fire(const FeedbackMedium()),
-                                        onAdd: () => _addOrConfigure(
-                                            context, entry.value[i]),
-                                        child: _ItemRow(
-                                          item: entry.value[i],
-                                          onAdd: () => _addOrConfigure(
-                                              context, entry.value[i]),
-                                          onTap: () => ItemDetailSheet.show(
-                                              context, entry.value[i]),
-                                          onLongPress: _readOnly
-                                              ? null
-                                              : () => _showItemQuickMenu(
-                                                  context, entry.value[i]),
-                                        ),
-                                      ),
+                                      Builder(builder: (_) {
+                                        final menuItem = entry.value[i];
+                                        final simpleQty = cart
+                                            .where((l) =>
+                                                l.item.id == menuItem.id &&
+                                                l.variationId == null &&
+                                                l.mods.isEmpty &&
+                                                l.itemNote.isEmpty)
+                                            .fold<int>(0, (s, l) => s + l.qty);
+                                        return _SwipeToAddWrapper(
+                                          readOnly: _readOnly,
+                                          onDragTick: () => ref
+                                              .read(feedbackServiceProvider)
+                                              .fire(const FeedbackDragTick()),
+                                          onSwipeConfirm: () => ref
+                                              .read(feedbackServiceProvider)
+                                              .fire(const FeedbackMedium()),
+                                          onAdd: () =>
+                                              _addOrConfigure(context, menuItem),
+                                          child: _ItemRow(
+                                            item: menuItem,
+                                            simpleQty: simpleQty,
+                                            onAdd: () => _addOrConfigure(
+                                                context, menuItem),
+                                            onDecrement: () => ref
+                                                .read(cartProvider.notifier)
+                                                .setQty(menuItem.id,
+                                                    simpleQty - 1),
+                                            onTap: () => ItemDetailSheet.show(
+                                                context, menuItem),
+                                            onLongPress: _readOnly
+                                                ? null
+                                                : () => _showItemQuickMenu(
+                                                    context, menuItem),
+                                          ),
+                                        );
+                                      }),
                                       if (i < entry.value.length - 1)
                                         Divider(
                                             height: 1,
@@ -1065,18 +1137,43 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       ),
                     ),
                   );
-                  if (count == 0) return const SizedBox.shrink();
+                  final hasRunning =
+                      runningOrder != null && runningOrder.itemCount > 0;
+                  if (count == 0 && !hasRunning) {
+                    return const SizedBox.shrink();
+                  }
+
+                  final String label;
+                  final String actionLabel;
+                  final double barTotal;
+                  final VoidCallback? onBarTap;
+                  if (count > 0) {
+                    label = _readOnly
+                        ? 'View-only — cannot review'
+                        : '$count ${count == 1 ? "item" : "items"}';
+                    actionLabel = 'Review';
+                    barTotal = total;
+                    onBarTap =
+                        _readOnly ? null : () => context.push(_reviewRoute);
+                  } else {
+                    label = 'Running';
+                    actionLabel = 'View bill';
+                    barTotal = runningOrder!.total;
+                    onBarTap = () => context.push(_reviewRoute);
+                  }
+
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _OrderNoteRow(
-                        note: orderNotes,
-                        onTap: _showNotesDialog,
-                      ),
+                      if (count > 0)
+                        _OrderNoteRow(
+                          note: orderNotes,
+                          onTap: _showNotesDialog,
+                        ),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                         child: Opacity(
-                          opacity: _readOnly ? 0.45 : 1.0,
+                          opacity: (_readOnly && count > 0) ? 0.45 : 1.0,
                           child: PredictiveScale(
                             enabled: false,
                             maxScaleBoost: 0.015,
@@ -1085,44 +1182,48 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               child: Material(
                                 color: Colors.transparent,
                                 child: GestureDetector(
-                                  onTap: _readOnly
-                                      ? null
-                                      : () => context.push(_reviewRoute),
+                                  onTap: onBarTap,
                                   child: Container(
                                     padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
-                                      gradient: const LinearGradient(
-                                        colors: [
-                                          AppColors.terra400,
-                                          AppColors.terra600
-                                        ],
-                                      ),
+                                      color: AppColors.terra,
                                       borderRadius:
                                           const BorderRadius.all(AppRadii.md),
-                                      boxShadow:
-                                          _readOnly ? [] : AppShadows.terraGlow,
+                                      boxShadow: (_readOnly && count > 0)
+                                          ? []
+                                          : AppShadows.terraGlow,
                                     ),
                                     child: Row(
                                       children: [
                                         Text(
-                                          _readOnly
-                                              ? 'View-only — cannot review'
-                                              : 'Review · $count ${count == 1 ? "item" : "items"}',
+                                          label,
                                           style: AppTypography.bodyMd.copyWith(
                                               color: Colors.white,
                                               fontWeight: FontWeight.w600),
                                         ),
-                                        const Spacer(),
-                                        if (!_readOnly) ...[
+                                        if (!_readOnly || count == 0) ...[
+                                          Text('  ·  ',
+                                              style: AppTypography.bodyMd
+                                                  .copyWith(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                              alpha: 0.6))),
                                           KineticRupeeCounter(
-                                            amount: total,
-                                            fontSize: 18,
+                                            amount: barTotal,
+                                            fontSize: 16,
                                             color: Colors.white,
                                           ),
-                                          const SizedBox(width: 8),
                                         ],
+                                        const Spacer(),
+                                        Text(actionLabel,
+                                            style: AppTypography.bodyMd
+                                                .copyWith(
+                                                    color: Colors.white,
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                        const SizedBox(width: 4),
                                         const Icon(Icons.arrow_forward,
-                                            color: Colors.white),
+                                            color: Colors.white, size: 18),
                                       ],
                                     ),
                                   ),
@@ -1503,15 +1604,25 @@ class _SwipeToAddWrapperState extends State<_SwipeToAddWrapper>
 
 class _ItemRow extends StatelessWidget {
   final MenuItem item;
+  final int simpleQty;
   final VoidCallback onAdd;
+  final VoidCallback onDecrement;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
-  const _ItemRow(
-      {required this.item, required this.onAdd, required this.onTap, this.onLongPress});
+  const _ItemRow({
+    required this.item,
+    required this.simpleQty,
+    required this.onAdd,
+    required this.onDecrement,
+    required this.onTap,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
     final unavailable = !item.available;
+    final hasVariations = item.variations.isNotEmpty;
+    final needsSheet = _itemNeedsSheet(item);
     return InkWell(
       onTap: unavailable ? null : onTap,
       onLongPress: unavailable ? null : onLongPress,
@@ -1521,7 +1632,6 @@ class _ItemRow extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Row(
             children: [
-
               _VegMark(isVeg: item.isVeg),
               const SizedBox(width: 10),
               Expanded(
@@ -1533,6 +1643,22 @@ class _ItemRow extends StatelessWidget {
                         Flexible(
                           child: Text(item.name, style: AppTypography.bodyMd),
                         ),
+                        if (hasVariations) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: const BoxDecoration(
+                              color: AppColors.terraSoft,
+                              borderRadius: BorderRadius.all(AppRadii.xs),
+                            ),
+                            child: Text(
+                              '${item.variations.length} SIZES',
+                              style: AppTypography.pill.copyWith(
+                                  color: AppColors.terraInk, fontSize: 8.5),
+                            ),
+                          ),
+                        ],
                         if (unavailable) ...[
                           const SizedBox(width: 8),
                           Container(
@@ -1551,37 +1677,84 @@ class _ItemRow extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text(formatRupeesCompact(item.price),
-                        style: AppTypography.caption),
+                    Text(
+                      hasVariations
+                          ? item.variations
+                              .take(2)
+                              .map((v) =>
+                                  '${v.name} ${formatRupeesCompact(v.price)}')
+                              .join(' · ')
+                          : formatRupeesCompact(item.price),
+                      style: AppTypography.caption,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
               ),
               if (!unavailable)
-                GestureDetector(
-                  onTap: onAdd,
-                  behavior: HitTestBehavior.opaque,
-                  child: SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: Center(
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: context.palette.isDark
-                              ? AppColors.terra600
-                              : AppColors.ink,
-                          borderRadius: BorderRadius.circular(16),
+                if (needsSheet || simpleQty <= 0)
+                  GestureDetector(
+                    onTap: onAdd,
+                    behavior: HitTestBehavior.opaque,
+                    child: SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: Center(
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: const BoxDecoration(
+                            color: AppColors.ink,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.add,
+                              color: Colors.white, size: 18),
                         ),
-                        child: const Icon(Icons.add,
-                            color: Colors.white, size: 18),
                       ),
                     ),
+                  )
+                else
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _StepperButton(icon: Icons.remove, onTap: onDecrement),
+                      SizedBox(
+                        width: 22,
+                        child: Text('$simpleQty',
+                            textAlign: TextAlign.center,
+                            style: AppTypography.bodyMd
+                                .copyWith(fontWeight: FontWeight.w700)),
+                      ),
+                      _StepperButton(icon: Icons.add, onTap: onAdd),
+                    ],
                   ),
-                ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StepperButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _StepperButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: AppColors.terraSoft,
+          borderRadius: const BorderRadius.all(AppRadii.pill),
+        ),
+        child: Icon(icon, size: 15, color: AppColors.terraDeep),
       ),
     );
   }

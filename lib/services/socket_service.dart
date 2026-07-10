@@ -4,9 +4,60 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 
 enum SocketState { disconnected, connecting, connected, verified }
 
+enum ProbeResult { ok, authRejected, unreachable }
+
 const _tag = '[Socket]';
 
 class SocketService {
+  /// Validates a host/port/token pairing against the server BEFORE it's
+  /// saved — opens a disposable socket, never touches this instance's
+  /// connection state.
+  static Future<ProbeResult> probe(String host, int port, String token) {
+    final completer = Completer<ProbeResult>();
+    io.Socket? probeSocket;
+    Timer? timeoutTimer;
+
+    void finish(ProbeResult result) {
+      if (completer.isCompleted) return;
+      completer.complete(result);
+      timeoutTimer?.cancel();
+      probeSocket?.dispose();
+    }
+
+    debugPrint('$_tag → probe http://$host:$port/operator');
+    probeSocket = io.io(
+      'http://$host:$port/operator',
+      io.OptionBuilder()
+          .setTransports(['websocket'])
+          .setAuth({'token': token})
+          .disableReconnection()
+          .build(),
+    );
+    probeSocket.onConnect((_) {
+      debugPrint('$_tag ← probe: ok');
+      finish(ProbeResult.ok);
+    });
+    probeSocket.onConnectError((err) {
+      final msg = err.toString().toLowerCase();
+      final isAuthError = msg.contains('auth') ||
+          msg.contains('token') ||
+          msg.contains('expired');
+      debugPrint('$_tag ← probe: connect_error ($err)');
+      finish(isAuthError ? ProbeResult.authRejected : ProbeResult.unreachable);
+    });
+    probeSocket.onError((err) {
+      debugPrint('$_tag ← probe: error ($err)');
+      finish(ProbeResult.unreachable);
+    });
+    probeSocket.connect();
+    timeoutTimer = Timer(const Duration(seconds: 6), () {
+      debugPrint('$_tag ← probe: timeout');
+      finish(ProbeResult.unreachable);
+    });
+
+    return completer.future;
+  }
+
   io.Socket? _socket;
   final _stateController = StreamController<SocketState>.broadcast();
   SocketState _state = SocketState.disconnected;
@@ -65,28 +116,34 @@ class SocketService {
       onRejected('Connection lost');
       return;
     }
-    socket.emitWithAckAsync('operator:verify', {'pin': pin}).then((res) {
-      if (res is! Map) {
-        onRejected('Invalid server response');
-        return;
-      }
-      final response = Map<String, dynamic>.from(res);
-      debugPrint('$_tag ← operator:verify ack: kind=${response['kind']}');
-      if (response['kind'] == 'success') {
-        debugPrint(
-            '$_tag ✓ PIN verified — operator: ${response['operator']?['name'] ?? 'unknown'}');
-        debugPrint(
-            '$_tag   Sync keys: ${(response['sync'] as Map?)?.keys.toList() ?? response.keys.toList()}');
-        _setState(SocketState.verified);
-        onVerified(response);
-      } else {
-        debugPrint('$_tag ✗ PIN rejected: ${response['message']}');
-        onRejected(response['message']?.toString() ?? 'Invalid PIN');
-      }
-    }).catchError((err) {
-      debugPrint('$_tag ✗ PIN verify error: $err');
-      onRejected('Connection error');
-    });
+    socket
+        .emitWithAckAsync('operator:verify', {'pin': pin})
+        .timeout(const Duration(seconds: 12))
+        .then((res) {
+          if (res is! Map) {
+            onRejected('Invalid server response');
+            return;
+          }
+          final response = Map<String, dynamic>.from(res);
+          debugPrint('$_tag ← operator:verify ack: kind=${response['kind']}');
+          if (response['kind'] == 'success') {
+            debugPrint(
+                '$_tag ✓ PIN verified — operator: ${response['operator']?['name'] ?? 'unknown'}');
+            debugPrint(
+                '$_tag   Sync keys: ${(response['sync'] as Map?)?.keys.toList() ?? response.keys.toList()}');
+            _setState(SocketState.verified);
+            onVerified(response);
+          } else {
+            debugPrint('$_tag ✗ PIN rejected: ${response['message']}');
+            onRejected(response['message']?.toString() ?? 'Invalid PIN');
+          }
+        })
+        .catchError((err) {
+          debugPrint('$_tag ✗ PIN verify error: $err');
+          onRejected(err is TimeoutException
+              ? "Server didn't respond — check the connection and retry"
+              : 'Connection error');
+        });
   }
 
   void emit(String event, Map<String, dynamic> data,

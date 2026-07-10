@@ -1,5 +1,7 @@
 
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,12 +10,16 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/session_service.dart';
+import '../services/socket_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_glass_surface.dart';
 import '../widgets/liquid_mesh_background.dart';
 import '../widgets/help_sheet.dart';
+import '../widgets/manual_entry_sheet.dart';
 
-enum _ScanError { invalid, expired, used }
+enum _ScanError { invalid, expired, unreachable }
+
+enum _ScanStage { idle, checking, verified }
 
 class QrScanScreen extends ConsumerStatefulWidget {
   const QrScanScreen({super.key});
@@ -31,6 +37,8 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
   bool _torchOn = false;
   bool _processing = false;
   _ScanError? _error;
+  _ScanStage _stage = _ScanStage.idle;
+  int _shakeTrigger = 0;
 
   late final AnimationController _entranceCtrl = AnimationController(
     vsync: this,
@@ -52,7 +60,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
     super.dispose();
   }
 
-  void _onDetect(BarcodeCapture capture) {
+  void _onDetect(BarcodeCapture capture) async {
     if (_processing) return;
     final raw =
         capture.barcodes.isEmpty ? null : capture.barcodes.first.rawValue;
@@ -82,22 +90,40 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
     setState(() {
       _processing = true;
       _error = null;
+      _stage = _ScanStage.checking;
     });
-    ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
 
-    SessionService()
-        .savePairing(PairingInfo(host: host, port: port, token: token))
-        .then((_) {
-      if (!mounted) return;
-      context.go('/connecting');
-    });
+    final result = await SocketService.probe(host, port, token);
+    if (!mounted) return;
+
+    switch (result) {
+      case ProbeResult.ok:
+        setState(() => _stage = _ScanStage.verified);
+        ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
+        await SessionService()
+            .savePairing(PairingInfo(host: host, port: port, token: token));
+        if (!mounted) return;
+        context.go('/connecting');
+      case ProbeResult.authRejected:
+        _showError(_ScanError.expired);
+      case ProbeResult.unreachable:
+        _showError(_ScanError.unreachable);
+    }
   }
 
   void _showError(_ScanError err) {
     ref.read(feedbackServiceProvider).fire(const FeedbackError());
-    setState(() => _error = err);
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _error = null);
+    setState(() {
+      _error = err;
+      _stage = _ScanStage.idle;
+      _shakeTrigger++;
+    });
+    Future.delayed(const Duration(milliseconds: 2600), () {
+      if (!mounted) return;
+      setState(() {
+        _error = null;
+        _processing = false;
+      });
     });
   }
 
@@ -127,8 +153,8 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
 
   String _errorLabel(_ScanError err) => switch (err) {
         _ScanError.invalid => 'Not a valid Restro pairing QR',
-        _ScanError.expired => 'QR expired — ask for a fresh one',
-        _ScanError.used => 'QR already used — get a new one',
+        _ScanError.expired => 'QR expired — ask the admin for a fresh one',
+        _ScanError.unreachable => "Can't reach the server — same Wi-Fi?",
       };
 
   @override
@@ -172,8 +198,9 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                 child: child,
               ),
               child: _ScanTargetOverlay(
-                processing: _processing,
+                stage: _stage,
                 errorLabel: _error != null ? _errorLabel(_error!) : null,
+                shakeTrigger: _shakeTrigger,
               ),
             ),
           ),
@@ -237,39 +264,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
             ),
           ),
 
-          if (_processing)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.35),
-                  ),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(
-                          width: 36,
-                          height: 36,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor:
-                                AlwaysStoppedAnimation(AppColors.terra400),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          'Pairing…',
-                          style: AppTypography.caption
-                              .copyWith(color: Colors.white),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
           Positioned(
             left: 0,
             right: 0,
@@ -310,7 +304,8 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Scan the rotating QR on the admin desktop screen',
+                          'Point at the rotating QR on the admin desktop — '
+                          'verified with the server before anything is saved.',
                           style: AppTypography.caption.copyWith(
                             color: Colors.white.withValues(alpha: 0.60),
                           ),
@@ -328,13 +323,39 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                             const SizedBox(width: 10),
                             Expanded(
                               child: _ConsoleButton(
-                                icon: Icons.auto_awesome,
-                                label: 'Try demo',
+                                icon: Icons.keyboard_outlined,
+                                label: 'Enter code instead',
                                 emphasis: true,
-                                onTap: _demoScan,
+                                onTap: () => ManualEntrySheet.show(context),
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 12),
+                        Center(
+                          child: GestureDetector(
+                            onTap: _demoScan,
+                            child: RichText(
+                              text: TextSpan(
+                                style: AppTypography.caption.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.42),
+                                ),
+                                children: [
+                                  const TextSpan(text: 'No server around? '),
+                                  TextSpan(
+                                    text: 'Explore the demo kitchen',
+                                    style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.6),
+                                      decoration: TextDecoration.underline,
+                                      decorationColor: Colors.white
+                                          .withValues(alpha: 0.4),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -380,28 +401,49 @@ class _CameraUnavailable extends StatelessWidget {
 }
 
 class _ScanTargetOverlay extends StatefulWidget {
-  final bool processing;
+  final _ScanStage stage;
   final String? errorLabel;
-  const _ScanTargetOverlay({this.processing = false, this.errorLabel});
+  final int shakeTrigger;
+  const _ScanTargetOverlay({
+    this.stage = _ScanStage.idle,
+    this.errorLabel,
+    this.shakeTrigger = 0,
+  });
 
   @override
   State<_ScanTargetOverlay> createState() => _ScanTargetOverlayState();
 }
 
 class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _scanCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1800),
   )..repeat(reverse: true);
 
+  late final AnimationController _shakeCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 460),
+  );
+
+  @override
+  void didUpdateWidget(covariant _ScanTargetOverlay old) {
+    super.didUpdateWidget(old);
+    if (widget.shakeTrigger != old.shakeTrigger) {
+      _shakeCtrl.forward(from: 0);
+    }
+  }
+
   @override
   void dispose() {
     _scanCtrl.dispose();
+    _shakeCtrl.dispose();
     super.dispose();
   }
 
   bool get _hasError => widget.errorLabel != null;
+  bool get _isBusy =>
+      widget.stage == _ScanStage.checking || widget.stage == _ScanStage.verified;
 
   @override
   Widget build(BuildContext context) {
@@ -414,9 +456,11 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
 
       final bracketColor = _hasError
           ? AppColors.danger
-          : widget.processing
+          : widget.stage == _ScanStage.verified
               ? AppColors.success
-              : AppColors.terra400;
+              : widget.stage == _ScanStage.checking
+                  ? AppColors.terra400
+                  : AppColors.terra400;
 
       final frameCenter = Alignment(
         0,
@@ -454,7 +498,7 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
             ),
           ),
 
-          if (!widget.processing && !_hasError)
+          if (!_isBusy && !_hasError)
             AnimatedBuilder(
               animation: _scanCtrl,
               builder: (_, __) {
@@ -491,7 +535,7 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
               },
             ),
 
-          if (widget.processing)
+          if (widget.stage == _ScanStage.verified)
             Align(
               alignment: frameCenter,
               child: Container(
@@ -517,12 +561,19 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
           Align(
             alignment: frameCenter,
             child: AnimatedBuilder(
-              animation: _scanCtrl,
+              animation: Listenable.merge([_scanCtrl, _shakeCtrl]),
               builder: (_, child) {
-                final breath = widget.processing || _hasError
+                final breath = _isBusy || _hasError
                     ? 1.0
                     : 1.0 + 0.012 * Curves.easeInOut.transform(_scanCtrl.value);
-                return Transform.scale(scale: breath, child: child);
+                final shakeT = _shakeCtrl.value;
+                final shakeOffset = shakeT == 0 || shakeT == 1
+                    ? 0.0
+                    : math.sin(shakeT * math.pi * 5) * 10 * (1 - shakeT);
+                return Transform.translate(
+                  offset: Offset(shakeOffset, 0),
+                  child: Transform.scale(scale: breath, child: child),
+                );
               },
               child: SizedBox(
                 width: size,
@@ -548,21 +599,28 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
                         label: widget.errorLabel!,
                         tint: AppColors.danger,
                       )
-                    : widget.processing
-                        ? const _StatusPill(
-                            key: ValueKey('ok'),
+                    : switch (widget.stage) {
+                        _ScanStage.checking => const _StatusPill(
+                            key: ValueKey('checking'),
+                            busy: true,
+                            label: 'Checking with the server…',
+                            tint: AppColors.terra400,
+                          ),
+                        _ScanStage.verified => const _StatusPill(
+                            key: ValueKey('verified'),
                             icon: Icons.check_circle_outline_rounded,
-                            label: 'Paired — connecting…',
+                            label: 'Verified — pairing saved',
                             tint: AppColors.success,
-                          )
-                        : Text(
-                            'Align QR within the frame',
+                          ),
+                        _ScanStage.idle => Text(
+                            'Align the QR…',
                             key: const ValueKey('hint'),
                             style: AppTypography.caption.copyWith(
                               color: Colors.white.withValues(alpha: 0.5),
                               letterSpacing: 0.3,
                             ),
                           ),
+                      },
               ),
             ),
           ),
@@ -709,12 +767,14 @@ class _ConsoleButton extends StatelessWidget {
 }
 
 class _StatusPill extends StatelessWidget {
-  final IconData icon;
+  final IconData? icon;
+  final bool busy;
   final String label;
   final Color tint;
   const _StatusPill({
     super.key,
-    required this.icon,
+    this.icon,
+    this.busy = false,
     required this.label,
     required this.tint,
   });
@@ -730,7 +790,17 @@ class _StatusPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white, size: 16),
+          if (busy)
+            const SizedBox(
+              width: 13,
+              height: 13,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation(Colors.white),
+              ),
+            )
+          else
+            Icon(icon, color: Colors.white, size: 16),
           const SizedBox(width: 8),
           Flexible(
             child: Text(

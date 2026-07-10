@@ -11,9 +11,7 @@ import '../motion/motion.dart';
 import '../services/session_service.dart';
 import '../services/socket_service.dart';
 import '../theme/tokens.dart';
-import '../widgets/liquid_chrome.dart';
-import '../widgets/liquid_glass_surface.dart';
-import '../widgets/liquid_mesh_background.dart';
+import '../widgets/app_surface.dart';
 
 class ConnectingScreen extends ConsumerStatefulWidget {
   const ConnectingScreen({super.key});
@@ -24,14 +22,17 @@ class ConnectingScreen extends ConsumerStatefulWidget {
 class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
     with SingleTickerProviderStateMixin {
   static const _stages = <String>[
-    'Finding restaurant…',
-    'Verifying device…',
-    'Almost there…',
+    'Reaching the POS server',
+    'Securing the session',
+    'Loading restaurant data',
   ];
   int _stage = 0;
+  bool _failed = false;
   Timer? _stageTimer;
+  Timer? _timeoutTimer;
   StreamSubscription<SocketState>? _socketSub;
   String? _errorMsg;
+  PairingInfo? _pairing;
 
   late final AnimationController _spin = AnimationController(
     vsync: this,
@@ -55,6 +56,18 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
       return;
     }
 
+    setState(() {
+      _pairing = pairing;
+      _stage = 0;
+      _failed = false;
+      _errorMsg = null;
+    });
+
+    _timeoutTimer?.cancel();
+    _timeoutTimer = Timer(const Duration(seconds: 10), () {
+      if (mounted && !_failed) setState(() => _failed = true);
+    });
+
     if (pairing.token == 'demo-token') {
       debugPrint('[Connect] Demo pairing — skipping real socket handshake');
       _runDemoStages();
@@ -69,6 +82,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
       debugPrint('[Connect] Socket state changed: $state');
       if (state == SocketState.connected) {
         debugPrint('[Connect] ✓ Connected → advancing stages then → /auth');
+        _timeoutTimer?.cancel();
 
         setState(() => _stage = 1);
         _stageTimer = Timer(const Duration(milliseconds: 700), () {
@@ -89,12 +103,6 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
 
     debugPrint('[Connect] Starting socket connection...');
     socketService.connect(pairing.host, pairing.port, pairing.token);
-
-    _stageTimer = Timer(const Duration(milliseconds: 600), () {
-      if (mounted && _stage == 0) {
-
-      }
-    });
   }
 
   void _runDemoStages() {
@@ -103,14 +111,31 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
       if (!mounted) return;
       setState(() => _stage = 2);
       _stageTimer = Timer(const Duration(milliseconds: 500), () {
-        if (mounted) context.go('/auth');
+        if (mounted) {
+          _timeoutTimer?.cancel();
+          context.go('/auth');
+        }
       });
     });
+  }
+
+  Future<void> _cancelToScan() async {
+    await SessionService().clearPairing();
+    if (!mounted) return;
+    context.go('/scan');
+  }
+
+  void _retry() {
+    _stageTimer?.cancel();
+    _socketSub?.cancel();
+    ref.read(socketServiceProvider).disconnect();
+    _connectToServer();
   }
 
   @override
   void dispose() {
     _stageTimer?.cancel();
+    _timeoutTimer?.cancel();
     _socketSub?.cancel();
     _spin.dispose();
     super.dispose();
@@ -118,26 +143,24 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
 
   @override
   Widget build(BuildContext context) {
-    final restaurant = ref.watch(restaurantProvider);
-    final name = restaurant?.name ?? 'Restaurant';
-    final deviceLabel = restaurant?.adminDeviceLabel ?? 'Admin Desktop';
+    final host = _pairing?.host ?? '';
+    final port = _pairing?.port;
+    final isDemo = _pairing?.token == 'demo-token';
 
-    return LiquidMeshBackground(
+    return ColoredBox(
+      color: AppColors.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-              child: LiquidGlassSurface(
+              child: AppSurface(
                 borderRadius: const BorderRadius.all(AppRadii.lg),
-                blur: 30,
-                thickness: 14,
                 padding: const EdgeInsets.all(28),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-
                     Hero(
                       tag: HeroTags.pairingCore,
                       child: SizedBox(
@@ -146,24 +169,36 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            _PulseRing(),
+                            if (!_failed) _PulseRing(),
                             RotationTransition(
-                              turns: _spin,
+                              turns: _failed
+                                  ? const AlwaysStoppedAnimation(0)
+                                  : _spin,
                               child: Container(
                                 width: 64,
                                 height: 64,
-                                decoration: const BoxDecoration(
+                                decoration: BoxDecoration(
                                   gradient: LinearGradient(
-                                    colors: [
-                                      AppColors.terra400,
-                                      AppColors.terra600
-                                    ],
+                                    colors: _failed
+                                        ? const [
+                                            AppColors.terra,
+                                            AppColors.terraDeep,
+                                          ]
+                                        : const [
+                                            AppColors.terra400,
+                                            AppColors.terra600,
+                                          ],
                                   ),
                                   shape: BoxShape.circle,
                                   boxShadow: AppShadows.terraGlow,
                                 ),
-                                child: const Icon(Icons.wifi_tethering,
-                                    color: Colors.white, size: 28),
+                                child: Icon(
+                                  _failed
+                                      ? Icons.wifi_off_rounded
+                                      : Icons.wifi_tethering,
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
                               ),
                             ),
                           ],
@@ -171,49 +206,158 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                       ),
                     ),
                     const SizedBox(height: 24),
-                    Text('Connecting to', style: context.palette.caption),
-                    const SizedBox(height: 4),
-                    Text(name,
-                        style: AppTypography.displayMd,
+                    if (_failed) ...[
+                      const Text("Can't reach the server",
+                          style: AppTypography.displayMd,
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 14),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            _ChecklistItem(
+                                text:
+                                    'Is this phone on the same Wi-Fi as the desktop?'),
+                            _ChecklistItem(
+                                text:
+                                    'Is the Restro POS app running on the desktop?'),
+                            _ChecklistItem(
+                                text:
+                                    'QR codes expire — ask the admin for a fresh one.'),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _CardButton(
+                              label: 'Scan new QR',
+                              filled: false,
+                              onTap: _cancelToScan,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _CardButton(
+                              label: 'Try again',
+                              filled: true,
+                              onTap: _retry,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      Text('CONNECTING TO',
+                          style: AppTypography.micro
+                              .copyWith(color: context.palette.ink50)),
+                      const SizedBox(height: 4),
+                      Text(
+                        host.isEmpty ? '—' : (isDemo ? 'Demo Kitchen' : host),
+                        style: AppTypography.tableName,
                         textAlign: TextAlign.center,
                         maxLines: 2,
-                        overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 4),
-                    Text(deviceLabel,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        isDemo
+                            ? 'Local sandbox · no server needed'
+                            : 'Port ${port ?? '—'} · Restro POS',
                         style: context.palette.caption,
                         textAlign: TextAlign.center,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    if (_errorMsg != null) ...[
-                      const SizedBox(height: 8),
-                      Text(_errorMsg!,
-                          style: AppTypography.caption
-                              .copyWith(color: AppColors.warn),
-                          textAlign: TextAlign.center),
-                    ],
-                    const SizedBox(height: 20),
-
-                    Column(
-                      children: [
-                        for (int i = 0; i < _stages.length; i++) ...[
-                          _StageRow(
-                            label: _stages[i],
-                            done: i < _stage,
-                            active: i == _stage,
-                          ),
-                          if (i < _stages.length - 1) const SizedBox(height: 6),
-                        ],
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (_errorMsg != null) ...[
+                        const SizedBox(height: 8),
+                        Text(_errorMsg!,
+                            style: AppTypography.caption
+                                .copyWith(color: AppColors.warn),
+                            textAlign: TextAlign.center),
                       ],
-                    ),
-                    const SizedBox(height: 24),
-                    LiquidSecondaryButton(
-                      label: 'Cancel',
-                      onPressed: () => context.go('/scan'),
-                    ),
+                      const SizedBox(height: 20),
+                      Column(
+                        children: [
+                          for (int i = 0; i < _stages.length; i++) ...[
+                            _StageRow(
+                              label: _stages[i],
+                              done: i < _stage,
+                              active: i == _stage,
+                            ),
+                            if (i < _stages.length - 1)
+                              const SizedBox(height: 6),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Pressable(
+                        onTap: _cancelToScan,
+                        child: Text('Cancel',
+                            style: AppTypography.caption
+                                .copyWith(color: context.palette.ink50)),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChecklistItem extends StatelessWidget {
+  final String text;
+  const _ChecklistItem({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('•  ',
+              style: AppTypography.caption.copyWith(color: AppColors.terra)),
+          Expanded(
+            child: Text(text,
+                style: AppTypography.caption
+                    .copyWith(color: context.palette.ink70)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CardButton extends StatelessWidget {
+  final String label;
+  final bool filled;
+  final VoidCallback onTap;
+  const _CardButton(
+      {required this.label, required this.filled, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: filled ? AppColors.ink : Colors.transparent,
+          borderRadius: const BorderRadius.all(AppRadii.md),
+          border: filled ? null : Border.all(color: AppColors.hairline),
+        ),
+        child: Text(
+          label,
+          style: AppTypography.bodyMd.copyWith(
+            color: filled ? Colors.white : context.palette.ink,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
@@ -281,7 +425,7 @@ class _StageRow extends StatelessWidget {
             color: done
                 ? AppColors.success
                 : active
-                    ? AppColors.terra400.withValues(alpha: 0.18)
+                    ? AppColors.terraSoft
                     : context.palette.ink05,
           ),
           child: done
@@ -293,7 +437,7 @@ class _StageRow extends StatelessWidget {
                         height: 8,
                         child: CircularProgressIndicator(
                           strokeWidth: 1.6,
-                          color: AppColors.terra500,
+                          color: AppColors.terra,
                         ),
                       ),
                     )

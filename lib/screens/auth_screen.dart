@@ -9,8 +9,7 @@ import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/session_service.dart';
 import '../theme/tokens.dart';
-import '../widgets/liquid_glass_surface.dart';
-import '../widgets/liquid_mesh_background.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/help_sheet.dart';
 import '../widgets/pin_pad.dart';
 
@@ -25,6 +24,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
   final List<String> _pin = [];
   String? _error;
   bool _submitting = false;
+  bool _verified = false;
 
   late final AnimationController _shakeCtrl = AnimationController(
     vsync: this,
@@ -53,6 +53,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
         ref.read(feedbackServiceProvider).fire(const FeedbackLight());
       }
     });
+    if (_pin.length == 4) {
+      Future.delayed(const Duration(milliseconds: 180), _maybeSubmit);
+    }
   }
 
   void _delete() {
@@ -103,6 +106,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
       label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
     );
     ref.read(isAuthenticatedProvider.notifier).state = true;
+    if (!mounted) return;
+    setState(() => _verified = true);
+    await Future.delayed(const Duration(milliseconds: 400));
     if (mounted) context.go('/tables');
   }
 
@@ -138,7 +144,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
           label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
         );
         ref.read(isAuthenticatedProvider.notifier).state = true;
-        context.go('/tables');
+        if (!mounted) return;
+        setState(() => _verified = true);
+        await Future.delayed(const Duration(milliseconds: 400));
+        if (mounted) context.go('/tables');
       },
       onRejected: (error) {
         if (!mounted) return;
@@ -186,8 +195,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     final restaurant = ref.watch(restaurantProvider);
     final restaurantName = restaurant?.name ?? 'Restaurant';
     final deviceLabel = restaurant?.adminDeviceLabel ?? 'Admin Desktop';
+    final online = ref.watch(connectionProvider.select((c) => c.online));
+    final chipColor = online ? AppColors.success : AppColors.danger;
 
-    return LiquidMeshBackground(
+    return ColoredBox(
+      color: AppColors.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         resizeToAvoidBottomInset: true,
@@ -202,7 +214,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                   child: Column(
                     children: [
 
-                      LiquidGlassSurface(
+                      AppSurface(
                         borderRadius: const BorderRadius.all(AppRadii.md),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 11),
@@ -212,11 +224,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                               width: 32,
                               height: 32,
                               decoration: BoxDecoration(
-                                color: AppColors.success.withValues(alpha: 0.14),
+                                color: chipColor.withValues(alpha: 0.14),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.wifi_rounded,
-                                  color: AppColors.success, size: 16),
+                              child: Icon(Icons.wifi_rounded,
+                                  color: chipColor, size: 16),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -228,9 +240,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                           fontWeight: FontWeight.w700),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis),
-                                  Text('Paired · $deviceLabel',
-                                      style: AppTypography.caption.copyWith(
-                                          color: AppColors.success),
+                                  Text(
+                                      online
+                                          ? 'Connected · $deviceLabel'
+                                          : 'Reconnecting…',
+                                      style: AppTypography.caption
+                                          .copyWith(color: chipColor),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis),
                                 ],
@@ -239,8 +254,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                             Container(
                               width: 8,
                               height: 8,
-                              decoration: const BoxDecoration(
-                                color: AppColors.success,
+                              decoration: BoxDecoration(
+                                color: chipColor,
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -285,7 +300,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                       ),
                       const SizedBox(height: 5),
                       Text(
-                        'Enter your PIN to start your shift',
+                        'Enter your PIN to start the shift',
                         style: AppTypography.caption.copyWith(
                           fontSize: 13,
                           color: context.palette.ink50,
@@ -366,25 +381,53 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                   ),
                                 ),
                               )
-                            : Padding(
-                                key: const ValueKey('label'),
-                                padding: const EdgeInsets.only(top: 6),
-                                child: Text(
-                                  '4-DIGIT PIN',
-                                  style: AppTypography.micro.copyWith(
-                                    letterSpacing: 2.0,
-                                    color: context.palette.ink30,
-                                  ),
-                                ),
-                              ),
+                            : _verified
+                                ? Padding(
+                                    key: const ValueKey('verified'),
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: Text(
+                                      '✓ Verified',
+                                      style: AppTypography.caption.copyWith(
+                                        letterSpacing: 0.4,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.success,
+                                      ),
+                                    ),
+                                  )
+                                : _submitting
+                                    ? Padding(
+                                        key: const ValueKey('checking'),
+                                        padding:
+                                            const EdgeInsets.only(top: 6),
+                                        child: Text(
+                                          '⟳ Checking with the desk…',
+                                          style: AppTypography.caption
+                                              .copyWith(
+                                            color: context.palette.ink50,
+                                          ),
+                                        ),
+                                      )
+                                    : Padding(
+                                        key: const ValueKey('label'),
+                                        padding:
+                                            const EdgeInsets.only(top: 6),
+                                        child: Text(
+                                          '4-DIGIT PIN',
+                                          style: AppTypography.micro.copyWith(
+                                            letterSpacing: 2.0,
+                                            color: context.palette.ink30,
+                                          ),
+                                        ),
+                                      ),
                       ),
 
                       const Spacer(),
 
                       PinPad(
                         onKeyPress: _press,
-                        onSubmit: _maybeSubmit,
+                        onForgot: () => showForgotPinDialog(context),
                         onDelete: _delete,
+                        enabled: !_submitting,
                       ),
                       const SizedBox(height: 16),
 

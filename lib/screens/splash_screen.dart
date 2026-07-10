@@ -34,18 +34,18 @@ class _SplashScreenState extends State<SplashScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() => _showLogo = true);
 
-      Future.delayed(const Duration(milliseconds: 300), () {
+      Future.delayed(const Duration(milliseconds: 150), () {
         if (mounted) setState(() => _showWordmark = true);
       });
-      Future.delayed(const Duration(milliseconds: 550), () {
+      Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) setState(() => _showOperator = true);
       });
-      Future.delayed(const Duration(milliseconds: 900), () {
+      Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) setState(() => _showVersion = true);
       });
     });
 
-    _redirectTimer = Timer(const Duration(milliseconds: 2200), () async {
+    _redirectTimer = Timer(const Duration(milliseconds: 1800), () async {
       if (!mounted) return;
       final pairing = await SessionService().getSavedPairing();
       if (!mounted) return;

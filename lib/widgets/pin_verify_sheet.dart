@@ -55,6 +55,9 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
         _pin.add(key);
       }
     });
+    if (_pin.length == 4) {
+      Future.delayed(const Duration(milliseconds: 180), _verify);
+    }
   }
 
   void _delete() {
@@ -162,8 +165,9 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
 
           PinPad(
             onKeyPress: _press,
-            onSubmit: _verify,
+            onForgot: () => showForgotPinDialog(context),
             onDelete: _delete,
+            enabled: !_submitting,
             rowVerticalPadding: 5,
             keyVerticalPadding: 16,
           ),

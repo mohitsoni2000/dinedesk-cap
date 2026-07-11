@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
-import '../widgets/app_surface.dart';
-import '../widgets/liquid_chrome.dart';
+import 'app_surface.dart';
+import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 import 'stepper_button.dart';
 
@@ -203,14 +203,14 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                                   horizontal: 14, vertical: 10),
                               decoration: BoxDecoration(
                                 color: _selectedVariationId == variation.id
-                                    ? AppColors.terraSoft
+                                    ? context.palette.terraSoft
                                     : context.palette.surface,
                                 borderRadius:
                                     const BorderRadius.all(AppRadii.sm),
                                 border: Border.all(
                                   color: _selectedVariationId == variation.id
                                       ? AppColors.terra
-                                      : AppColors.hairline,
+                                      : context.palette.hairline,
                                   width: _selectedVariationId == variation.id
                                       ? 1.5
                                       : 1,
@@ -262,7 +262,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                         color: context.palette.surface,
                         borderRadius: const BorderRadius.all(AppRadii.sm),
                         border: Border.all(
-                            color: AppColors.hairline, width: 1.5),
+                            color: context.palette.hairline, width: 1.5),
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: TextField(
@@ -403,7 +403,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                       color: context.palette.surface,
                       borderRadius: const BorderRadius.all(AppRadii.sm),
                       border:
-                          Border.all(color: AppColors.hairline, width: 1.5),
+                          Border.all(color: context.palette.hairline, width: 1.5),
                     ),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -529,10 +529,10 @@ class _OptionTile extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: selected ? AppColors.terraSoft : context.palette.surface,
+            color: selected ? context.palette.terraSoft : context.palette.surface,
             borderRadius: const BorderRadius.all(AppRadii.sm),
             border: Border.all(
-              color: selected ? AppColors.terra : AppColors.hairline,
+              color: selected ? AppColors.terra : context.palette.hairline,
               width: selected ? 1.5 : 1,
             ),
           ),

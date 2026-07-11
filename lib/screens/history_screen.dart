@@ -104,7 +104,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       ..sort((a, b) => b.time.compareTo(a.time));
 
     return ColoredBox(
-      color: AppColors.paper,
+      color: context.palette.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
@@ -126,7 +126,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 decoration: BoxDecoration(
                   color: context.palette.surface,
                   borderRadius: const BorderRadius.all(AppRadii.sm),
-                  border: Border.all(color: AppColors.hairline),
+                  border: Border.all(color: context.palette.hairline),
                 ),
                 child: Row(
                   children: [
@@ -228,7 +228,7 @@ class _DateTab extends StatelessWidget {
           duration: const Duration(milliseconds: 220),
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
-            color: selected ? AppColors.ink : Colors.transparent,
+            color: selected ? context.palette.selectedPill : Colors.transparent,
             borderRadius: const BorderRadius.all(AppRadii.xs),
           ),
           alignment: Alignment.center,
@@ -268,10 +268,10 @@ class _StatusChip extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? AppColors.ink : context.palette.surface,
+          color: selected ? context.palette.selectedPill : context.palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.pill),
           border: Border.all(
-              color: selected ? AppColors.ink : AppColors.hairline),
+              color: selected ? context.palette.selectedPill : context.palette.hairline),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -363,7 +363,7 @@ class _StatusBadge extends StatelessWidget {
   final OrderStatus status;
   const _StatusBadge({required this.status});
 
-  (Color, Color) get _tint => switch (status) {
+  (Color, Color) _tint(BuildContext context) => switch (status) {
         OrderStatus.sent => (
             AppColors.success.withValues(alpha: 0.12),
             AppColors.success
@@ -376,7 +376,7 @@ class _StatusBadge extends StatelessWidget {
             AppColors.danger.withValues(alpha: 0.12),
             AppColors.danger
           ),
-        OrderStatus.paid => (const Color(0xFFDDF3F0), const Color(0xFF0B6E61)),
+        OrderStatus.paid => (context.palette.paidBg, context.palette.paidText),
       };
 
   String get _label => switch (status) {
@@ -388,7 +388,7 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (bg, fg) = _tint;
+    final (bg, fg) = _tint(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(

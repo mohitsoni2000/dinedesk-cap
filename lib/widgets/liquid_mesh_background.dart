@@ -61,7 +61,7 @@ class _LiquidMeshBackgroundState extends State<LiquidMeshBackground>
             size: Size.infinite,
             isComplex: true,
             willChange: false,
-            painter: _MeshPainter(t: 0.5, dark: dark),
+            painter: _MeshPainter(t: 0.5, dark: dark, lightA: context.palette.paperHint, lightB: context.palette.surfaceWarm),
           )
         : AnimatedBuilder(
             animation: _ctrl!,
@@ -69,7 +69,7 @@ class _LiquidMeshBackgroundState extends State<LiquidMeshBackground>
               size: Size.infinite,
               isComplex: true,
               willChange: true,
-              painter: _MeshPainter(t: _ctrl!.value, dark: dark),
+              painter: _MeshPainter(t: _ctrl!.value, dark: dark, lightA: context.palette.paperHint, lightB: context.palette.surfaceWarm),
             ),
           );
 
@@ -87,7 +87,13 @@ class _LiquidMeshBackgroundState extends State<LiquidMeshBackground>
 class _MeshPainter extends CustomPainter {
   final double t;
   final bool dark;
-  _MeshPainter({required this.t, required this.dark});
+  final Color lightA;
+  final Color lightB;
+  _MeshPainter(
+      {required this.t,
+      required this.dark,
+      required this.lightA,
+      required this.lightB});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -98,11 +104,7 @@ class _MeshPainter extends CustomPainter {
         end: Alignment.bottomRight,
         colors: dark
             ? const [AppColors.meshDark1, AppColors.meshDark2, AppColors.meshDark3]
-            : const [
-                AppColors.paperHint,
-                AppColors.paperWarm,
-                AppColors.paperDeeper
-              ],
+            : [lightA, lightB, AppColors.paperDeeper],
       ).createShader(Offset.zero & size);
     canvas.drawRect(Offset.zero & size, base);
 
@@ -119,8 +121,8 @@ class _MeshPainter extends CustomPainter {
     final terraA = dark ? 0.55 : 0.35;
     final amberA = dark ? 0.38 : 0.32;
     final amberB = dark ? 0.32 : 0.28;
-    final violetA = dark ? 0.32 : 0.22;
-    final blueA = dark ? 0.25 : 0.18;
+    final violetA = dark ? 0.18 : 0.22;
+    final blueA = dark ? 0.12 : 0.18;
 
     blob(Offset(size.width * 0.12, size.height * 0.06), size.width * 0.7,
         AppColors.terra400.withValues(alpha: terraA));
@@ -136,5 +138,5 @@ class _MeshPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MeshPainter old) =>
-      old.t != t || old.dark != dark;
+      old.t != t || old.dark != dark || old.lightA != lightA || old.lightB != lightB;
 }

@@ -20,13 +20,15 @@ class LiquidBottomNav extends StatelessWidget {
     final palette = context.palette;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: palette.surface,
-        border: Border(top: BorderSide(color: AppColors.hairline)),
-        boxShadow: const [
+        color: palette.navBar,
+        border: Border(top: BorderSide(color: palette.navHairline)),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x14000000),
+            color: palette.isDark
+                ? const Color(0x59000000)
+                : const Color(0x14000000),
             blurRadius: 20,
-            offset: Offset(0, -6),
+            offset: const Offset(0, -6),
           ),
         ],
       ),
@@ -54,7 +56,7 @@ class LiquidBottomNav extends StatelessWidget {
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
                                 color: Color.lerp(Colors.transparent,
-                                    AppColors.terraSoft, t),
+                                    context.palette.terraSoft, t),
                                 borderRadius:
                                     const BorderRadius.all(AppRadii.pill),
                               ),
@@ -106,7 +108,7 @@ class LiquidPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: tint ?? context.palette.surface,
         borderRadius: const BorderRadius.all(AppRadii.pill),
-        border: Border.all(color: AppColors.hairline),
+        border: Border.all(color: context.palette.hairline),
       ),
       child: DefaultTextStyle.merge(
         style: AppTypography.caption.copyWith(fontWeight: FontWeight.w600),
@@ -232,7 +234,7 @@ class _LiquidSecondaryButtonState extends State<LiquidSecondaryButton> {
             color: context.palette.surface,
             borderRadius: const BorderRadius.all(AppRadii.md),
             border: Border.all(
-                color: enabled ? AppColors.hairline : context.palette.ink05),
+                color: enabled ? context.palette.hairline : context.palette.ink05),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

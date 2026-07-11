@@ -202,7 +202,7 @@ class _ContactRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.palette.surface,
         borderRadius: const BorderRadius.all(AppRadii.sm),
-        border: Border.all(color: AppColors.hairline),
+        border: Border.all(color: context.palette.hairline),
       ),
       child: Row(
         children: [

@@ -249,7 +249,7 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
                       label: Text(o.name, style: AppTypography.caption),
                       avatar: const Icon(Icons.auto_awesome, size: 14),
                       backgroundColor: context.palette.surface,
-                      side: const BorderSide(color: AppColors.hairline),
+                      side: BorderSide(color: context.palette.hairline),
                     ),
                 ],
               ),
@@ -272,7 +272,7 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
               decoration: BoxDecoration(
                 color: context.palette.surface,
                 borderRadius: const BorderRadius.all(AppRadii.sm),
-                border: Border.all(color: AppColors.hairline, width: 1.5),
+                border: Border.all(color: context.palette.hairline, width: 1.5),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
               child: TextField(

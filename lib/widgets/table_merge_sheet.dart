@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
-import '../widgets/app_surface.dart';
-import '../widgets/liquid_chrome.dart';
+import 'app_surface.dart';
+import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
 class TableMergeSheet extends ConsumerStatefulWidget {
@@ -83,7 +83,7 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            Divider(height: 1, color: AppColors.hairline),
+            Divider(height: 1, color: context.palette.hairline),
             Expanded(
               child: candidates.isEmpty
                   ? const Center(
@@ -116,13 +116,13 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                                 horizontal: 16, vertical: 14),
                             decoration: BoxDecoration(
                               color: on
-                                  ? AppColors.terraSoft
+                                  ? context.palette.terraSoft
                                   : palette.surface,
                               borderRadius: const BorderRadius.all(AppRadii.md),
                               border: Border.all(
                                   color: on
                                       ? AppColors.terra
-                                      : AppColors.hairline,
+                                      : context.palette.hairline,
                                   width: on ? 1.5 : 1),
                             ),
                             child: Row(

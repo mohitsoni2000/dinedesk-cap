@@ -9,3 +9,4 @@ export 'predictive_zone.dart';
 export 'pressable.dart';
 export 'rive_button.dart';
 export 'springs.dart';
+export 'physics.dart';

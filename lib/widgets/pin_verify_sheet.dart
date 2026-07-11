@@ -6,8 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../theme/tokens.dart';
-import '../widgets/app_surface.dart';
-import '../widgets/pin_pad.dart';
+import 'app_surface.dart';
+import 'pin_pad.dart';
 import 'sheet_handle.dart';
 
 class PinVerifySheet {
@@ -110,8 +110,8 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
           Container(
             width: 48,
             height: 48,
-            decoration: const BoxDecoration(
-              color: AppColors.terraSoft,
+            decoration: BoxDecoration(
+              color: context.palette.terraSoft,
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.lock_outline,

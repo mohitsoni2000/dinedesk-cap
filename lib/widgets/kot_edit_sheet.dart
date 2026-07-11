@@ -131,7 +131,7 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
                 ],
               ),
             ),
-            Divider(height: 1, color: AppColors.hairline),
+            Divider(height: 1, color: context.palette.hairline),
             Expanded(
               child: ListView(
                 controller: scroll,
@@ -145,7 +145,7 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
                       }),
                     ),
                     if (i < _lines.length - 1)
-                      Divider(height: 1, color: AppColors.hairline),
+                      Divider(height: 1, color: context.palette.hairline),
                   ],
                   const SizedBox(height: 16),
                   Text('REASON FOR EDIT',
@@ -156,7 +156,7 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
                       color: context.palette.surface,
                       borderRadius: const BorderRadius.all(AppRadii.sm),
                       border: Border.all(
-                          color: AppColors.hairline, width: 1.5),
+                          color: context.palette.hairline, width: 1.5),
                     ),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 4),

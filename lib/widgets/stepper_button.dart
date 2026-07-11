@@ -65,10 +65,10 @@ class _StepperButtonState extends State<StepperButton> {
             decoration: BoxDecoration(
               color: context.palette.surface,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.hairline),
+              border: Border.all(color: context.palette.hairline),
             ),
             child: Icon(widget.icon,
-                size: AppIconSizes.control, color: AppColors.ink),
+                size: AppIconSizes.control, color: context.palette.ink),
           )
         : Container(
             width: 40,
@@ -76,10 +76,10 @@ class _StepperButtonState extends State<StepperButton> {
             decoration: BoxDecoration(
               color: context.palette.surface,
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.hairline),
+              border: Border.all(color: context.palette.hairline),
             ),
             child: Icon(widget.icon,
-                size: AppIconSizes.standard, color: AppColors.ink),
+                size: AppIconSizes.standard, color: context.palette.ink),
           );
 
     return GestureDetector(

@@ -12,5 +12,16 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    // Live Activity / Dynamic Island bridge ("crew/surfaces").
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "CrewSurfaces") {
+      let channel = FlutterMethodChannel(
+        name: "crew/surfaces",
+        binaryMessenger: registrar.messenger()
+      )
+      channel.setMethodCallHandler { call, result in
+        LiveActivityBridge.handle(call: call, result: result)
+      }
+    }
   }
 }

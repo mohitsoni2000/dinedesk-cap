@@ -1,6 +1,7 @@
 
 
 import 'package:flutter/material.dart';
+import '../motion/physics.dart';
 import 'tokens.dart';
 
 class AppTheme {
@@ -16,7 +17,7 @@ class AppTheme {
         : ThemeData.light(useMaterial3: true);
     TextStyle inked(TextStyle s) => s.copyWith(color: p.ink);
     return base.copyWith(
-      scaffoldBackgroundColor: Colors.transparent,
+      scaffoldBackgroundColor: p.paper,
       colorScheme: ColorScheme(
         brightness: p.brightness,
         primary: AppColors.terra,
@@ -40,18 +41,47 @@ class AppTheme {
         labelSmall: AppTypography.micro.copyWith(color: p.ink70),
       ),
       iconTheme: IconThemeData(color: p.ink, size: 22),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: p.isDark ? p.elevated : AppColors.ink,
+        contentTextStyle:
+            AppTypography.bodyMd.copyWith(color: const Color(0xFFF5EEE3)),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: p.elevated,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: p.elevated,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: p.surface,
+        hintStyle: AppTypography.body.copyWith(color: p.ink30),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: p.hairline, width: 1.5),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.terra, width: 1.5),
+        ),
+      ),
       dividerColor: p.ink10,
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
 
-      pageTransitionsTheme: const PageTransitionsTheme(
+      // 2026 motion language: spring-driven shared-axis page transitions.
+      pageTransitionsTheme: PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
+          for (final platform in TargetPlatform.values)
+            platform: const SpringPageTransitionsBuilder(),
         },
       ),
     );

@@ -101,6 +101,33 @@ class AppPalette {
   final Color readOnlyBannerBg;
   final Color readOnlyBannerText;
 
+  // ---- v2 semantic tokens (theme-aware; prefer these over AppColors) ----
+  final Color paper;          // scaffold / app background
+  final Color paperHint;      // subtle warm hint surface
+  final Color elevated;       // sheets, dialogs, popovers
+  final Color hairline;       // 1px borders
+  final Color scrim;          // modal barrier
+  final Color terraSoft;      // brand tint chip bg
+  final Color onTerraSoft;    // text on terraSoft
+  final Color tableMineWashStart;
+  final Color tableMineWashEnd;
+  final Color tableMineBorder;
+  final Color tableFreeText;
+  final Color tableOtherText;
+  final Color tableDirtyText;
+  final Color tableReservedText;
+  final Color successBg; final Color successText;
+  final Color warnBg;    final Color warnText;
+  final Color dangerBg;  final Color dangerText;
+  final Color infoBg;    final Color infoText;
+  final Color timerOkBg;   final Color timerOkText;
+  final Color timerWarnBg; final Color timerWarnText;
+  final Color timerBadBg;  final Color timerBadText;
+  final Color paidBg;      final Color paidText;    // history PAID pill
+  final Color alertDeep;   final Color onAlertDeep; // ready-to-serve banner
+  final Color navBar;      final Color navHairline; // bottom nav surface
+  final Color selectedPill; // solid 'active' pill fill (white text on top)
+
   const AppPalette._({
     required this.brightness,
     required this.ink,
@@ -119,9 +146,54 @@ class AppPalette {
     required this.tableFreeBg,
     required this.readOnlyBannerBg,
     required this.readOnlyBannerText,
+    required this.paper,
+    required this.paperHint,
+    required this.elevated,
+    required this.hairline,
+    required this.scrim,
+    required this.terraSoft,
+    required this.onTerraSoft,
+    required this.tableMineWashStart,
+    required this.tableMineWashEnd,
+    required this.tableMineBorder,
+    required this.tableFreeText,
+    required this.tableOtherText,
+    required this.tableDirtyText,
+    required this.tableReservedText,
+    required this.successBg, required this.successText,
+    required this.warnBg,    required this.warnText,
+    required this.dangerBg,  required this.dangerText,
+    required this.infoBg,    required this.infoText,
+    required this.timerOkBg,   required this.timerOkText,
+    required this.timerWarnBg, required this.timerWarnText,
+    required this.timerBadBg,  required this.timerBadText,
+    required this.paidBg,      required this.paidText,
+    required this.alertDeep,   required this.onAlertDeep,
+    required this.navBar,      required this.navHairline,
+    required this.selectedPill,
   });
 
   bool get isDark => brightness == Brightness.dark;
+
+  /// Card shadow tuned per brightness (dark needs deeper, softer shadows).
+  List<BoxShadow> get cardShadow => isDark
+      ? const [
+          BoxShadow(color: Color(0x33000000), blurRadius: 2, offset: Offset(0, 1)),
+          BoxShadow(color: Color(0x59000000), blurRadius: 26, offset: Offset(0, 12), spreadRadius: -16),
+        ]
+      : AppShadows.card;
+
+  List<BoxShadow> get mineShadow => isDark
+      ? const [
+          BoxShadow(color: Color(0x4DE05D38), blurRadius: 30, offset: Offset(0, 14), spreadRadius: -18),
+        ]
+      : AppShadows.terraWash;
+
+  LinearGradient get mineWash => LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [tableMineWashStart, tableMineWashEnd],
+      );
 
   TextStyle get caption => AppTypography.caption.copyWith(color: ink70);
   TextStyle get micro => AppTypography.micro.copyWith(color: ink70);
@@ -144,6 +216,31 @@ class AppPalette {
     tableFreeBg: AppColors.tableFreeBg,
     readOnlyBannerBg: AppColors.readOnlyBannerBg,
     readOnlyBannerText: AppColors.readOnlyBannerText,
+    paper: AppColors.paper,
+    paperHint: AppColors.paperHint,
+    elevated: AppColors.card,
+    hairline: AppColors.hairline,
+    scrim: AppColors.scrim,
+    terraSoft: AppColors.terraSoft,
+    onTerraSoft: AppColors.terraInk,
+    tableMineWashStart: AppColors.tableMineWashStart,
+    tableMineWashEnd: AppColors.tableMineWashEnd,
+    tableMineBorder: AppColors.tableMineBorder,
+    tableFreeText: AppColors.tableFreeText,
+    tableOtherText: AppColors.tableOtherText,
+    tableDirtyText: AppColors.tableDirtyText,
+    tableReservedText: AppColors.tableReservedText,
+    successBg: AppColors.tableFreeBg, successText: AppColors.tableFreeText,
+    warnBg: AppColors.tableDirtyBg,   warnText: AppColors.tableDirtyText,
+    dangerBg: AppColors.timerBadBg,   dangerText: AppColors.timerBadText,
+    infoBg: AppColors.tableOtherBg,   infoText: AppColors.tableOtherText,
+    timerOkBg: AppColors.tableFreeBg,   timerOkText: AppColors.tableFreeText,
+    timerWarnBg: AppColors.tableDirtyBg, timerWarnText: AppColors.tableDirtyText,
+    timerBadBg: AppColors.timerBadBg,    timerBadText: AppColors.timerBadText,
+    paidBg: Color(0xFFDDF3F0), paidText: Color(0xFF0B6E61),
+    alertDeep: Color(0xFF0F5E30), onAlertDeep: Color(0xFFFFFFFF),
+    navBar: Color(0xF0FFFFFF), navHairline: AppColors.hairline,
+    selectedPill: AppColors.ink,
   );
 
   static const dark = AppPalette._(
@@ -164,6 +261,31 @@ class AppPalette {
     tableFreeBg: Color(0xFF1C3024),
     readOnlyBannerBg: Color(0xFF3B2F10),
     readOnlyBannerText: Color(0xFFFCD34D),
+    paper: Color(0xFF17110B),
+    paperHint: Color(0xFF211812),
+    elevated: Color(0xFF241B11),
+    hairline: Color(0x24F5EEE3),
+    scrim: Color(0x8A000000),
+    terraSoft: Color(0xFF462313),
+    onTerraSoft: Color(0xFFFFB793),
+    tableMineWashStart: Color(0xFF3A2114),
+    tableMineWashEnd: Color(0xFF2C1A10),
+    tableMineBorder: Color(0x8CE05D38),
+    tableFreeText: Color(0xFF7BE0A8),
+    tableOtherText: Color(0xFF9CC3FF),
+    tableDirtyText: Color(0xFFFFD37A),
+    tableReservedText: Color(0xFFD7B8FF),
+    successBg: Color(0xFF1C3024), successText: Color(0xFF7BE0A8),
+    warnBg: Color(0xFF3A2C12),    warnText: Color(0xFFFFD37A),
+    dangerBg: Color(0xFF46201B),  dangerText: Color(0xFFFF9C8F),
+    infoBg: Color(0xFF1D2B3D),    infoText: Color(0xFF9CC3FF),
+    timerOkBg: Color(0xFF1C3024),   timerOkText: Color(0xFF7BE0A8),
+    timerWarnBg: Color(0xFF3A2C12), timerWarnText: Color(0xFFFFD37A),
+    timerBadBg: Color(0xFF46201B),  timerBadText: Color(0xFFFF9C8F),
+    paidBg: Color(0xFF12332F), paidText: Color(0xFF6FD9C8),
+    alertDeep: Color(0xFF0F5E30), onAlertDeep: Color(0xFFFFFFFF),
+    navBar: Color(0xF01E1710), navHairline: Color(0x24F5EEE3),
+    selectedPill: AppColors.terra600,
   );
 
   static AppPalette of(BuildContext context) =>

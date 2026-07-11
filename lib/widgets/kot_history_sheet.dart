@@ -158,8 +158,8 @@ class _KotCard extends ConsumerWidget {
       decoration: BoxDecoration(
         color: context.palette.surface,
         borderRadius: const BorderRadius.all(AppRadii.md),
-        border: Border.all(color: AppColors.hairline),
-        boxShadow: AppShadows.card,
+        border: Border.all(color: context.palette.hairline),
+        boxShadow: context.palette.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -201,8 +201,8 @@ class _KotCard extends ConsumerWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
-                            decoration: const BoxDecoration(
-                              color: AppColors.terraSoft,
+                            decoration: BoxDecoration(
+                              color: context.palette.terraSoft,
                               borderRadius:
                                   BorderRadius.all(AppRadii.pill),
                             ),

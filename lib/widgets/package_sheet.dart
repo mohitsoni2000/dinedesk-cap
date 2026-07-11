@@ -60,7 +60,7 @@ class PackageSheet extends ConsumerWidget {
                 ],
               ),
             ),
-            Divider(height: 1, color: AppColors.hairline),
+            Divider(height: 1, color: context.palette.hairline),
             Expanded(
               child: packages.isEmpty
                   ? Center(
@@ -166,7 +166,7 @@ class _PackageCard extends StatelessWidget {
           color: context.palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.md),
           border: Border.all(color: AppColors.violet.withValues(alpha: 0.2)),
-          boxShadow: AppShadows.card,
+          boxShadow: context.palette.cardShadow,
         ),
         child: Row(
           children: [

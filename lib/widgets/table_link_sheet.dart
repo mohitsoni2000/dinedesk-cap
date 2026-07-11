@@ -177,7 +177,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            Divider(height: 1, color: AppColors.hairline),
+            Divider(height: 1, color: context.palette.hairline),
 
             if (isLinked && linkedPeers.isNotEmpty) ...[
               Padding(
@@ -237,7 +237,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                     ),
                   ),
                 ),
-              Divider(height: 1, color: AppColors.hairline),
+              Divider(height: 1, color: context.palette.hairline),
             ],
 
             Expanded(
@@ -281,14 +281,14 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                                     horizontal: 16, vertical: 14),
                                 decoration: BoxDecoration(
                                   color: on
-                                      ? AppColors.terraSoft
+                                      ? context.palette.terraSoft
                                       : palette.surface,
                                   borderRadius:
                                       const BorderRadius.all(AppRadii.md),
                                   border: Border.all(
                                       color: on
                                           ? AppColors.terra
-                                          : AppColors.hairline,
+                                          : context.palette.hairline,
                                       width: on ? 1.5 : 1),
                                 ),
                                 child: Row(

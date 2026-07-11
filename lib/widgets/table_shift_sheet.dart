@@ -119,7 +119,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            Divider(height: 1, color: AppColors.hairline),
+            Divider(height: 1, color: context.palette.hairline),
             Expanded(
               child: candidates.isEmpty
                   ? const Center(
@@ -152,14 +152,14 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                 horizontal: 16, vertical: 14),
                             decoration: BoxDecoration(
                               color: on
-                                  ? AppColors.terraSoft
+                                  ? context.palette.terraSoft
                                   : palette.surface,
                               borderRadius:
                                   const BorderRadius.all(AppRadii.md),
                               border: Border.all(
                                   color: on
                                       ? AppColors.terra
-                                      : AppColors.hairline,
+                                      : context.palette.hairline,
                                   width: on ? 1.5 : 1),
                             ),
                             child: Row(

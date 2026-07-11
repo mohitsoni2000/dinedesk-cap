@@ -8,9 +8,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../theme/tokens.dart';
-import '../widgets/app_card.dart';
-import '../widgets/app_surface.dart';
-import '../widgets/liquid_chrome.dart';
+import 'app_card.dart';
+import 'app_surface.dart';
+import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
 class CustomerSheet {
@@ -174,7 +174,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
                       color: context.palette.surface,
                       borderRadius: const BorderRadius.all(AppRadii.sm),
                       border: Border.all(
-                          color: AppColors.hairline, width: 1.5),
+                          color: context.palette.hairline, width: 1.5),
                     ),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -196,7 +196,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            Divider(height: 1, color: AppColors.hairline),
+            Divider(height: 1, color: context.palette.hairline),
             Expanded(
               child: _showCreate
                   ? _buildCreateForm(scroll)
@@ -317,8 +317,8 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
               Container(
                 width: 40,
                 height: 40,
-                decoration: const BoxDecoration(
-                  color: AppColors.terraSoft,
+                decoration: BoxDecoration(
+                  color: context.palette.terraSoft,
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -443,7 +443,7 @@ class _FormField extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.palette.surface,
         borderRadius: const BorderRadius.all(AppRadii.sm),
-        border: Border.all(color: AppColors.hairline, width: 1.5),
+        border: Border.all(color: context.palette.hairline, width: 1.5),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       child: TextField(

@@ -58,7 +58,6 @@ class _ReadyCard extends StatefulWidget {
 
 class _ReadyCardState extends State<_ReadyCard>
     with SingleTickerProviderStateMixin {
-  static const _deepGreen = Color(0xFF0F5E30);
 
   late final AnimationController _wiggle = AnimationController(
     vsync: this,
@@ -75,12 +74,12 @@ class _ReadyCardState extends State<_ReadyCard>
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: const BoxDecoration(
-        color: _deepGreen,
+      decoration: BoxDecoration(
+        color: context.palette.alertDeep,
         borderRadius: BorderRadius.all(AppRadii.md),
         boxShadow: [
           BoxShadow(
-            color: AppColors.scrim,
+            color: context.palette.scrim,
             blurRadius: 12,
             offset: Offset(0, 4),
           ),
@@ -158,7 +157,7 @@ class _ReadyCardState extends State<_ReadyCard>
                 child: Text(
                   'Serve',
                   style: AppTypography.caption.copyWith(
-                    color: _deepGreen,
+                    color: context.palette.alertDeep,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

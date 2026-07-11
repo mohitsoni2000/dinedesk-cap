@@ -33,8 +33,8 @@ class AppSurface extends StatelessWidget {
       decoration: BoxDecoration(
         color: tint ?? context.palette.surface,
         borderRadius: borderRadius,
-        border: border ?? Border.all(color: AppColors.hairline, width: 1),
-        boxShadow: shadow ?? AppShadows.card,
+        border: border ?? Border.all(color: context.palette.hairline, width: 1),
+        boxShadow: shadow ?? context.palette.cardShadow,
       ),
       child: child,
     );

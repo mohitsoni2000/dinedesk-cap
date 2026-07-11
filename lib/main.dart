@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'motion/app_scroll_behavior.dart';
 import 'motion/motion.dart';
 import 'router.dart';
+import 'services/platform_surfaces.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_mode_provider.dart';
 
@@ -12,6 +13,8 @@ void main() async {
   final container = ProviderContainer();
   final feedback = container.read(feedbackServiceProvider);
   await feedback.init();
+  await container.read(readyAlertsProvider).init();
+  await container.read(widgetSyncProvider).init();
   runApp(UncontrolledProviderScope(
     container: container,
     child: const RestroApp(),

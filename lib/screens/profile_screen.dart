@@ -38,7 +38,7 @@ class ProfileScreen extends ConsumerWidget {
     }));
 
     return ColoredBox(
-      color: AppColors.paper,
+      color: context.palette.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
@@ -92,8 +92,8 @@ class ProfileScreen extends ConsumerWidget {
                                   Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 8, vertical: 3),
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.terraSoft,
+                                    decoration: BoxDecoration(
+                                      color: context.palette.terraSoft,
                                       borderRadius:
                                           BorderRadius.all(AppRadii.pill),
                                     ),

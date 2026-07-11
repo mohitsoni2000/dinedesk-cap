@@ -7,7 +7,9 @@ import 'package:go_router/go_router.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
 import '../motion/motion.dart';
+import '../services/kot_queue_service.dart';
 import '../services/pin_guard.dart';
+import '../services/platform_surfaces.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/customer_sheet.dart';
@@ -258,21 +260,22 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       _kotSentOrderId = orderId;
       Map<String, dynamic> kotResponse;
       try {
-        kotResponse = await socketService.emitAck('kot:send', <String, dynamic>{
-          'order_id': orderId
-        }).timeout(const Duration(seconds: 8));
-      } on TimeoutException {
-        ref.read(cartProvider.notifier).setSyncStatusFailed();
-        return const _OrderFlowStepResult(
-          failedStep: _OrderFlowStep.kotSend,
-          errorMessage:
-              'KOT timed out — your items are saved. Tap Retry (it won\'t duplicate the KOT).',
-        );
+        kotResponse = await ref
+            .read(kotQueueProvider)
+            .sendKot(socketService, <String, dynamic>{'order_id': orderId});
       } catch (_) {
         ref.read(cartProvider.notifier).setSyncStatusFailed();
         return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.kotSend,
           errorMessage: 'Failed to send KOT to kitchen — please retry',
+        );
+      }
+      if (kotResponse['kind'] == 'queued') {
+        return const _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.kotSend,
+          errorMessage:
+              'Desk unreachable — KOT queued on this phone and will fire '
+              'automatically the moment we reconnect.',
         );
       }
       if (kotResponse['kind'] == 'error') {
@@ -288,6 +291,21 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           .applyOrderAck(kotResponse, includeHistory: true);
 
       _rememberKotLabel(kotResponse);
+
+      // Lock-screen / Dynamic Island: "Preparing" card for this order.
+      String liveName = widget.tableId;
+      for (final t in ref.read(tablesProvider)) {
+        if (t.serverId == widget.tableId) {
+          liveName = t.id;
+          break;
+        }
+      }
+      ref.read(liveActivityProvider).start(
+            orderId: orderId,
+            tableName: liveName,
+            subtitle:
+                '${ref.read(cartProvider).length} items · sent to kitchen',
+          );
 
       if (printKot) {
         socketService.emit(
@@ -770,7 +788,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final billAlreadyGenerated = activeBillCount > 0;
 
     return ColoredBox(
-      color: AppColors.paper,
+      color: context.palette.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
@@ -793,7 +811,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                               color: context.palette.surface,
                               borderRadius:
                                   const BorderRadius.all(AppRadii.sm),
-                              border: Border.all(color: AppColors.hairline),
+                              border: Border.all(color: context.palette.hairline),
                             ),
                             alignment: Alignment.center,
                             child: Icon(Icons.arrow_back,
@@ -1238,13 +1256,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: _orderType == _OrderType.dineIn
-                                      ? AppColors.ink
+                                      ? context.palette.ink
                                       : context.palette.surface,
                                   borderRadius: const BorderRadius.horizontal(
                                     left: AppRadii.sm,
                                   ),
                                   border:
-                                      Border.all(color: AppColors.hairline),
+                                      Border.all(color: context.palette.hairline),
                                 ),
                                 alignment: Alignment.center,
                                 child: Row(
@@ -1286,13 +1304,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: _orderType == _OrderType.takeaway
-                                      ? AppColors.ink
+                                      ? context.palette.ink
                                       : context.palette.surface,
                                   borderRadius: const BorderRadius.horizontal(
                                     right: AppRadii.sm,
                                   ),
                                   border:
-                                      Border.all(color: AppColors.hairline),
+                                      Border.all(color: context.palette.hairline),
                                 ),
                                 alignment: Alignment.center,
                                 child: Row(
@@ -1772,7 +1790,7 @@ class _DashedDivider extends StatelessWidget {
               width: dashWidth,
               height: 1,
               margin: const EdgeInsets.only(right: gap),
-              color: AppColors.hairline,
+              color: context.palette.hairline,
             ),
           ),
         );

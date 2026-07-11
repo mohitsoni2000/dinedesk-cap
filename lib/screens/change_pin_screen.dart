@@ -160,7 +160,7 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: AppColors.paper,
+      color: context.palette.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
@@ -254,7 +254,7 @@ class _ChangePinHeader extends StatelessWidget {
               decoration: BoxDecoration(
                 color: context.palette.surface,
                 borderRadius: const BorderRadius.all(AppRadii.sm),
-                border: Border.all(color: AppColors.hairline),
+                border: Border.all(color: context.palette.hairline),
               ),
               alignment: Alignment.center,
               child: Icon(Icons.arrow_back,

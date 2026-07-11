@@ -376,7 +376,7 @@ class _CameraUnavailable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.ink,
+      color: context.palette.ink,
       alignment: Alignment.center,
       child: Padding(
         padding: const EdgeInsets.all(24),

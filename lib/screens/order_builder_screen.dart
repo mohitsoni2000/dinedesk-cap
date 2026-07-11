@@ -331,13 +331,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
-        ..showSnackBar(SnackBar(
-          backgroundColor: AppColors.ink,
-          content: Text(
-            'Another waiter is editing this table — view only right now.',
-            style: AppTypography.bodyMd.copyWith(color: Colors.white),
-          ),
-          duration: const Duration(seconds: 2),
+        ..showSnackBar(const SnackBar(
+          content:
+              Text('Another waiter is editing this table — view only right now.'),
+          duration: Duration(seconds: 2),
         ));
       return;
     }
@@ -478,7 +475,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
         }
       },
       child: ColoredBox(
-        color: AppColors.paper,
+        color: context.palette.paper,
         child: Scaffold(
           backgroundColor: Colors.transparent,
           body: SafeArea(
@@ -526,7 +523,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           decoration: BoxDecoration(
                             color: context.palette.surface,
                             borderRadius: const BorderRadius.all(AppRadii.sm),
-                            border: Border.all(color: AppColors.hairline),
+                            border: Border.all(color: context.palette.hairline),
                           ),
                           alignment: Alignment.center,
                           child: Icon(Icons.arrow_back,
@@ -693,7 +690,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           decoration: BoxDecoration(
                             color: context.palette.surface,
                             borderRadius: const BorderRadius.all(AppRadii.sm),
-                            border: Border.all(color: AppColors.hairline),
+                            border: Border.all(color: context.palette.hairline),
                           ),
                           child: Stack(
                             clipBehavior: Clip.none,
@@ -832,14 +829,14 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                     horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
                                   color: pinnedIds.contains(item.id)
-                                      ? AppColors.terraSoft
+                                      ? context.palette.terraSoft
                                       : context.palette.surface,
                                   borderRadius:
                                       const BorderRadius.all(AppRadii.pill),
                                   border: Border.all(
                                     color: pinnedIds.contains(item.id)
                                         ? AppColors.terra
-                                        : AppColors.hairline,
+                                        : context.palette.hairline,
                                   ),
                                 ),
                                 child: Row(
@@ -908,7 +905,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: AppColors.terraSoft,
+                                  color: context.palette.terraSoft,
                                   borderRadius:
                                       const BorderRadius.all(AppRadii.pill),
                                   border: Border.all(color: AppColors.terra),
@@ -1262,7 +1259,7 @@ class _SectionChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final fillTarget = palette.isDark ? AppColors.terra600 : AppColors.ink;
+    final fillTarget = palette.selectedPill;
     return GestureDetector(
       onTap: onTap,
       child: SpringBuilder(
@@ -1648,8 +1645,8 @@ class _ItemRow extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
-                            decoration: const BoxDecoration(
-                              color: AppColors.terraSoft,
+                            decoration: BoxDecoration(
+                              color: context.palette.terraSoft,
                               borderRadius: BorderRadius.all(AppRadii.xs),
                             ),
                             child: Text(
@@ -1704,8 +1701,8 @@ class _ItemRow extends StatelessWidget {
                         child: Container(
                           width: 32,
                           height: 32,
-                          decoration: const BoxDecoration(
-                            color: AppColors.ink,
+                          decoration: BoxDecoration(
+                            color: context.palette.ink,
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(Icons.add,
@@ -1751,7 +1748,7 @@ class _StepperButton extends StatelessWidget {
         width: 28,
         height: 28,
         decoration: BoxDecoration(
-          color: AppColors.terraSoft,
+          color: context.palette.terraSoft,
           borderRadius: const BorderRadius.all(AppRadii.pill),
         ),
         child: Icon(icon, size: 15, color: AppColors.terraDeep),

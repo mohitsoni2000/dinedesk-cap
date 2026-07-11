@@ -148,7 +148,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
     final isDemo = _pairing?.token == 'demo-token';
 
     return ColoredBox(
-      color: AppColors.paper,
+      color: context.palette.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
@@ -349,9 +349,9 @@ class _CardButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 13),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: filled ? AppColors.ink : Colors.transparent,
+          color: filled ? context.palette.ink : Colors.transparent,
           borderRadius: const BorderRadius.all(AppRadii.md),
-          border: filled ? null : Border.all(color: AppColors.hairline),
+          border: filled ? null : Border.all(color: context.palette.hairline),
         ),
         child: Text(
           label,
@@ -425,7 +425,7 @@ class _StageRow extends StatelessWidget {
             color: done
                 ? AppColors.success
                 : active
-                    ? AppColors.terraSoft
+                    ? context.palette.terraSoft
                     : context.palette.ink05,
           ),
           child: done

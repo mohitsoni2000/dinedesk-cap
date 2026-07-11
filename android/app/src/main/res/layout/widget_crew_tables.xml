@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="COMMAND.CREW"
+            android:textColor="#99F5EEE3"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.12" />
+        <TextView
+            android:id="@+id/w_updated"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="--:--"
+            android:textColor="#80F5EEE3"
+            android:textSize="9sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <LinearLayout style="@null" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+            <TextView android:id="@+id/w_mine" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:text="0"
+                android:textColor="#E05D38" android:textSize="24sp" android:textStyle="bold" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="MINE" android:textColor="#99F5EEE3" android:textSize="8sp"
+                android:textStyle="bold" android:letterSpacing="0.1" />
+        </LinearLayout>
+
+        <LinearLayout style="@null" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+            <TextView android:id="@+id/w_free" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:text="0"
+                android:textColor="#4FD08A" android:textSize="24sp" android:textStyle="bold" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="FREE" android:textColor="#99F5EEE3" android:textSize="8sp"
+                android:textStyle="bold" android:letterSpacing="0.1" />
+        </LinearLayout>
+
+        <LinearLayout style="@null" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+            <TextView android:id="@+id/w_ready" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:text="0"
+                android:textColor="#66F5EEE3" android:textSize="24sp" android:textStyle="bold" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="READY" android:textColor="#99F5EEE3" android:textSize="8sp"
+                android:textStyle="bold" android:letterSpacing="0.1" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/w_revenue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="₹0 on tables"
+        android:textColor="#D9F5EEE3"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+</LinearLayout>

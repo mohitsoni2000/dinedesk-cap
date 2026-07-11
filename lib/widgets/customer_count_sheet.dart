@@ -5,8 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../data/providers.dart';
 import '../theme/tokens.dart';
-import '../widgets/app_surface.dart';
-import '../widgets/liquid_chrome.dart';
+import 'app_surface.dart';
+import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
 class CustomerCountSheet {
@@ -195,10 +195,10 @@ class _Chip extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? AppColors.terraSoft : palette.surface,
+          color: selected ? context.palette.terraSoft : palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.pill),
           border: Border.all(
-              color: selected ? AppColors.terra : AppColors.hairline,
+              color: selected ? AppColors.terra : context.palette.hairline,
               width: selected ? 1.5 : 1),
         ),
         child: Text(label,

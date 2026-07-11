@@ -7,7 +7,10 @@ import 'package:go_router/go_router.dart';
 import '../data/demo_data.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
+import '../services/biometric_service.dart';
+import '../services/kot_queue_service.dart';
 import '../services/session_service.dart';
+import '../services/socket_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_surface.dart';
 import '../widgets/help_sheet.dart';
@@ -37,6 +40,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     TweenSequenceItem(tween: Tween(begin: -8.0, end: 8.0), weight: 2),
     TweenSequenceItem(tween: Tween(begin: 8.0, end: 0.0), weight: 1),
   ]).animate(CurvedAnimation(parent: _shakeCtrl, curve: Curves.easeInOut));
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tryBiometricUnlock());
+  }
 
   @override
   void dispose() {
@@ -144,6 +153,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
           label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
         );
         ref.read(isAuthenticatedProvider.notifier).state = true;
+        ref.read(kotQueueProvider).flush(socketService);
+        await _maybeOfferBiometric(pin);
         if (!mounted) return;
         setState(() => _verified = true);
         await Future.delayed(const Duration(milliseconds: 400));
@@ -160,6 +171,49 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
         _shakeCtrl.forward(from: 0);
       },
     );
+  }
+
+  Future<void> _tryBiometricUnlock() async {
+    final bio = ref.read(biometricServiceProvider);
+    if (!await bio.isEnabled()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    if (!mounted) return;
+    final state = ref.read(socketServiceProvider).state;
+    if (state != SocketState.connected && state != SocketState.verified) {
+      return; // desk not reachable — PIN pad stays as fallback
+    }
+    final pin = await bio.unlock();
+    if (pin == null || pin.length != 4 || !mounted) return;
+    _submitReal(pin);
+  }
+
+  Future<void> _maybeOfferBiometric(String pin) async {
+    final bio = ref.read(biometricServiceProvider);
+    if (await bio.isEnabled() ||
+        await bio.wasPrompted() ||
+        !await bio.canUse()) {
+      return;
+    }
+    await bio.markPrompted();
+    if (!mounted) return;
+    final enable = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Faster sign-in?'),
+        content: const Text(
+            'Use Face ID / fingerprint to start your shift — no PIN typing. '
+            'Your PIN stays encrypted on this phone only.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not now')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Enable')),
+        ],
+      ),
+    );
+    if (enable == true) await bio.enable(pin);
   }
 
   void _cancelPairing() {
@@ -199,7 +253,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     final chipColor = online ? AppColors.success : AppColors.danger;
 
     return ColoredBox(
-      color: AppColors.paper,
+      color: context.palette.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         resizeToAvoidBottomInset: true,
@@ -267,7 +321,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
 
                       Hero(
                         tag: HeroTags.appLogo,
-                        child: Container(
+                        child: RubberBand(
+                          maxDrag: 42,
+                          child: Container(
                           width: 64,
                           height: 64,
                           decoration: const BoxDecoration(
@@ -283,7 +339,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                               fit: BoxFit.contain,
                             ),
                           ),
-                        ),
+                        )),
                       ),
                       const SizedBox(height: 18),
 

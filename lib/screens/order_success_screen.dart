@@ -79,7 +79,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: AppColors.paper,
+      color: context.palette.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: Stack(
@@ -89,9 +89,12 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
               child: Column(
                 children: [
                   const Spacer(),
-                  const Hero(
-                    tag: HeroTags.kotBadge,
-                    child: AnimatedCheckDraw(size: 132),
+                  const GravityDrop(
+                    dropHeight: 110,
+                    child: Hero(
+                      tag: HeroTags.kotBadge,
+                      child: AnimatedCheckDraw(size: 132),
+                    ),
                   ),
                   const SizedBox(height: 28),
                   SpringBuilder(

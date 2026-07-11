@@ -89,11 +89,7 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(
-        backgroundColor: AppColors.ink,
-        content: Text(
-          message,
-          style: AppTypography.bodyMd.copyWith(color: Colors.white),
-        ),
+        content: Text(message),
         duration: const Duration(seconds: 2),
       ));
   }
@@ -163,7 +159,7 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
                   decoration: BoxDecoration(
                     color: context.palette.surface,
                     borderRadius: const BorderRadius.all(AppRadii.sm),
-                    border: Border.all(color: AppColors.hairline, width: 1.5),
+                    border: Border.all(color: context.palette.hairline, width: 1.5),
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: TextField(
@@ -309,7 +305,7 @@ class _RoomCard extends StatelessWidget {
               border: Border.all(color: _border(), width: 1),
               boxShadow: room.state == RoomState.mine
                   ? AppShadows.terraGlow
-                  : AppShadows.card,
+                  : context.palette.cardShadow,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -359,7 +355,7 @@ class _RoomCard extends StatelessWidget {
             Positioned.fill(
               child: Container(
                 decoration: BoxDecoration(
-                  color: AppColors.ink.withValues(alpha: 0.38),
+                  color: context.palette.ink.withValues(alpha: 0.38),
                   borderRadius: const BorderRadius.all(AppRadii.lg),
                 ),
                 child: const Center(

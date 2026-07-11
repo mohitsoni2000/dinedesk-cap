@@ -101,7 +101,7 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
                 ],
               ),
             ),
-            Divider(height: 1, color: AppColors.hairline),
+            Divider(height: 1, color: context.palette.hairline),
             Expanded(
               child: ListView(
                 controller: scroll,
@@ -112,7 +112,7 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
                       color: context.palette.surface,
                       borderRadius: const BorderRadius.all(AppRadii.sm),
                       border:
-                          Border.all(color: AppColors.hairline, width: 1.5),
+                          Border.all(color: context.palette.hairline, width: 1.5),
                     ),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 14, vertical: 4),

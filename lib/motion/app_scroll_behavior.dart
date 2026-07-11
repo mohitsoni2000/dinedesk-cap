@@ -1,7 +1,4 @@
-
-
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 class AppScrollBehavior extends MaterialScrollBehavior {

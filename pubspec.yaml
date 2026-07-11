@@ -43,6 +43,14 @@ dependencies:
   connectivity_plus: ^6.0.5
   sensors_plus: ^6.1.0
 
+  # Biometric unlock (FaceID / fingerprint → replays PIN verify)
+  local_auth: ^2.3.0
+  flutter_secure_storage: ^9.2.2
+
+  # Platform surfaces: widgets + Live Activity bridge + ready alerts
+  home_widget: ^0.7.0
+  flutter_local_notifications: ^18.0.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

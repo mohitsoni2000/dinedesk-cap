@@ -145,9 +145,9 @@ class _PinKeyState extends State<_PinKey> {
             _pressed ? 0.96 : 1.0, _pressed ? 0.96 : 1.0, 1.0),
         transformAlignment: Alignment.center,
         decoration: BoxDecoration(
-          color: _pressed ? AppColors.terraSoft : context.palette.surface,
+          color: _pressed ? context.palette.terraSoft : context.palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.md),
-          border: Border.all(color: AppColors.hairline),
+          border: Border.all(color: context.palette.hairline),
         ),
         child: Center(child: widget.child),
       ),

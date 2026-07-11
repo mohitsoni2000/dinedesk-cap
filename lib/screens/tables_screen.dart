@@ -117,11 +117,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(
-        backgroundColor: AppColors.ink,
-        content: Text(
-          message,
-          style: AppTypography.bodyMd.copyWith(color: Colors.white),
-        ),
+        content: Text(message),
         duration: const Duration(seconds: 2),
       ));
   }
@@ -139,13 +135,9 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
-        ..showSnackBar(SnackBar(
-          backgroundColor: AppColors.ink,
-          content: Text(
-            'Resynced with the desk · just now',
-            style: AppTypography.bodyMd.copyWith(color: Colors.white),
-          ),
-          duration: const Duration(seconds: 2),
+        ..showSnackBar(const SnackBar(
+          content: Text('Resynced with the desk · just now'),
+          duration: Duration(seconds: 2),
         ));
     } finally {
       if (mounted) {
@@ -190,7 +182,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     };
 
     return Scaffold(
-      backgroundColor: AppColors.paper,
+      backgroundColor: context.palette.paper,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -389,7 +381,7 @@ class _HeaderIconTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: context.palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.sm),
-          border: Border.all(color: AppColors.hairline),
+          border: Border.all(color: context.palette.hairline),
         ),
         alignment: Alignment.center,
         child: child ??
@@ -453,12 +445,20 @@ class _BlinkingDotState extends State<_BlinkingDot>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c;
 
+  bool _started = false;
+
   @override
   void initState() {
     super.initState();
     _c = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700));
-    if (!MediaQuery.of(context).disableAnimations) {
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_started && !MediaQuery.of(context).disableAnimations) {
+      _started = true;
       _c.repeat(reverse: true);
     }
   }
@@ -511,13 +511,13 @@ class _LegendStrip extends StatelessWidget {
                       horizontal: 8, vertical: 5),
                   decoration: BoxDecoration(
                     color: active == e.$1
-                        ? _ringColor(e.$1).withValues(alpha: 0.12)
+                        ? _ringColor(context, e.$1).withValues(alpha: 0.12)
                         : Colors.transparent,
                     borderRadius: const BorderRadius.all(AppRadii.pill),
                     border: Border.all(
                       color: active == e.$1
-                          ? _ringColor(e.$1)
-                          : AppColors.hairline,
+                          ? _ringColor(context, e.$1)
+                          : context.palette.hairline,
                     ),
                   ),
                   child: Row(
@@ -527,7 +527,7 @@ class _LegendStrip extends StatelessWidget {
                         width: 6,
                         height: 6,
                         decoration: BoxDecoration(
-                          color: _ringColor(e.$1),
+                          color: _ringColor(context, e.$1),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -583,7 +583,7 @@ class _StatsStrip extends ConsumerWidget {
           child: _StatMiniCard(
             label: 'On tables',
             value: KineticRupeeCounter(
-                amount: billSum, fontSize: 16, color: AppColors.ink),
+                amount: billSum, fontSize: 16, color: context.palette.ink),
           ),
         ),
       ],
@@ -754,14 +754,14 @@ class _FloorTabs extends StatelessWidget {
                             vertical: 9,
                           ),
                           decoration: BoxDecoration(
-                            color: Color.lerp(
-                                context.palette.surface, AppColors.ink, t),
+                            color: Color.lerp(context.palette.surface,
+                                context.palette.selectedPill, t),
                             borderRadius:
                                 const BorderRadius.all(AppRadii.pill),
                             border: Border.all(
                               color: t > 0.5
                                   ? Colors.transparent
-                                  : AppColors.hairline,
+                                  : context.palette.hairline,
                             ),
                           ),
                           alignment: Alignment.center,
@@ -818,23 +818,23 @@ Color _pillBg(BuildContext context, TableState state) {
   }
 }
 
-Color _pillFg(TableState state) {
+Color _pillFg(BuildContext context, TableState state) {
   switch (state) {
     case TableState.mine:
       return Colors.white;
     case TableState.other:
-      return AppColors.tableOtherText;
+      return context.palette.tableOtherText;
     case TableState.dirty:
-      return AppColors.tableDirtyText;
+      return context.palette.tableDirtyText;
     case TableState.reserved:
-      return AppColors.tableReservedText;
+      return context.palette.tableReservedText;
     case TableState.free:
-      return AppColors.tableFreeText;
+      return context.palette.tableFreeText;
   }
 }
 
-Color _ringColor(TableState state) =>
-    state == TableState.mine ? AppColors.terra : _pillFg(state);
+Color _ringColor(BuildContext context, TableState state) =>
+    state == TableState.mine ? AppColors.terra : _pillFg(context, state);
 
 String _pillLabel(TableState state, String? waiterName) {
   switch (state) {
@@ -852,13 +852,14 @@ String _pillLabel(TableState state, String? waiterName) {
   }
 }
 
-Widget _applySpotlight(Widget card, TableState state, TableState? spotlight) {
+Widget _applySpotlight(
+    BuildContext context, Widget card, TableState state, TableState? spotlight) {
   if (spotlight == null) return card;
   if (state == spotlight) {
     return Container(
       decoration: BoxDecoration(
         borderRadius: const BorderRadius.all(AppRadii.lg),
-        border: Border.all(color: _ringColor(state), width: 1.5),
+        border: Border.all(color: _ringColor(context, state), width: 1.5),
       ),
       child: card,
     );
@@ -885,7 +886,7 @@ class _StatePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = _pillBg(context, state);
-    final fg = _pillFg(state);
+    final fg = _pillFg(context, state);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -943,8 +944,8 @@ class _FloorTag extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: const BoxDecoration(
-        color: AppColors.terraSoft,
+      decoration: BoxDecoration(
+        color: context.palette.terraSoft,
         borderRadius: BorderRadius.all(AppRadii.pill),
       ),
       child: Text(floor,
@@ -1064,8 +1065,8 @@ class _TimerChipState extends State<_TimerChip> {
       bg = AppColors.warn.withValues(alpha: 0.16);
       fg = AppColors.warn;
     } else {
-      bg = AppColors.timerBadBg;
-      fg = AppColors.timerBadText;
+      bg = context.palette.timerBadBg;
+      fg = context.palette.timerBadText;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -1158,10 +1159,12 @@ class _TableCard extends ConsumerWidget {
     final isMine = table.state == TableState.mine;
 
     final card = RepaintBoundary(
-      child: Pressable(
+      child: JellyTap(
+        amount: 0.05,
         onTap: isLoading ? null : onTap,
         onLongPress: onLongPress,
-        pressedScale: 0.97,
+        onPressFeedback: () =>
+            ref.read(feedbackServiceProvider).fire(const FeedbackLight()),
         child: Hero(
           tag: HeroTags.tableCard(table.serverId),
           flightShuttleBuilder: (flightContext, anim, __, ___, ____) {
@@ -1172,12 +1175,12 @@ class _TableCard extends ConsumerWidget {
                 child: Container(
                   decoration: BoxDecoration(
                     color: isMine
-                        ? AppColors.tableMineWashEnd
+                        ? context.palette.tableMineWashEnd
                         : flightContext.palette.surface,
                     borderRadius: const BorderRadius.all(AppRadii.lg),
-                    border: Border.all(color: AppColors.hairline, width: 1),
+                    border: Border.all(color: context.palette.hairline, width: 1),
                     boxShadow:
-                        isMine ? AppShadows.terraWash : AppShadows.card,
+                        isMine ? context.palette.mineShadow : context.palette.cardShadow,
                   ),
                 ),
               ),
@@ -1187,12 +1190,12 @@ class _TableCard extends ConsumerWidget {
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               gradient: isMine
-                  ? const LinearGradient(
+                  ? LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        AppColors.tableMineWashStart,
-                        AppColors.tableMineWashEnd,
+                        context.palette.tableMineWashStart,
+                        context.palette.tableMineWashEnd,
                       ],
                     )
                   : null,
@@ -1200,10 +1203,10 @@ class _TableCard extends ConsumerWidget {
               borderRadius: const BorderRadius.all(AppRadii.lg),
               border: Border.all(
                 color:
-                    isMine ? AppColors.tableMineBorder : AppColors.hairline,
+                    isMine ? context.palette.tableMineBorder : context.palette.hairline,
                 width: 1,
               ),
-              boxShadow: isMine ? AppShadows.terraWash : AppShadows.card,
+              boxShadow: isMine ? context.palette.mineShadow : context.palette.cardShadow,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1281,12 +1284,12 @@ class _TableCard extends ConsumerWidget {
 
     return Stack(
       children: [
-        _applySpotlight(card, table.state, spotlight),
+        _applySpotlight(context, card, table.state, spotlight),
         if (isLoading)
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
-                color: AppColors.ink.withValues(alpha: 0.38),
+                color: context.palette.ink.withValues(alpha: 0.38),
                 borderRadius: const BorderRadius.all(AppRadii.lg),
               ),
               child: const Center(

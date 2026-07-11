@@ -271,7 +271,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                 decoration: BoxDecoration(
                   color: context.palette.surface,
                   borderRadius: const BorderRadius.all(AppRadii.sm),
-                  border: Border.all(color: AppColors.hairline, width: 1.5),
+                  border: Border.all(color: context.palette.hairline, width: 1.5),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: TextField(
@@ -343,7 +343,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                 decoration: BoxDecoration(
                   color: context.palette.surface,
                   borderRadius: const BorderRadius.all(AppRadii.sm),
-                  border: Border.all(color: AppColors.hairline, width: 1.5),
+                  border: Border.all(color: context.palette.hairline, width: 1.5),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: TextField(
@@ -419,10 +419,10 @@ class _TabChip extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? AppColors.terraSoft : palette.surface,
+          color: selected ? context.palette.terraSoft : palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.sm),
           border: Border.all(
-              color: selected ? AppColors.terra : AppColors.hairline,
+              color: selected ? AppColors.terra : context.palette.hairline,
               width: selected ? 1.5 : 1),
         ),
         child: Row(
@@ -470,10 +470,10 @@ class _PresetChip extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? AppColors.terraSoft : context.palette.surface,
+          color: selected ? context.palette.terraSoft : context.palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.sm),
           border: Border.all(
-            color: selected ? AppColors.terra : AppColors.hairline,
+            color: selected ? AppColors.terra : context.palette.hairline,
             width: selected ? 1.5 : 1.0,
           ),
         ),

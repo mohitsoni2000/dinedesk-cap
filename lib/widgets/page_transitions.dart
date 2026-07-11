@@ -1,7 +1,4 @@
-
-
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
 
@@ -35,11 +32,10 @@ class _ModalSheetPage<T> extends Page<T> {
       transitionDuration: duration,
       reverseTransitionDuration: const Duration(milliseconds: 280),
       opaque: false,
-      barrierColor: AppColors.scrim,
+      barrierColor: context.palette.scrim,
       fullscreenDialog: true,
       pageBuilder: (_, __, ___) => child,
       transitionsBuilder: (_, animation, secondaryAnimation, page) {
-
         final incoming = CurvedAnimation(
           parent: animation,
           curve: Curves.easeOutCubic,

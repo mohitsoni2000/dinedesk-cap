@@ -9,6 +9,8 @@ import '../models/feature_flags.dart';
 import '../models/server_models.dart';
 import '../motion/feedback_kind.dart';
 import '../motion/feedback_service.dart';
+import 'kot_queue_service.dart';
+import 'platform_surfaces.dart';
 import 'socket_service.dart';
 
 const _tag = '[Sync]';
@@ -187,7 +189,10 @@ class SyncService {
 
         _ref.read(readyOrdersProvider.notifier).state =
             _ref.read(readyOrdersProvider).where((t) => t.orderId != id).toList();
+
+        _ref.read(liveActivityProvider).end(id);
       }
+      _ref.read(widgetSyncProvider).schedule(_ref);
       _applyTablesFromEnvelope(env);
       _applyRoomsFromEnvelope(env);
     });
@@ -228,6 +233,9 @@ class SyncService {
         ),
       ];
       _ref.read(feedbackServiceProvider).fire(const FeedbackReadyChime());
+      _ref.read(readyAlertsProvider).notifyReady(tableName, labels);
+      _ref.read(liveActivityProvider).markReady(orderId, tableName);
+      _ref.read(widgetSyncProvider).schedule(_ref);
     });
 
     _socket.on('discount:applied', (data) {
@@ -508,6 +516,8 @@ class SyncService {
     _ref.read(connectionProvider.notifier).state =
         ConnectionStatus(online: true, label: 'Connected · $name');
 
+    _ref.read(widgetSyncProvider).schedule(_ref);
+
     debugPrint('$_tag ── Initial sync complete ──');
   }
 
@@ -547,6 +557,7 @@ class SyncService {
         if (syncRaw is Map) {
           await applyInitialSync(Map<String, dynamic>.from(syncRaw));
         }
+        _ref.read(kotQueueProvider).flush(_socket);
       } else {
         _ref.read(isAuthenticatedProvider.notifier).state = false;
       }

@@ -15,6 +15,30 @@ import 'socket_service.dart';
 
 const _tag = '[Sync]';
 
+/// [tableOperatorIds] must be index-parallel with the table's operator-name
+/// list wherever this is called from -- both should come from the same
+/// source list (e.g. ServerTable.operatorIds/operatorNames, which are
+/// guaranteed parallel by construction in ServerTable.fromMap).
+TableState mapTableStatus(
+    String status, String? currentOperatorId, List<String> tableOperatorIds) {
+  switch (status.toLowerCase()) {
+    case 'dirty':
+    case 'cleaning':
+      return TableState.dirty;
+    case 'reserved':
+      return TableState.reserved;
+    case 'occupied':
+      if (currentOperatorId != null &&
+          tableOperatorIds.isNotEmpty &&
+          !tableOperatorIds.contains(currentOperatorId)) {
+        return TableState.other;
+      }
+      return TableState.mine;
+    default:
+      return TableState.free;
+  }
+}
+
 class SyncService {
   final SocketService _socket;
   final Ref _ref;
@@ -636,7 +660,7 @@ class SyncService {
     final floorName = _floorMap[st.floorId] ?? st.floorId;
     final currentOperatorId = _ref.read(operatorProvider)?.username;
     final tableState =
-        _mapTableStatus(st.status, currentOperatorId, st.operatorId);
+        mapTableStatus(st.status, currentOperatorId, st.operatorIds);
 
     DateTime? occupiedSince;
     if (tableState == TableState.mine) {
@@ -658,7 +682,8 @@ class SyncService {
       seats: st.capacity,
       floor: floorName,
       state: tableState,
-      waiterName: st.waiterName,
+      joinedOperatorIds: st.operatorIds,
+      joinedOperatorNames: st.operatorNames,
       bill: st.orderTotal > 0 ? st.orderTotal : null,
       note: st.reservationCustomer,
       activeOrderId: st.activeOrderId,
@@ -836,28 +861,6 @@ class SyncService {
       return _serverTableToLocal(st);
     }).toList();
     _ref.read(tablesProvider.notifier).state = tables;
-  }
-
-  TableState _mapTableStatus(
-      String status, String? currentOperatorId, String? tableOperatorId) {
-    switch (status.toLowerCase()) {
-      case 'dirty':
-      case 'cleaning':
-        return TableState.dirty;
-      case 'reserved':
-        return TableState.reserved;
-      case 'occupied':
-
-        if (currentOperatorId != null &&
-            tableOperatorId != null &&
-            tableOperatorId.isNotEmpty &&
-            tableOperatorId != currentOperatorId) {
-          return TableState.other;
-        }
-        return TableState.mine;
-      default:
-        return TableState.free;
-    }
   }
 
   OrderStatus _mapOrderStatus(String status) {

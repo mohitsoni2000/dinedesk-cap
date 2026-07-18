@@ -19,7 +19,11 @@ class RestaurantTable {
   final int seats;
   final String floor;
   final TableState state;
+  /// Must stay index-parallel with [joinedOperatorNames]; populate both
+  /// together from the same source list (e.g. ServerTable.operatorIds).
   final List<String> joinedOperatorIds;
+  /// Must stay index-parallel with [joinedOperatorIds]; populate both
+  /// together from the same source list (e.g. ServerTable.operatorNames).
   final List<String> joinedOperatorNames;
   final int? coverCount;
   final double? bill;

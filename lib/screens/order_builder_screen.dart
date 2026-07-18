@@ -47,6 +47,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   bool _readOnly = false;
   String _holderName = '';
   bool _isSaving = false;
+  bool _tableMembershipInFlight = false;
   SocketService? _socketSvc;
 
   @override
@@ -100,6 +101,32 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
       }
     } catch (_) {
 
+    }
+  }
+
+  Future<void> _handleTableMembershipTap({
+    required String event,
+    required String tableServerId,
+    required String errorFallback,
+  }) async {
+    if (_tableMembershipInFlight) return;
+    setState(() => _tableMembershipInFlight = true);
+    try {
+      final response = await ref
+          .read(socketServiceProvider)
+          .emitAck(event, {'table_id': tableServerId});
+      if (response['kind'] == 'error') {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(
+            content: Text(response['message']?.toString() ?? errorFallback),
+          ));
+        return;
+      }
+      ref.read(syncServiceProvider).applyTableAck(response);
+    } finally {
+      if (mounted) setState(() => _tableMembershipInFlight = false);
     }
   }
 
@@ -587,39 +614,30 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               Padding(
                                 padding: const EdgeInsets.only(top: 6),
                                 child: GestureDetector(
-                                  onTap: () async {
-                                    final response = await ref
-                                        .read(socketServiceProvider)
-                                        .emitAck('table:join',
-                                            {'table_id': table.serverId});
-                                    if (response['kind'] == 'error') {
-                                      if (!context.mounted) return;
-                                      ScaffoldMessenger.of(context)
-                                        ..clearSnackBars()
-                                        ..showSnackBar(SnackBar(
-                                          content: Text(response['message']
-                                                  ?.toString() ??
-                                              'Could not join table'),
-                                        ));
-                                      return;
-                                    }
-                                    ref
-                                        .read(syncServiceProvider)
-                                        .applyTableAck(response);
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.terra
-                                          .withValues(alpha: 0.12),
-                                      borderRadius: const BorderRadius.all(
-                                          AppRadii.pill),
+                                  onTap: () => _handleTableMembershipTap(
+                                    event: 'table:join',
+                                    tableServerId: table.serverId,
+                                    errorFallback: 'Could not join table',
+                                  ),
+                                  child: Opacity(
+                                    opacity:
+                                        _tableMembershipInFlight ? 0.5 : 1.0,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.terra
+                                            .withValues(alpha: 0.12),
+                                        borderRadius: const BorderRadius.all(
+                                            AppRadii.pill),
+                                      ),
+                                      child: Text('Join to help',
+                                          style: AppTypography.caption
+                                              .copyWith(
+                                                  color: AppColors.terra,
+                                                  fontWeight:
+                                                      FontWeight.w700)),
                                     ),
-                                    child: Text('Join to help',
-                                        style: AppTypography.caption.copyWith(
-                                            color: AppColors.terra,
-                                            fontWeight: FontWeight.w700)),
                                   ),
                                 ),
                               ),
@@ -630,31 +648,20 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               Padding(
                                 padding: const EdgeInsets.only(top: 6),
                                 child: GestureDetector(
-                                  onTap: () async {
-                                    final response = await ref
-                                        .read(socketServiceProvider)
-                                        .emitAck('table:leave',
-                                            {'table_id': table.serverId});
-                                    if (response['kind'] == 'error') {
-                                      if (!context.mounted) return;
-                                      ScaffoldMessenger.of(context)
-                                        ..clearSnackBars()
-                                        ..showSnackBar(SnackBar(
-                                          content: Text(response['message']
-                                                  ?.toString() ??
-                                              'Could not leave table'),
-                                        ));
-                                      return;
-                                    }
-                                    ref
-                                        .read(syncServiceProvider)
-                                        .applyTableAck(response);
-                                  },
-                                  child: Text('Leave this table',
-                                      style: AppTypography.caption.copyWith(
-                                          color: context.palette.ink50,
-                                          decoration:
-                                              TextDecoration.underline)),
+                                  onTap: () => _handleTableMembershipTap(
+                                    event: 'table:leave',
+                                    tableServerId: table.serverId,
+                                    errorFallback: 'Could not leave table',
+                                  ),
+                                  child: Opacity(
+                                    opacity:
+                                        _tableMembershipInFlight ? 0.5 : 1.0,
+                                    child: Text('Leave this table',
+                                        style: AppTypography.caption.copyWith(
+                                            color: context.palette.ink50,
+                                            decoration:
+                                                TextDecoration.underline)),
+                                  ),
                                 ),
                               ),
                           ],

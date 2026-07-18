@@ -48,9 +48,10 @@ class AppTheme {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
       ),
-      bottomSheetTheme: BottomSheetThemeData(
+      bottomSheetTheme: const BottomSheetThemeData().copyWith(
         backgroundColor: p.elevated,
         surfaceTintColor: Colors.transparent,
+        constraints: const BoxConstraints(maxWidth: 640),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),

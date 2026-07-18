@@ -231,10 +231,16 @@ class _LiquidSecondaryButtonState extends State<LiquidSecondaryButton> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           decoration: BoxDecoration(
-            color: context.palette.surface,
+            color: context.palette.isDark
+                ? context.palette.surfaceWarm
+                : context.palette.surface,
             borderRadius: const BorderRadius.all(AppRadii.md),
             border: Border.all(
-                color: enabled ? context.palette.hairline : context.palette.ink05),
+                color: enabled
+                    ? (context.palette.isDark
+                        ? context.palette.ink30
+                        : context.palette.hairline)
+                    : context.palette.ink05),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../data/recent_tables.dart';
 import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
 import '../services/socket_service.dart' show SocketState;
@@ -30,6 +31,9 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   bool _refreshing = false;
   late final AnimationController _refreshController;
 
+  /// Coast pager: floors become horizontally swipeable "beaches".
+  final PageController _floorPager = PageController();
+
   @override
   void initState() {
     super.initState();
@@ -42,7 +46,91 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   @override
   void dispose() {
     _refreshController.dispose();
+    _floorPager.dispose();
     super.dispose();
+  }
+
+  void _goFloor(String f, List<String> floors) {
+    final idx = floors.indexOf(f);
+    if (idx >= 0 && _floorPager.hasClients) {
+      _floorPager.animateToPage(
+        idx,
+        duration: const Duration(milliseconds: 380),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    setState(() => _floor = f);
+  }
+
+  Widget _buildTablesGrid(List<RestaurantTable> list,
+      {required bool showFloorTags}) {
+    final query = _query.trim().toLowerCase();
+    if (list.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.search_off,
+                  color: context.palette.ink30, size: 48),
+              const SizedBox(height: 12),
+              const Text('No tables match', style: AppTypography.title),
+              const SizedBox(height: 4),
+              Text(
+                showFloorTags && query.isNotEmpty
+                    ? 'No tables match — searched every floor for "$query"'
+                    : showFloorTags
+                        ? 'Try a different search or floor'
+                        : 'No tables on this floor yet',
+                textAlign: TextAlign.center,
+                style: AppTypography.caption,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      color: AppColors.terra,
+      backgroundColor: context.palette.surface,
+      displacement: 28,
+      child: GridView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        cacheExtent: AppPerf.gridCacheExtent,
+        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: context.tableTileExtent,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.05,
+        ),
+        itemCount: list.length,
+        itemBuilder: (_, i) {
+          final t = list[i];
+          return Entrance(
+            delay: Duration(milliseconds: 35 * (i < 12 ? i : 12)),
+            offsetY: 10,
+            child: _TableCard(
+              table: t,
+              isLoading: _openingTable && _openingTableId == t.serverId,
+              onTap: () => _onTableTap(t),
+              spotlight: _spotlight,
+              showFloorTag: showFloorTags,
+              onLongPress: ((t.state == TableState.mine ||
+                          t.state == TableState.other) &&
+                      ref.watch(
+                          flagsProvider.select((f) => f.tableMerge)) &&
+                      !ref.watch(isWaiterProvider))
+                  ? () => TableMergeSheet.show(context, t)
+                  : null,
+              occupiedSince: t.occupiedSince,
+            ),
+          );
+        },
+      ),
+    );
   }
 
   void _onTableTap(RestaurantTable t) async {
@@ -55,6 +143,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     }
 
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
+    ref.read(recentTablesProvider.notifier).record(t.serverId);
     final prevTable = ref.read(selectedTableIdProvider);
     if (prevTable != null && prevTable != t.serverId) {
       ref.read(cartProvider.notifier).clear();
@@ -185,7 +274,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
       backgroundColor: context.palette.paper,
       body: SafeArea(
         bottom: false,
-        child: Column(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: context.contentMaxWidth),
+            child: Column(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -230,10 +322,15 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                   const SizedBox(width: 8),
                   _HeaderIconTile(
                     icon: _searchOpen ? Icons.close : Icons.search,
-                    onTap: () => setState(() {
-                      _searchOpen = !_searchOpen;
-                      if (!_searchOpen) _query = '';
-                    }),
+                    onTap: () {
+                      ref
+                          .read(feedbackServiceProvider)
+                          .fire(const FeedbackSelection());
+                      setState(() {
+                        _searchOpen = !_searchOpen;
+                        if (!_searchOpen) _query = '';
+                      });
+                    },
                   ),
                 ],
               ),
@@ -268,22 +365,30 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                   ),
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              child: _OnlineStrip(operators: activeOps),
-            ),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _LegendStrip(
-                active: _spotlight,
-                onChange: (s) => setState(() => _spotlight = s),
+            _RecentTablesRow(onOpen: _onTableTap),
+            _CollapseSection(
+              hidden: _searchOpen,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                    child: _OnlineStrip(operators: activeOps),
+                  ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _LegendStrip(
+                      active: _spotlight,
+                      onChange: (s) => setState(() => _spotlight = s),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _StatsStrip(),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _StatsStrip(),
             ),
             const SizedBox(height: 12),
             Padding(
@@ -293,72 +398,35 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                 floors: floors,
                 counts: floorCounts,
                 enabled: !isSearching,
-                onChange: (v) => setState(() => _floor = v),
+                onChange: (v) => _goFloor(v, floors),
               ),
             ),
             const SizedBox(height: 12),
             Expanded(
-                child: filtered.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.search_off,
-                                  color: context.palette.ink30, size: 48),
-                              const SizedBox(height: 12),
-                              const Text('No tables match',
-                                  style: AppTypography.title),
-                              const SizedBox(height: 4),
-                              Text(
-                                isSearching
-                                    ? 'No tables match — searched every floor for "$query"'
-                                    : 'Try a different search or floor',
-                                textAlign: TextAlign.center,
-                                style: AppTypography.caption,
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 200,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 1.05,
-                        ),
-                        itemCount: filtered.length,
-                        itemBuilder: (_, i) {
-                          final t = filtered[i];
-                          return Entrance(
-                            delay:
-                                Duration(milliseconds: 35 * (i < 12 ? i : 12)),
-                            offsetY: 10,
-                            child: _TableCard(
-                              table: t,
-                              isLoading: _openingTable &&
-                                  _openingTableId == t.serverId,
-                              onTap: () => _onTableTap(t),
-                              spotlight: _spotlight,
-                              showFloorTag: isSearching,
-                              onLongPress: ((t.state == TableState.mine ||
-                                          t.state == TableState.other) &&
-                                      ref.watch(flagsProvider
-                                          .select((f) => f.tableMerge)) &&
-                                      !ref.watch(isWaiterProvider))
-                                  ? () => TableMergeSheet.show(context, t)
-                                  : null,
-                              occupiedSince: t.occupiedSince,
-                            ),
-                          );
-                        },
+              child: isSearching
+                  ? _buildTablesGrid(filtered, showFloorTags: true)
+                  : _FloorCoast(
+                      controller: _floorPager,
+                      floors: floors,
+                      activeFloor: activeFloor,
+                      onPageChanged: (i) {
+                        if (_floor == floors[i]) return;
+                        ref
+                            .read(feedbackServiceProvider)
+                            .fire(const FeedbackSelection());
+                        setState(() => _floor = floors[i]);
+                      },
+                      pageBuilder: (context, floor) => _buildTablesGrid(
+                        tables
+                            .where((t) => t.floor == floor)
+                            .toList(growable: false),
+                        showFloorTags: false,
                       ),
+                    ),
             ),
           ],
+            ),
+          ),
         ),
       ),
     );
@@ -747,7 +815,9 @@ class _FloorTabs extends StatelessWidget {
                       to: value == f ? 1.0 : 0.0,
                       spring: RestroSprings.snappy,
                       builder: (BuildContext _, double t, Widget? child) {
-                        return Container(
+                        return Transform.scale(
+                          scale: 1 + 0.03 * t,
+                          child: Container(
                           constraints: const BoxConstraints(minWidth: 96),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
@@ -766,6 +836,7 @@ class _FloorTabs extends StatelessWidget {
                           ),
                           alignment: Alignment.center,
                           child: child,
+                          ),
                         );
                       },
                       child: Row(
@@ -1186,7 +1257,9 @@ class _TableCard extends ConsumerWidget {
               ),
             );
           },
-          child: Container(
+          child: TiltOnTouch(
+            maxTilt: 0.045,
+            child: Container(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               gradient: isMine
@@ -1228,7 +1301,9 @@ class _TableCard extends ConsumerWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        if (isReady) const _ReadyChip(),
+                        if (isReady)
+                          const AttentionPulse(
+                              scale: 1.06, child: _ReadyChip()),
                         if (isMine && occupiedSince != null) ...[
                           if (isReady) const SizedBox(height: 4),
                           _TimerChip(since: occupiedSince!),
@@ -1277,6 +1352,7 @@ class _TableCard extends ConsumerWidget {
                 ),
               ],
             ),
+            ),
           ),
         ),
       ),
@@ -1305,6 +1381,214 @@ class _TableCard extends ConsumerWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Horizontal strip of recently opened tables — one-tap jump back to a
+/// table you were just serving. Fed by [recentTablesProvider]; hidden
+/// until at least one table has been opened this shift.
+class _RecentTablesRow extends ConsumerWidget {
+  final ValueChanged<RestaurantTable> onOpen;
+  const _RecentTablesRow({required this.onOpen});
+
+  Color _dot(BuildContext context, TableState s) => switch (s) {
+        TableState.free => AppColors.success,
+        TableState.mine => AppColors.terra,
+        TableState.other => context.palette.tableOtherText,
+        TableState.dirty => AppColors.amber,
+        TableState.reserved => context.palette.tableReservedText,
+      };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ids = ref.watch(recentTablesProvider);
+    if (ids.isEmpty) return const SizedBox.shrink();
+    final byId = ref.watch(tablesProvider.select(
+      (list) => {for (final t in list) t.serverId: t},
+    ));
+    final entries = <RestaurantTable>[
+      for (final id in ids)
+        if (byId[id] != null) byId[id]!,
+    ];
+    if (entries.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: SizedBox(
+        height: 34,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          children: [
+            Container(
+              alignment: Alignment.center,
+              padding: const EdgeInsets.only(right: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.history,
+                      size: 13, color: context.palette.ink50),
+                  const SizedBox(width: 4),
+                  Text('RECENT',
+                      style: AppTypography.micro.copyWith(
+                          color: context.palette.ink50,
+                          letterSpacing: 1.0)),
+                ],
+              ),
+            ),
+            for (final t in entries)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Pressable(
+                  onTap: () => onOpen(t),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 11, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: t.state == TableState.mine
+                          ? context.palette.terraSoft
+                          : context.palette.surface,
+                      borderRadius: const BorderRadius.all(AppRadii.pill),
+                      border: Border.all(
+                        color: t.state == TableState.mine
+                            ? context.palette.tableMineBorder
+                            : context.palette.hairline,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: _dot(context, t.state),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(t.id,
+                            style: AppTypography.caption
+                                .copyWith(fontWeight: FontWeight.w700)),
+                        if (t.bill != null) ...[
+                          const SizedBox(width: 5),
+                          Text(formatRupeesCompact(t.bill!),
+                              style: AppTypography.caption
+                                  .copyWith(color: context.palette.ink50)),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Smoothly collapses its child to zero height (with fade) when hidden —
+/// used to tuck the legend / stats / presence strips away while searching
+/// so the grid gets the room.
+class _CollapseSection extends StatelessWidget {
+  final bool hidden;
+  final Widget child;
+  const _CollapseSection({required this.hidden, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: hidden ? 0 : 1, end: hidden ? 0 : 1),
+        duration: AppMotion.standard,
+        curve: Curves.easeOutCubic,
+        child: child,
+        builder: (context, v, c) {
+          if (v <= 0.002) return const SizedBox(width: double.infinity);
+          return Align(
+            alignment: Alignment.topCenter,
+            heightFactor: v,
+            child: Opacity(opacity: v, child: c),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// ============================================================
+/// FLOOR COAST — coast-package style swipeable floor "beaches".
+/// Swipe horizontally between floors; content parallax-lags and
+/// crossfades between pages while the header, tabs and stats act
+/// as the persistent shore. Tabs animate the pager; swiping the
+/// pager updates the tabs. Native PageView — no package, snappy
+/// PageScrollPhysics riding the app's bouncy scroll behavior.
+/// ============================================================
+class _FloorCoast extends StatefulWidget {
+  final PageController controller;
+  final List<String> floors;
+  final String activeFloor;
+  final ValueChanged<int> onPageChanged;
+  final Widget Function(BuildContext context, String floor) pageBuilder;
+  const _FloorCoast({
+    required this.controller,
+    required this.floors,
+    required this.activeFloor,
+    required this.onPageChanged,
+    required this.pageBuilder,
+  });
+
+  @override
+  State<_FloorCoast> createState() => _FloorCoastState();
+}
+
+class _FloorCoastState extends State<_FloorCoast> {
+  @override
+  void initState() {
+    super.initState();
+    // Re-attached (e.g. after closing search) → jump back to the
+    // active floor without animation so tabs and pager agree.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.controller.hasClients) return;
+      final int want = widget.floors.indexOf(widget.activeFloor);
+      if (want < 0) return;
+      final double at = widget.controller.page ??
+          widget.controller.initialPage.toDouble();
+      if ((at - want).abs() > 0.5) widget.controller.jumpToPage(want);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.floors.length <= 1) {
+      return widget.pageBuilder(context, widget.floors.first);
+    }
+    return PageView.builder(
+      controller: widget.controller,
+      onPageChanged: widget.onPageChanged,
+      itemCount: widget.floors.length,
+      itemBuilder: (context, i) {
+        final Widget page = RepaintBoundary(
+          child: widget.pageBuilder(context, widget.floors[i]),
+        );
+        if (AppPerf.reduceEffects(context)) return page;
+        return AnimatedBuilder(
+          animation: widget.controller,
+          child: page,
+          builder: (context, child) {
+            double off = 0;
+            if (widget.controller.position.haveDimensions) {
+              off = (widget.controller.page ?? i.toDouble()) - i;
+            }
+            final double a = off.abs().clamp(0.0, 1.0);
+            return Transform.translate(
+              offset: Offset(off * -26, 0), // content lags → coast feel
+              child: Opacity(opacity: 1 - a * 0.28, child: child),
+            );
+          },
+        );
+      },
     );
   }
 }

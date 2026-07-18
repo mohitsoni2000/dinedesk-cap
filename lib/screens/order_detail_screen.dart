@@ -465,7 +465,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final isSent = order.status == OrderStatus.sent ||
         order.status == OrderStatus.modified;
 
-    return ColoredBox(
+    return DragToDismiss.overscroll(
+      onDismiss: () {
+        if (context.canPop()) context.pop();
+      },
+      child: ColoredBox(
       color: context.palette.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -925,6 +929,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

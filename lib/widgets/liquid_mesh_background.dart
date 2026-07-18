@@ -56,6 +56,15 @@ class _LiquidMeshBackgroundState extends State<LiquidMeshBackground>
   @override
   Widget build(BuildContext context) {
     final bool dark = widget.dark ?? context.palette.isDark;
+
+    // Low-end / reduce-motion path: flat wash, zero per-frame painting.
+    if (AppPerf.reduceEffects(context)) {
+      return ColoredBox(
+        color: dark ? AppColors.night : context.palette.paper,
+        child: widget.child,
+      );
+    }
+
     final Widget background = _ctrl == null
         ? CustomPaint(
             size: Size.infinite,

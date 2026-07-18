@@ -448,11 +448,15 @@ class _TiltOnTouchState extends State<TiltOnTouch>
   Widget build(BuildContext context) => LayoutBuilder(
         builder: (context, constraints) {
           final size = constraints.biggest;
-          return GestureDetector(
-            onPanDown: (d) => _move(d.localPosition, size),
-            onPanUpdate: (d) => _move(d.localPosition, size),
-            onPanEnd: (_) => _end(),
-            onPanCancel: _end,
+          // Raw pointer events: never enters the gesture arena, so taps,
+          // long-presses and scrollables above/below keep working — the
+          // tilt is purely observational.
+          return Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (e) => _move(e.localPosition, size),
+            onPointerMove: (e) => _move(e.localPosition, size),
+            onPointerUp: (_) => _end(),
+            onPointerCancel: (_) => _end(),
             child: AnimatedBuilder(
               animation: _release,
               child: widget.child,

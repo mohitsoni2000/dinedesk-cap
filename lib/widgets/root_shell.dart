@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../motion/motion.dart';
+import '../theme/tokens.dart';
 import 'liquid_chrome.dart';
 
 class RootShell extends ConsumerWidget {
@@ -38,25 +39,117 @@ class RootShell extends ConsumerWidget {
         entries.indexWhere((e) => e.$1 == navigationShell.currentIndex);
     if (current < 0) current = 0;
 
-    return Column(
-      children: [
-        Expanded(child: RepaintBoundary(child: navigationShell)),
-        SafeArea(
-          top: false,
-          child: LiquidBottomNav(
-            currentIndex: current,
-            items: [for (final e in entries) e.$2],
-            onTap: (i) {
-              ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
-              final branch = entries[i].$1;
-              navigationShell.goBranch(
-                branch,
-                initialLocation: branch == navigationShell.currentIndex,
-              );
-            },
+    void go(int i) {
+      ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
+      final branch = entries[i].$1;
+      navigationShell.goBranch(
+        branch,
+        initialLocation: branch == navigationShell.currentIndex,
+      );
+    }
+
+    return LayoutBuilder(builder: (context, box) {
+      final bool wide = box.maxWidth >= AppBreakpoints.expanded;
+      if (wide) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SafeArea(
+              right: false,
+              child: _SideNavRail(
+                items: [for (final e in entries) e.$2],
+                currentIndex: current,
+                onTap: go,
+              ),
+            ),
+            Container(width: 1, color: context.palette.hairline),
+            Expanded(child: RepaintBoundary(child: navigationShell)),
+          ],
+        );
+      }
+      return Column(
+        children: [
+          Expanded(child: RepaintBoundary(child: navigationShell)),
+          SafeArea(
+            top: false,
+            child: LiquidBottomNav(
+              currentIndex: current,
+              items: [for (final e in entries) e.$2],
+              onTap: go,
+            ),
           ),
-        ),
-      ],
+        ],
+      );
+    });
+  }
+}
+
+/// Vertical navigation for tablets / desktop — same entries and branch
+/// logic as the bottom nav, laid out as a left rail so the floor grid
+/// keeps its full height.
+class _SideNavRail extends StatelessWidget {
+  final List<LiquidNavItem> items;
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  const _SideNavRail({
+    required this.items,
+    required this.currentIndex,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      width: 86,
+      color: palette.navBar,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Column(
+        children: [
+          for (int i = 0; i < items.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Pressable(
+                onTap: () => onTap(i),
+                child: AnimatedContainer(
+                  duration: AppMotion.fast,
+                  curve: AppMotion.entrance,
+                  width: 70,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: i == currentIndex
+                        ? palette.terraSoft
+                        : Colors.transparent,
+                    borderRadius: const BorderRadius.all(AppRadii.md),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        items[i].icon,
+                        size: 22,
+                        color: i == currentIndex
+                            ? AppColors.terraDeep
+                            : palette.ink50,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        items[i].label,
+                        style: AppTypography.pill.copyWith(
+                          fontSize: 8.5,
+                          color: i == currentIndex
+                              ? AppColors.terraDeep
+                              : palette.ink50,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          const Spacer(),
+        ],
+      ),
     );
   }
 }

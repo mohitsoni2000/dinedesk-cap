@@ -159,6 +159,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           path: '/history/:orderId',
           pageBuilder: (_, s) => liquidPage(
               key: s.pageKey,
+              fromBottom: true,
               child: ConnectionBanner(
                   child: OrderDetailScreen(
                       orderId: s.pathParameters['orderId']!)))),

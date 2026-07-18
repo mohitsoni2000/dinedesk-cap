@@ -267,8 +267,10 @@ class SettingsScreen extends ConsumerWidget {
                       ? const Icon(Icons.check_circle,
                           color: AppColors.terra500, size: 20)
                       : null,
-                  onTap: () =>
-                      ref.read(themeModeProvider.notifier).set(value),
+                  onTap: () {
+                    ref.read(themeModeProvider.notifier).set(value);
+                    Navigator.of(context).pop();
+                  },
                 );
               }
 

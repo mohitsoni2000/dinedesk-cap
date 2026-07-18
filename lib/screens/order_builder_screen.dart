@@ -1,5 +1,8 @@
 
 
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -33,6 +36,12 @@ class OrderBuilderScreen extends ConsumerStatefulWidget {
 class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   String _query = '';
   bool _searchOpen = false;
+
+  /// Drives the collapse-on-scroll of the running-order + quick-add zone.
+  /// 0 = fully open, 1 = tucked away. Updated straight from list offset
+  /// (rAF-free, no rebuild of the list itself — only the small zone).
+  final ScrollController _menuScroll = ScrollController();
+  final ValueNotifier<double> _scrollCollapse = ValueNotifier<double>(0);
   String? _activeSection;
 
   bool _readOnly = false;
@@ -46,9 +55,22 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     _socketSvc = ref.read(socketServiceProvider);
   }
 
+  void _onMenuScroll() {
+    final double p = (_menuScroll.offset / 72).clamp(0.0, 1.0);
+    if ((p - _scrollCollapse.value).abs() > 0.003) {
+      _scrollCollapse.value = p;
+    }
+  }
+
+  void _resetMenuScroll() {
+    if (_menuScroll.hasClients) _menuScroll.jumpTo(0);
+    _scrollCollapse.value = 0;
+  }
+
   @override
   void initState() {
     super.initState();
+    _menuScroll.addListener(_onMenuScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _joinPresence();
@@ -479,7 +501,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
         child: Scaffold(
           backgroundColor: Colors.transparent,
           body: SafeArea(
-            child: Column(
+            child: LayoutBuilder(builder: (context, box) {
+              final bool wide = box.maxWidth >= AppBreakpoints.expanded;
+              final Widget mainColumn = Column(
               children: [
                 if (_readOnly)
                   Container(
@@ -504,7 +528,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     ),
                   ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
@@ -556,10 +580,16 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       IconButton(
                         icon: Icon(_searchOpen ? Icons.close : Icons.search,
                             color: context.palette.ink70),
-                        onPressed: () => setState(() {
-                          _searchOpen = !_searchOpen;
-                          if (!_searchOpen) _query = '';
-                        }),
+                        onPressed: () {
+                          ref
+                              .read(feedbackServiceProvider)
+                              .fire(const FeedbackSelection());
+                          setState(() {
+                            _searchOpen = !_searchOpen;
+                            if (!_searchOpen) _query = '';
+                          });
+                          _resetMenuScroll();
+                        },
                       ),
                       IconButton(
                         icon: _isSaving
@@ -703,7 +733,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 Positioned(
                                   top: -4,
                                   right: -4,
-                                  child: Container(
+                                  child: BoingOnChange(
+                                    trigger: kotCount,
+                                    child: Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 5, vertical: 1),
                                     decoration: const BoxDecoration(
@@ -717,6 +749,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                         color: Colors.white,
                                         fontSize: 9,
                                       ),
+                                    ),
                                     ),
                                   ),
                                 ),
@@ -747,11 +780,13 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     ),
                   ),
 
-                  SizedBox(
-                    height: 48,
+                _ZoneReveal(
+                  visible: !_searchOpen,
+                  child: SizedBox(
+                    height: 44,
                     child: ListView(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                      padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
                       children: [
                         _SectionChip(
                           label: 'All',
@@ -780,73 +815,99 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       ],
                     ),
                   ),
+                ),
 
-                if (runningOrder != null && runningOrder.itemCount > 0)
-                  _RunningOrderCard(
-                    order: runningOrder,
-                    tableId: widget.tableId,
-                    cartIsEmpty: cart.isEmpty,
-                    isWaiter: ref.watch(isWaiterProvider),
-                    onPrintSummary: () {
-                      ref.read(socketServiceProvider).emit(
-                        'print:summary',
-                        {'order_id': runningOrder.id},
-                      );
-                    },
-                  ),
-                Builder(builder: (context) {
+                _ZoneReveal(
+                  visible: !wide && !_searchOpen && cart.isEmpty,
+                  scroll: _scrollCollapse,
+                  child: (runningOrder != null && runningOrder.itemCount > 0)
+                      ? _RunningOrderCard(
+                          order: runningOrder,
+                          tableId: widget.tableId,
+                          cartIsEmpty: cart.isEmpty,
+                          isWaiter: ref.watch(isWaiterProvider),
+                          onPrintSummary: () {
+                            ref.read(socketServiceProvider).emit(
+                              'print:summary',
+                              {'order_id': runningOrder.id},
+                            );
+                          },
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                _ZoneReveal(
+                  visible: !_searchOpen,
+                  scroll: _scrollCollapse,
+                  child: Builder(builder: (context) {
                   final pinned = ref.watch(fastAddPinnedProvider);
                   final auto = ref.watch(fastAddAutoProvider);
+                  final recent = ref.watch(recentItemsProvider);
 
                   final pinnedIds = pinned.map((m) => m.id).toSet();
-                  final merged = [
-                    ...pinned,
-                    ...auto.where((m) => !pinnedIds.contains(m.id)),
+                  final seen = <String>{...pinnedIds};
+                  final trending = <MenuItem>[
+                    for (final m in auto)
+                      if (seen.add(m.id)) m,
                   ];
+                  final trendingIds = trending.map((m) => m.id).toSet();
+                  final merged = <MenuItem>[
+                    ...pinned,
+                    ...trending,
+                    for (final m in recent)
+                      if (seen.add(m.id)) m,
+                  ];
+                  if (merged.isEmpty) merged.addAll(menu.take(6));
                   if (merged.isEmpty) return const SizedBox.shrink();
+                  final chips = merged.take(12).toList();
                   return SizedBox(
                     height: AppTouchTargets.chip,
                     child: ListView(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, AppSpacing.xs),
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
+                          AppSpacing.xs, AppSpacing.lg, AppSpacing.xs),
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 6),
                           alignment: Alignment.center,
-                          child: Text('⚡ FAST ADD',
+                          child: Text('⚡ QUICK ADD',
                               style: AppTypography.micro.copyWith(
                                   color: context.palette.ink50,
                                   letterSpacing: 1.0)),
                         ),
-                        for (final item in merged)
+                        for (final item in chips)
                           Padding(
                             padding: const EdgeInsets.only(right: 6),
-                            child: GestureDetector(
-                              onTap: () => _addOrConfigure(context, item),
+                            child: Builder(builder: (chipContext) {
+                              return GestureDetector(
+                              onTap: () {
+                                CartFlight.fly(chipContext);
+                                _addOrConfigure(context, item);
+                              },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: pinnedIds.contains(item.id)
-                                      ? context.palette.terraSoft
-                                      : context.palette.surface,
+                                  color: trendingIds.contains(item.id)
+                                      ? context.palette.surface
+                                      : context.palette.terraSoft,
                                   borderRadius:
                                       const BorderRadius.all(AppRadii.pill),
                                   border: Border.all(
-                                    color: pinnedIds.contains(item.id)
-                                        ? AppColors.terra
-                                        : context.palette.hairline,
+                                    color: trendingIds.contains(item.id)
+                                        ? context.palette.hairline
+                                        : AppColors.terra,
                                   ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    if (!pinnedIds.contains(item.id))
+                                    if (trendingIds.contains(item.id))
                                       Container(
                                         width: 6,
                                         height: 6,
-                                        margin: const EdgeInsets.only(right: 4),
+                                        margin:
+                                            const EdgeInsets.only(right: 4),
                                         decoration: const BoxDecoration(
                                           color: AppColors.trendingDot,
                                           shape: BoxShape.circle,
@@ -869,73 +930,14 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                   ],
                                 ),
                               ),
-                            ),
+                            );
+                            }),
                           ),
                       ],
                     ),
                   );
                 }),
-
-                Builder(builder: (context) {
-                  final recent = ref.watch(recentItemsProvider);
-                  final quickAdd =
-                      recent.isNotEmpty ? recent : menu.take(6).toList();
-                  if (quickAdd.isEmpty) return const SizedBox.shrink();
-                  return SizedBox(
-                    height: AppTouchTargets.chip,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, AppSpacing.xs),
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 6),
-                          alignment: Alignment.center,
-                          child: Text('QUICK ADD',
-                              style: AppTypography.micro.copyWith(
-                                  color: context.palette.ink50,
-                                  letterSpacing: 1.0)),
-                        ),
-                        for (final item in quickAdd)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: GestureDetector(
-                              onTap: () => _addOrConfigure(context, item),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: context.palette.terraSoft,
-                                  borderRadius:
-                                      const BorderRadius.all(AppRadii.pill),
-                                  border: Border.all(color: AppColors.terra),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      width: 8,
-                                      height: 8,
-                                      decoration: BoxDecoration(
-                                        color: item.isVeg
-                                            ? AppColors.success
-                                            : AppColors.danger,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(item.name,
-                                        style: AppTypography.caption.copyWith(
-                                            fontWeight: FontWeight.w600)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  );
-                }),
+                ),
                 Expanded(
                   child: Builder(builder: (_) {
                     final isLoading = ref.watch(menuLoadingProvider);
@@ -990,13 +992,17 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               ),
                             ),
                           )
-                      : ListView(
-                          padding: const EdgeInsets.all(AppSpacing.lg),
+                      : ScrollVelocityLean(
+                          controller: _menuScroll,
+                          child: ListView(
+                          controller: _menuScroll,
+                          cacheExtent: AppPerf.listCacheExtent,
+                          padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
+                              AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
                           children: [
                             for (final entry in sections.entries) ...[
                               Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 8),
+                                padding: const EdgeInsets.fromLTRB(0, 2, 0, 6),
                                 child: Text(
                                   entry.key.toUpperCase(),
                                   style: AppTypography.micro
@@ -1056,8 +1062,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 ),
                               ),
                             ],
-                            const SizedBox(height: 80),
+                            const SizedBox(height: 32),
                           ],
+                        ),
                         );
                   }),
                 ),
@@ -1136,6 +1143,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                   );
                   final hasRunning =
                       runningOrder != null && runningOrder.itemCount > 0;
+                  if (wide) return const SizedBox.shrink();
                   if (count == 0 && !hasRunning) {
                     return const SizedBox.shrink();
                   }
@@ -1156,7 +1164,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     label = 'Running';
                     actionLabel = 'View bill';
                     barTotal = runningOrder!.total;
-                    onBarTap = () => context.push(_reviewRoute);
+                    onBarTap = () => context.push('/history/${runningOrder.id}');
                   }
 
                   return Column(
@@ -1167,8 +1175,11 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           note: orderNotes,
                           onTap: _showNotesDialog,
                         ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                      BoingOnChange(
+                        trigger: count,
+                        power: 0.85,
+                        child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
                         child: Opacity(
                           opacity: (_readOnly && count > 0) ? 0.45 : 1.0,
                           child: PredictiveScale(
@@ -1181,7 +1192,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 child: GestureDetector(
                                   onTap: onBarTap,
                                   child: Container(
-                                    padding: const EdgeInsets.all(16),
+                                    key: CartFlight.cartBarKey,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 13),
                                     decoration: BoxDecoration(
                                       color: AppColors.terra,
                                       borderRadius:
@@ -1230,11 +1243,41 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           ),
                         ),
                       ),
+                      ),
                     ],
                   );
                 }),
               ],
-            ),
+              );
+              if (!wide) return mainColumn;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: mainColumn),
+                  Container(width: 1, color: context.palette.hairline),
+                  SizedBox(
+                    width: 356,
+                    child: _OrderSideRail(
+                      runningOrder: runningOrder,
+                      readOnly: _readOnly,
+                      reviewRoute: _reviewRoute,
+                      onViewBill: runningOrder != null
+                          ? () => context.push('/history/${runningOrder.id}')
+                          : null,
+                      onPrintSummary: (runningOrder != null &&
+                              runningOrder.itemCount > 0)
+                          ? () {
+                              ref.read(socketServiceProvider).emit(
+                                'print:summary',
+                                {'order_id': runningOrder.id},
+                              );
+                            }
+                          : null,
+                    ),
+                  ),
+                ],
+              );
+            }),
           ),
         ),
       ),
@@ -1243,6 +1286,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
   @override
   void dispose() {
+    _menuScroll.removeListener(_onMenuScroll);
+    _menuScroll.dispose();
+    _scrollCollapse.dispose();
     if (!widget.isRoom) {
       _socketSvc?.emit('table:presence:leave', {'table_id': widget.tableId});
     }
@@ -1266,7 +1312,9 @@ class _SectionChip extends StatelessWidget {
         to: selected ? 1.0 : 0.0,
         spring: RestroSprings.snappy,
         builder: (BuildContext _, double t, Widget? child) {
-          return Container(
+          return Transform.scale(
+            scale: 1 + 0.04 * t,
+            child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
               color: Color.lerp(
@@ -1281,6 +1329,7 @@ class _SectionChip extends StatelessWidget {
                       palette.ink10),
             ),
             child: child,
+            ),
           );
         },
         child: Center(
@@ -1354,7 +1403,7 @@ class _OrderNoteRow extends StatelessWidget {
   }
 }
 
-class _RunningOrderCard extends StatelessWidget {
+class _RunningOrderCard extends StatefulWidget {
   final ServerOrder order;
   final String tableId;
   final bool cartIsEmpty;
@@ -1370,117 +1419,161 @@ class _RunningOrderCard extends StatelessWidget {
   });
 
   @override
+  State<_RunningOrderCard> createState() => _RunningOrderCardState();
+}
+
+class _RunningOrderCardState extends State<_RunningOrderCard> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final order = widget.order;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
       child: AppCard(
         background: context.palette.surface.withValues(alpha: 0.92),
         border: Border.all(color: AppColors.terra200),
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.restaurant_menu,
-                    size: 16, color: AppColors.terra600),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Running order',
-                    style: AppTypography.bodyMd
-                        .copyWith(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                Text(
-                  formatRupeesCompact(order.total),
-                  style: AppTypography.title,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (order.items.isEmpty)
-              Text(
-                '${order.itemCount} ${order.itemCount == 1 ? "item" : "items"} already sent',
-                style: AppTypography.caption.copyWith(
-                  color: context.palette.ink70,
-                  fontWeight: FontWeight.w600,
-                ),
-              )
-            else ...[
-              for (final item in order.items.take(4))
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Row(
-                    children: [
-                      Text('${item.quantity}x',
-                          style: AppTypography.caption
-                              .copyWith(fontWeight: FontWeight.w700)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          item.itemName,
-                          style: AppTypography.caption,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Text(
-                        formatRupeesCompact(item.totalPrice),
-                        style: AppTypography.caption,
-                      ),
-                    ],
-                  ),
-                ),
-              if (order.items.length > 4) ...[
-                const SizedBox(height: 6),
-                Text(
-                  '+${order.items.length - 4} more items',
-                  style: AppTypography.micro,
-                ),
-              ],
-            ],
-
-            if (cartIsEmpty && !isWaiter) ...[
-              const SizedBox(height: 10),
-              const Divider(height: 1, thickness: 1, color: AppColors.terra200),
-              const SizedBox(height: 8),
-              Row(
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Row(
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onPrintSummary,
-                      icon: const Icon(Icons.print_outlined, size: 14),
-                      label: const Text('Print Summary'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.terra600,
-                        side: const BorderSide(color: AppColors.terra300),
-                        textStyle: AppTypography.caption
-                            .copyWith(fontWeight: FontWeight.w600),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                  ),
+                  const Icon(Icons.restaurant_menu,
+                      size: 16, color: AppColors.terra600),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => KotHistorySheet.show(context, tableId),
-                      icon: const Icon(Icons.history_outlined, size: 14),
-                      label: const Text('KOT History'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: context.palette.ink70,
-                        side: BorderSide(color: context.palette.ink30),
-                        textStyle: AppTypography.caption
-                            .copyWith(fontWeight: FontWeight.w600),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        visualDensity: VisualDensity.compact,
-                      ),
+                    child: Text(
+                      'Running · ${order.itemCount} '
+                      '${order.itemCount == 1 ? "item" : "items"} sent',
+                      style: AppTypography.bodyMd
+                          .copyWith(fontWeight: FontWeight.w700),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                  ),
+                  Text(
+                    formatRupeesCompact(order.total),
+                    style: AppTypography.title,
+                  ),
+                  const SizedBox(width: 2),
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: Icon(Icons.keyboard_arrow_down,
+                        size: 20, color: context.palette.ink50),
                   ),
                 ],
               ),
-            ],
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: !_expanded
+                  ? const SizedBox(width: double.infinity)
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 8),
+                        if (order.items.isEmpty)
+                          Text(
+                            '${order.itemCount} ${order.itemCount == 1 ? "item" : "items"} already sent',
+                            style: AppTypography.caption.copyWith(
+                              color: context.palette.ink70,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        else ...[
+                          for (final item in order.items.take(4))
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Row(
+                                children: [
+                                  Text('${item.quantity}x',
+                                      style: AppTypography.caption.copyWith(
+                                          fontWeight: FontWeight.w700)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      item.itemName,
+                                      style: AppTypography.caption,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Text(
+                                    formatRupeesCompact(item.totalPrice),
+                                    style: AppTypography.caption,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if (order.items.length > 4) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              '+${order.items.length - 4} more items',
+                              style: AppTypography.micro,
+                            ),
+                          ],
+                        ],
+                        if (widget.cartIsEmpty && !widget.isWaiter) ...[
+                          const SizedBox(height: 10),
+                          const Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: AppColors.terra200),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: widget.onPrintSummary,
+                                  icon: const Icon(Icons.print_outlined,
+                                      size: 14),
+                                  label: const Text('Print Summary'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.terra600,
+                                    side: const BorderSide(
+                                        color: AppColors.terra300),
+                                    textStyle: AppTypography.caption
+                                        .copyWith(fontWeight: FontWeight.w600),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 8),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => KotHistorySheet.show(
+                                      context, widget.tableId),
+                                  icon: const Icon(Icons.history_outlined,
+                                      size: 14),
+                                  label: const Text('KOT History'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: context.palette.ink70,
+                                    side: BorderSide(
+                                        color: context.palette.ink30),
+                                    textStyle: AppTypography.caption
+                                        .copyWith(fontWeight: FontWeight.w600),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 8),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+            ),
           ],
         ),
       ),
@@ -1558,6 +1651,7 @@ class _SwipeToAddWrapperState extends State<_SwipeToAddWrapper>
     if (widget.readOnly) return;
     if (_dragOffset >= _threshold) {
       widget.onSwipeConfirm?.call();
+      CartFlight.fly(context);
       widget.onAdd();
     }
 
@@ -1626,7 +1720,8 @@ class _ItemRow extends StatelessWidget {
       child: Opacity(
         opacity: unavailable ? 0.45 : 1,
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md, vertical: AppSpacing.sm),
           child: Row(
             children: [
               _VegMark(isVeg: item.isVeg),
@@ -1692,17 +1787,20 @@ class _ItemRow extends StatelessWidget {
               if (!unavailable)
                 if (needsSheet || simpleQty <= 0)
                   GestureDetector(
-                    onTap: onAdd,
+                    onTap: () {
+                      CartFlight.fly(context);
+                      onAdd();
+                    },
                     behavior: HitTestBehavior.opaque,
                     child: SizedBox(
-                      width: 48,
-                      height: 48,
+                      width: 44,
+                      height: 44,
                       child: Center(
                         child: Container(
                           width: 32,
                           height: 32,
-                          decoration: BoxDecoration(
-                            color: context.palette.ink,
+                          decoration: const BoxDecoration(
+                            color: AppColors.ink,
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(Icons.add,
@@ -1723,7 +1821,13 @@ class _ItemRow extends StatelessWidget {
                             style: AppTypography.bodyMd
                                 .copyWith(fontWeight: FontWeight.w700)),
                       ),
-                      _StepperButton(icon: Icons.add, onTap: onAdd),
+                      _StepperButton(
+                        icon: Icons.add,
+                        onTap: () {
+                          CartFlight.fly(context);
+                          onAdd();
+                        },
+                      ),
                     ],
                   ),
             ],
@@ -1875,6 +1979,289 @@ class _SkeletonRowState extends State<_SkeletonRow>
           ),
         );
       },
+    );
+  }
+}
+
+/// Collapses its child with spring physics when [visible] flips false
+/// (search open, cart in progress, wide-mode rail) AND tracks the menu
+/// list's [scroll] progress so the zone tucks away 1:1 as you scroll —
+/// the heroine-style "header collapse" from the design prototype.
+///
+/// Cheap by construction: only this small zone rebuilds on scroll; the
+/// menu list itself never re-lays out.
+class _ZoneReveal extends StatelessWidget {
+  final bool visible;
+  final ValueListenable<double>? scroll;
+  final Widget child;
+  const _ZoneReveal({
+    required this.visible,
+    this.scroll,
+    required this.child,
+  });
+
+  Widget _core(double hide, Widget child) {
+    if (hide >= 0.999) return const SizedBox(width: double.infinity);
+    return Align(
+      alignment: Alignment.topCenter,
+      heightFactor: (1 - hide).clamp(0.0, 1.0),
+      child: Opacity(
+        opacity: (1 - hide * 1.25).clamp(0.0, 1.0),
+        child: Transform.translate(
+          offset: Offset(0, -6 * hide),
+          child: IgnorePointer(ignoring: hide > 0.5, child: child),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: ClipRect(
+        child: SpringBuilder(
+          to: visible ? 0.0 : 1.0,
+          spring: RestroSprings.soft,
+          child: child,
+          builder: (context, sv, c) {
+            final double springHide = sv.clamp(0.0, 1.0);
+            final s = scroll;
+            if (s == null) return _core(springHide, c!);
+            return ValueListenableBuilder<double>(
+              valueListenable: s,
+              builder: (_, sp, __) => _core(
+                math.max(springHide, visible ? sp : 1.0),
+                c!,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// Wide-screen (tablet / desktop) right rail: running order at a glance,
+/// live cart lines, notes and the review CTA — so the bottom bar retires
+/// and the menu keeps full height. Pure presentation over existing
+/// providers; no new order logic.
+class _OrderSideRail extends ConsumerWidget {
+  final ServerOrder? runningOrder;
+  final bool readOnly;
+  final String reviewRoute;
+  final VoidCallback? onViewBill;
+  final VoidCallback? onPrintSummary;
+  const _OrderSideRail({
+    required this.runningOrder,
+    required this.readOnly,
+    required this.reviewRoute,
+    required this.onViewBill,
+    required this.onPrintSummary,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final palette = context.palette;
+    final cart = ref.watch(cartProvider);
+    final notes = ref.watch(orderNotesProvider);
+    final double cartTotal =
+        cart.fold(0.0, (double s, l) => s + l.lineTotal);
+    final running = runningOrder;
+    final bool hasRunning = running != null && running.itemCount > 0;
+
+    return Container(
+      color: palette.paper,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('This order', style: AppTypography.headline),
+          const SizedBox(height: 10),
+          if (hasRunning) ...[
+            AppCard(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 10),
+              border: Border.all(color: AppColors.terra200),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.receipt_long,
+                          size: 16, color: AppColors.terraDeep),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Running · ${running.itemCount} '
+                          '${running.itemCount == 1 ? "item" : "items"} sent',
+                          style: AppTypography.caption
+                              .copyWith(fontWeight: FontWeight.w700),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        formatRupees(running.total),
+                        style: AppTypography.title
+                            .copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ],
+                  ),
+                  if (onPrintSummary != null) ...[
+                    const SizedBox(height: 8),
+                    Pressable(
+                      onTap: onPrintSummary,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.print_outlined,
+                              size: 14, color: palette.ink70),
+                          const SizedBox(width: 5),
+                          Text('Print summary',
+                              style: AppTypography.caption
+                                  .copyWith(color: palette.ink70)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          Expanded(
+            child: cart.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.shopping_basket_outlined,
+                            size: 40, color: palette.ink30),
+                        const SizedBox(height: 10),
+                        Text('Cart is empty',
+                            style: AppTypography.title
+                                .copyWith(color: palette.ink70)),
+                        const SizedBox(height: 4),
+                        Text('Tap items on the menu to add them',
+                            textAlign: TextAlign.center,
+                            style: AppTypography.caption
+                                .copyWith(color: palette.ink50)),
+                      ],
+                    ),
+                  )
+                : AppCard(
+                    padding: EdgeInsets.zero,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      itemCount: cart.length,
+                      separatorBuilder: (_, __) => Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          color: palette.ink05),
+                      itemBuilder: (_, i) {
+                        final l = cart[i];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 9),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${l.qty}×',
+                                  style: AppTypography.caption.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.terraDeep)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  l.item.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTypography.caption.copyWith(
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(formatRupees(l.lineTotal),
+                                  style: AppTypography.caption.copyWith(
+                                      fontWeight: FontWeight.w700)),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+          ),
+          if (notes.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.sticky_note_2_outlined,
+                    size: 14, color: palette.ink50),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(notes,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.caption
+                          .copyWith(color: palette.ink70)),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          Container(
+            key: CartFlight.railKey,
+            child: BoingOnChange(
+              trigger: cart.length,
+              power: 0.8,
+              child: Row(
+                children: [
+                  Text('Cart total',
+                      style: AppTypography.caption
+                          .copyWith(color: palette.ink50)),
+                  const Spacer(),
+                  KineticRupeeCounter(
+                      amount: cartTotal, fontSize: 18, color: palette.ink),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Pressable(
+            onTap: (readOnly || (cart.isEmpty && !hasRunning))
+                ? null
+                : cart.isEmpty
+                    ? onViewBill
+                    : () => context.push(reviewRoute),
+            child: Opacity(
+              opacity:
+                  (readOnly || (cart.isEmpty && !hasRunning)) ? 0.45 : 1,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: const BoxDecoration(
+                  color: AppColors.terra,
+                  borderRadius: BorderRadius.all(AppRadii.md),
+                  boxShadow: AppShadows.terraGlow,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      cart.isEmpty ? 'View bill' : 'Review & send',
+                      style: AppTypography.bodyMd.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.arrow_forward,
+                        color: Colors.white, size: 18),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

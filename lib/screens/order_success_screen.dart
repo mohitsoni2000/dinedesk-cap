@@ -78,7 +78,11 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
+    return DragToDismiss.gesture(
+      onDismiss: () {
+        if (mounted) context.go('/tables');
+      },
+      child: ColoredBox(
       color: context.palette.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -224,6 +228,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

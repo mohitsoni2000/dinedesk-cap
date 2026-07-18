@@ -619,3 +619,78 @@ class AppChipPadding {
 
   static const EdgeInsets sectionLabel = EdgeInsets.symmetric(horizontal: 14, vertical: 8);
 }
+
+/// ============================================================
+/// ADAPTIVE DESIGN — single source of truth for every screen.
+/// Phone · tablet · desktop follow the same tokens, so layouts
+/// scale without per-screen magic numbers.
+/// ============================================================
+class AppBreakpoints {
+  AppBreakpoints._();
+
+  /// Small phones and default handsets.
+  static const double compact = 600;
+
+  /// Large phones / small tablets (portrait).
+  static const double medium = 920;
+
+  /// Tablets landscape / desktop — unlocks two-pane layouts.
+  static const double expanded = 920;
+
+  /// Wide desktop — content is clamped so lines stay readable.
+  static const double large = 1280;
+}
+
+enum AppSizeClass { compact, medium, expanded }
+
+extension AdaptiveContext on BuildContext {
+  double get _w => MediaQuery.sizeOf(this).width;
+
+  AppSizeClass get sizeClass => _w >= AppBreakpoints.expanded
+      ? AppSizeClass.expanded
+      : _w >= AppBreakpoints.compact
+          ? AppSizeClass.medium
+          : AppSizeClass.compact;
+
+  bool get isCompact => sizeClass == AppSizeClass.compact;
+  bool get isMediumUp => _w >= AppBreakpoints.compact;
+
+  /// Two-pane layouts (order builder rail, side navigation) switch on here.
+  bool get isExpanded => _w >= AppBreakpoints.expanded;
+
+  /// Pick a value per size class: `context.adaptive(phone: 16, tablet: 24)`.
+  T adaptive<T>({required T phone, T? tablet, T? desktop}) =>
+      switch (sizeClass) {
+        AppSizeClass.compact => phone,
+        AppSizeClass.medium => tablet ?? phone,
+        AppSizeClass.expanded => desktop ?? tablet ?? phone,
+      };
+
+  /// Readable clamp for top-level content on very wide displays.
+  double get contentMaxWidth =>
+      _w >= AppBreakpoints.large ? 1180 : double.infinity;
+
+  /// Grid tile sizing for the tables floor — wider screens get roomier
+  /// tiles while the max-extent delegate keeps column count fluid.
+  double get tableTileExtent => adaptive(phone: 200, tablet: 212, desktop: 224);
+
+  /// Honors OS "reduce motion" — heavy ambient effects switch off.
+  bool get reduceMotion => MediaQuery.of(this).disableAnimations;
+}
+
+/// Performance guardrails for low-end devices. Ambient effects consult
+/// this before painting; interactions stay spring-driven everywhere.
+class AppPerf {
+  AppPerf._();
+
+  /// True when the OS asks for reduced motion (also our low-end signal:
+  /// budget devices commonly ship with animations dialed down).
+  static bool reduceEffects(BuildContext context) =>
+      MediaQuery.of(context).disableAnimations;
+
+  /// List prefetch window — enough to hide jank, small enough for RAM.
+  static const double listCacheExtent = 500;
+
+  /// Grid prefetch window for the tables floor.
+  static const double gridCacheExtent = 400;
+}

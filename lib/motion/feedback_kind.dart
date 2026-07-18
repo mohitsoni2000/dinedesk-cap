@@ -70,12 +70,25 @@ extension FeedbackHaptic on FeedbackKind {
     }
   }
 
+  /// Sound layer for multi-sensory feedback. Kept deliberately sparse:
+  /// primary actions get audio, ambient presses stay haptic-only so the
+  /// dining room never hears a symphony of ticks.
   String? get audioAsset {
     switch (this) {
+      case FeedbackMedium():
+        return 'audio/ui_tap.wav'; // opening a table, key actions
+      case FeedbackLight():
+        return 'audio/ui_pop.wav'; // item added to cart
+      case FeedbackSuccess():
+        return 'audio/ui_success.wav'; // KOT sent / saved
+      case FeedbackHeavy():
+        return 'audio/ui_send.wav'; // hold-to-send confirm
+      case FeedbackError():
+        return 'audio/ui_error.wav';
       case FeedbackReadyChime():
-        return 'audio/success_chime.mp3';
+        return 'audio/success_chime.wav';
       default:
-        return null;
+        return null; // Selection / DragTick / Warning: haptic only
     }
   }
 }

@@ -40,8 +40,8 @@ class ServerTable {
   final int orderItemCount;
   final int oldestKotMinutes;
   final int kotCount;
-  final String? operatorId;
-  final String? waiterName;
+  final List<String> operatorIds;
+  final List<String> operatorNames;
 
   const ServerTable({
     required this.id,
@@ -57,11 +57,15 @@ class ServerTable {
     this.orderItemCount = 0,
     this.oldestKotMinutes = 0,
     this.kotCount = 0,
-    this.operatorId,
-    this.waiterName,
+    this.operatorIds = const [],
+    this.operatorNames = const [],
   });
 
   factory ServerTable.fromMap(Map<String, dynamic> m) {
+    final operators = (m['operators'] as List?)
+            ?.cast<Map<String, dynamic>>()
+            .toList() ??
+        const <Map<String, dynamic>>[];
     return ServerTable(
       id: _toStr(m['id']),
       name: _toStr(m['name'], _toStr(m['id'])),
@@ -76,8 +80,10 @@ class ServerTable {
       orderItemCount: _toInt(m['order_item_count']),
       oldestKotMinutes: _toInt(m['oldest_kot_minutes']),
       kotCount: _toInt(m['kot_count']),
-      operatorId: m['operator_id']?.toString(),
-      waiterName: m['waiter_name']?.toString(),
+      operatorIds:
+          operators.map((o) => _toStr(o['operator_id'])).toList(),
+      operatorNames:
+          operators.map((o) => _toStr(o['operator_name'])).toList(),
     );
   }
 }

@@ -19,7 +19,8 @@ class RestaurantTable {
   final int seats;
   final String floor;
   final TableState state;
-  final String? waiterName;
+  final List<String> joinedOperatorIds;
+  final List<String> joinedOperatorNames;
   final int? coverCount;
   final double? bill;
   final String? note;
@@ -35,7 +36,8 @@ class RestaurantTable {
     required this.seats,
     required this.floor,
     required this.state,
-    this.waiterName,
+    this.joinedOperatorIds = const [],
+    this.joinedOperatorNames = const [],
     this.coverCount,
     this.bill,
     this.note,
@@ -53,7 +55,8 @@ class RestaurantTable {
     int? seats,
     String? floor,
     TableState? state,
-    Object? waiterName = _absent,
+    List<String>? joinedOperatorIds,
+    List<String>? joinedOperatorNames,
     Object? coverCount = _absent,
     Object? bill = _absent,
     Object? note = _absent,
@@ -70,8 +73,8 @@ class RestaurantTable {
         seats: seats ?? this.seats,
         floor: floor ?? this.floor,
         state: state ?? this.state,
-        waiterName:
-            waiterName == _absent ? this.waiterName : waiterName as String?,
+        joinedOperatorIds: joinedOperatorIds ?? this.joinedOperatorIds,
+        joinedOperatorNames: joinedOperatorNames ?? this.joinedOperatorNames,
         coverCount:
             coverCount == _absent ? this.coverCount : coverCount as int?,
         bill: bill == _absent ? this.bill : bill as double?,

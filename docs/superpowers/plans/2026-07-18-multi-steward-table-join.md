@@ -1156,10 +1156,12 @@ class ServerTable {
   });
 
   factory ServerTable.fromMap(Map<String, dynamic> m) {
-    final operators = (m['operators'] as List?)
-            ?.cast<Map<String, dynamic>>()
-            .toList() ??
-        const <Map<String, dynamic>>[];
+    final operators = (m['operators'] is List)
+        ? (m['operators'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
+        : const <Map<String, dynamic>>[];
     return ServerTable(
       id: _toStr(m['id']),
       name: _toStr(m['name'], _toStr(m['id'])),
@@ -1723,3 +1725,7 @@ git commit -m "feat: add Join to help / Leave this table actions to order builde
 ## Post-implementation correction (found during Task 7 code review)
 
 Task 7's original handler code above (both `TABLE_JOIN` and `TABLE_LEAVE`) included `if (!requireRoleAllowed(session, socket, SocketEvent.TABLE_JOIN/TABLE_LEAVE, ack, [Role.WAITER])) return;`, copied verbatim from the `TABLE_SHIFT`/`TABLE_MERGE` template. This was a bug in the plan itself: `requireRoleAllowed`'s role-list parameter is a **deny-list** (it rejects sessions whose role IS in the list), and every other `[Role.WAITER]` call site in the gateway is a supervisor-only action correctly excluding plain waitstaff. But `table:join`/`table:leave` are self-serve actions meant to be used BY Role.WAITER sessions per this plan's own design decisions — so this check would have rejected the exact users the feature is for. Code review caught this before it shipped; the fix (applied in commit `db502d7`, and reflected in the handler code above) is to drop the `requireRoleAllowed` check entirely for these two events, matching the existing `TABLE_PRESENCE_JOIN`/`TABLE_PRESENCE_LEAVE` handlers' precedent (`requireVerified` + `permissions.isTableAllowed` only, no role gate).
+
+## Post-implementation correction (found during Task 8 code review)
+
+Task 8's original `ServerTable.fromMap` code above parsed `operators` via `(m['operators'] as List?)?.cast<Map<String, dynamic>>()`, which throws a `TypeError` if `operators` is present but not a list, or if any entry in the list isn't a `Map` — inconsistent with this same file's established defensive-parsing convention (`ServerOrder.fromMap`'s `items` field and `BroadcastEnvelope.tablesList`/`roomsList` all use `whereType<Map>().map(Map<String,dynamic>.from)` to silently skip malformed entries instead of throwing). Since `fromMap` runs per-table inside a loop over a socket broadcast, one malformed `operators` entry on a single table could throw and take down the whole real-time table-list refresh. Code review caught this before it shipped; the fix (applied in commit `581300d`, and reflected in the code above) matches the file's existing convention.

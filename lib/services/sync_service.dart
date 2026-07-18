@@ -564,6 +564,18 @@ class SyncService {
     }
   }
 
+  void applyTableAck(Map<String, dynamic> response) {
+    final raw = response['table'];
+    if (raw is! Map) return;
+    final st = ServerTable.fromMap(Map<String, dynamic>.from(raw));
+    final updated = _serverTableToLocal(st);
+    final tables = [..._ref.read(tablesProvider)];
+    final idx = tables.indexWhere((t) => t.serverId == updated.serverId);
+    if (idx == -1) return;
+    tables[idx] = updated;
+    _ref.read(tablesProvider.notifier).state = tables;
+  }
+
   /// Public entry point for a user-triggered resync (e.g. the Tables screen
   /// refresh button). Internal auto-resync triggers call [_requestResync]
   /// directly and don't need the returned future.

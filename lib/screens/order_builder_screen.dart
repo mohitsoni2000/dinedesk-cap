@@ -472,10 +472,17 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
           table.coverCount != null ? ' · ${table.coverCount} guests' : '';
       switch (table.state) {
         case TableState.mine:
-          subLine = 'Serving · ${(opName ?? 'You').split(' ').first} (you)$guests';
+          final myFirstName = (opName ?? 'You').split(' ').first;
+          final otherNames = table.joinedOperatorNames
+              .where((n) => n.split(' ').first != myFirstName)
+              .toList();
+          final names = [myFirstName, ...otherNames];
+          subLine = 'Serving · ${names.join(', ')}$guests';
         case TableState.other:
-          subLine =
-              'Serving · ${table.waiterName ?? 'another waiter'}$guests';
+          final names = table.joinedOperatorNames.isNotEmpty
+              ? table.joinedOperatorNames.join(', ')
+              : 'another waiter';
+          subLine = 'Serving · $names$guests';
         case TableState.reserved:
           subLine = table.note ?? 'Reserved';
         default:
@@ -574,6 +581,82 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
+                            if (table != null &&
+                                table.state == TableState.other &&
+                                !widget.isRoom)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: GestureDetector(
+                                  onTap: () async {
+                                    final response = await ref
+                                        .read(socketServiceProvider)
+                                        .emitAck('table:join',
+                                            {'table_id': table.serverId});
+                                    if (response['kind'] == 'error') {
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context)
+                                        ..clearSnackBars()
+                                        ..showSnackBar(SnackBar(
+                                          content: Text(response['message']
+                                                  ?.toString() ??
+                                              'Could not join table'),
+                                        ));
+                                      return;
+                                    }
+                                    ref
+                                        .read(syncServiceProvider)
+                                        .applyTableAck(response);
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.terra
+                                          .withValues(alpha: 0.12),
+                                      borderRadius: const BorderRadius.all(
+                                          AppRadii.pill),
+                                    ),
+                                    child: Text('Join to help',
+                                        style: AppTypography.caption.copyWith(
+                                            color: AppColors.terra,
+                                            fontWeight: FontWeight.w700)),
+                                  ),
+                                ),
+                              ),
+                            if (table != null &&
+                                table.state == TableState.mine &&
+                                table.joinedOperatorIds.length > 1 &&
+                                !widget.isRoom)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: GestureDetector(
+                                  onTap: () async {
+                                    final response = await ref
+                                        .read(socketServiceProvider)
+                                        .emitAck('table:leave',
+                                            {'table_id': table.serverId});
+                                    if (response['kind'] == 'error') {
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context)
+                                        ..clearSnackBars()
+                                        ..showSnackBar(SnackBar(
+                                          content: Text(response['message']
+                                                  ?.toString() ??
+                                              'Could not leave table'),
+                                        ));
+                                      return;
+                                    }
+                                    ref
+                                        .read(syncServiceProvider)
+                                        .applyTableAck(response);
+                                  },
+                                  child: Text('Leave this table',
+                                      style: AppTypography.caption.copyWith(
+                                          color: context.palette.ink50,
+                                          decoration:
+                                              TextDecoration.underline)),
+                                ),
+                              ),
                           ],
                         ),
                       ),

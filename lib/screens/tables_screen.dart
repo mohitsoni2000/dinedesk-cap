@@ -263,7 +263,8 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
       if (!isSearching && t.floor != activeFloor) return false;
       if (!isSearching) return true;
       return t.id.toLowerCase().contains(query) ||
-          (t.waiterName?.toLowerCase().contains(query) ?? false);
+          t.joinedOperatorNames
+              .any((n) => n.toLowerCase().contains(query));
     }).toList();
 
     final floorCounts = {
@@ -907,13 +908,16 @@ Color _pillFg(BuildContext context, TableState state) {
 Color _ringColor(BuildContext context, TableState state) =>
     state == TableState.mine ? AppColors.terra : _pillFg(context, state);
 
-String _pillLabel(TableState state, String? waiterName) {
+String _pillLabel(TableState state, List<String> operatorNames) {
   switch (state) {
     case TableState.mine:
       return 'MINE';
     case TableState.other:
-      final first = waiterName?.trim().split(' ').first;
-      return (first == null || first.isEmpty) ? 'OTHER' : first.toUpperCase();
+      final first =
+          operatorNames.isNotEmpty ? operatorNames.first.trim() : null;
+      return (first == null || first.isEmpty)
+          ? 'OTHER'
+          : first.split(' ').first.toUpperCase();
     case TableState.dirty:
       return 'DIRTY';
     case TableState.reserved:
@@ -951,8 +955,8 @@ Widget _applySpotlight(
 
 class _StatePill extends StatelessWidget {
   final TableState state;
-  final String? waiterName;
-  const _StatePill({required this.state, this.waiterName});
+  final List<String> operatorNames;
+  const _StatePill({required this.state, this.operatorNames = const []});
 
   @override
   Widget build(BuildContext context) {
@@ -973,7 +977,7 @@ class _StatePill extends StatelessWidget {
             decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
           ),
           const SizedBox(width: 5),
-          Text(_pillLabel(state, waiterName),
+          Text(_pillLabel(state, operatorNames),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppTypography.pill.copyWith(color: fg)),
@@ -1315,7 +1319,9 @@ class _TableCard extends ConsumerWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    _StatePill(state: table.state, waiterName: table.waiterName),
+                    _StatePill(
+                        state: table.state,
+                        operatorNames: table.joinedOperatorNames),
                     if (table.activeBillCount > 0) ...[
                       const SizedBox(width: 6),
                       const _BillTag(),

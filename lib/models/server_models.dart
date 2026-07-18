@@ -62,10 +62,12 @@ class ServerTable {
   });
 
   factory ServerTable.fromMap(Map<String, dynamic> m) {
-    final operators = (m['operators'] as List?)
-            ?.cast<Map<String, dynamic>>()
-            .toList() ??
-        const <Map<String, dynamic>>[];
+    final operators = (m['operators'] is List)
+        ? (m['operators'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
+        : const <Map<String, dynamic>>[];
     return ServerTable(
       id: _toStr(m['id']),
       name: _toStr(m['name'], _toStr(m['id'])),

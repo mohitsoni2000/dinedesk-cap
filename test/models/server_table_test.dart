@@ -33,4 +33,37 @@ void main() {
     expect(table.operatorIds, <String>[]);
     expect(table.operatorNames, <String>[]);
   });
+
+  test('ServerTable.fromMap tolerates a non-list operators value without throwing', () {
+    final table = ServerTable.fromMap({
+      'id': 't1',
+      'name': 'T1',
+      'capacity': 4,
+      'status': 'free',
+      'floor_id': 'f1',
+      'order_total': 0,
+      'operators': {},
+    });
+
+    expect(table.operatorIds, <String>[]);
+    expect(table.operatorNames, <String>[]);
+  });
+
+  test('ServerTable.fromMap skips malformed entries in the operators list', () {
+    final table = ServerTable.fromMap({
+      'id': 't1',
+      'name': 'T1',
+      'capacity': 4,
+      'status': 'occupied',
+      'floor_id': 'f1',
+      'order_total': 0,
+      'operators': [
+        'garbage',
+        {'operator_id': 'op1', 'operator_name': 'Priya'},
+      ],
+    });
+
+    expect(table.operatorIds, ['op1']);
+    expect(table.operatorNames, ['Priya']);
+  });
 }

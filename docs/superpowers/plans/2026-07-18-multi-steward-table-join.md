@@ -973,7 +973,6 @@ Add the two new handlers immediately after the `TABLE_MERGE` handler's closing `
       }
       const session = sessionManager.getSession(operatorId);
       if (!requireVerified(session, socket, SocketEvent.TABLE_JOIN, ack)) return;
-      if (!requireRoleAllowed(session, socket, SocketEvent.TABLE_JOIN, ack, [Role.WAITER])) return;
 
       const { table_id } = parsed.data;
       if (!permissions.isTableAllowed(operatorId, table_id)) {
@@ -1008,7 +1007,6 @@ Add the two new handlers immediately after the `TABLE_MERGE` handler's closing `
       }
       const session = sessionManager.getSession(operatorId);
       if (!requireVerified(session, socket, SocketEvent.TABLE_LEAVE, ack)) return;
-      if (!requireRoleAllowed(session, socket, SocketEvent.TABLE_LEAVE, ack, [Role.WAITER])) return;
 
       const { table_id } = parsed.data;
       if (!permissions.isTableAllowed(operatorId, table_id)) {
@@ -1721,3 +1719,7 @@ git commit -m "feat: add Join to help / Leave this table actions to order builde
 - **Spec coverage:** Section A (data model) → Tasks 1-3, 8-9. Section B (socket contract) → Tasks 6-7. Section C (UI/UX) → Task 11. Section D edge cases: table-freed → Task 1's trigger; shift → Task 4; merge → Task 5; last-steward-leaves → covered by Task 2's `leave()` test (`nulls assigned_waiter_id when the last operator leaves`) plus Task 10's `mapTableStatus` test (`mine when ... operators list is empty`); same-steward-two-devices → Task 2's idempotent-join test; durability → inherent to using a real table, no separate task needed. Section E rollout → the test at the end of each task plus Task 11 Step 5's manual multi-device QA.
 - **Known gap carried over from the spec, not resolved by this plan:** whether any backend action (void, discount, close bill) is currently gated to `assigned_waiter_id` specifically rather than `Role.WAITER` + floor access. This plan does not add that check anywhere because it wasn't found during investigation — if a targeted grep for `assigned_waiter_id` in the permissions/discount/bill services turns up such a gate before or during implementation, add a task to switch it to a `table_operators` membership check.
 - **`renameTable`/table-split is intentionally untouched** — out of scope per the spec, which only calls out shift and merge.
+
+## Post-implementation correction (found during Task 7 code review)
+
+Task 7's original handler code above (both `TABLE_JOIN` and `TABLE_LEAVE`) included `if (!requireRoleAllowed(session, socket, SocketEvent.TABLE_JOIN/TABLE_LEAVE, ack, [Role.WAITER])) return;`, copied verbatim from the `TABLE_SHIFT`/`TABLE_MERGE` template. This was a bug in the plan itself: `requireRoleAllowed`'s role-list parameter is a **deny-list** (it rejects sessions whose role IS in the list), and every other `[Role.WAITER]` call site in the gateway is a supervisor-only action correctly excluding plain waitstaff. But `table:join`/`table:leave` are self-serve actions meant to be used BY Role.WAITER sessions per this plan's own design decisions — so this check would have rejected the exact users the feature is for. Code review caught this before it shipped; the fix (applied in commit `db502d7`, and reflected in the handler code above) is to drop the `requireRoleAllowed` check entirely for these two events, matching the existing `TABLE_PRESENCE_JOIN`/`TABLE_PRESENCE_LEAVE` handlers' precedent (`requireVerified` + `permissions.isTableAllowed` only, no role gate).

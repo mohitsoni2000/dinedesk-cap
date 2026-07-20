@@ -41,15 +41,13 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   bool _paymentCollected = false;
   bool _generatingBill = false;
 
-  bool _hasLinkedCustomer(HistoryOrder order) {
-    final activeOrders = ref.read(activeOrdersProvider);
-    for (final raw in activeOrders) {
-      if (raw['id']?.toString() == order.orderId) {
-        final customerId = raw['customer_id']?.toString();
-        return customerId != null && customerId.isNotEmpty;
-      }
-    }
-    return false;
+  bool _hasLinkedCustomer(HistoryOrder order) =>
+      order.customerId != null && order.customerId!.isNotEmpty;
+
+  Future<void> _linkCustomer(HistoryOrder order) async {
+    await ref
+        .read(customerLinkServiceProvider)
+        .pickAndLinkCustomer(context, orderId: order.orderId);
   }
 
   static String _kitchenLabel(String key) => switch (key) {
@@ -172,19 +170,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       ref.read(historyProvider.notifier).state = [
         for (final o in list)
           if (o.id == order.id)
-            HistoryOrder(
-              id: o.id,
-              orderId: o.orderId,
-              tableId: o.tableId,
-              time: o.time,
-              date: o.date,
-              itemCount: o.itemCount,
-              total: o.total,
-              status: OrderStatus.cancelled,
-              lines: o.lines,
-              notes: o.notes,
-              createdBy: o.createdBy,
-            )
+            o.copyWith(status: OrderStatus.cancelled)
           else
             o,
       ];
@@ -534,6 +520,43 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     ),
                     const SizedBox(height: 16),
 
+                    if (flags.customers) ...[
+                      AppCard(
+                        onTap: () => _linkCustomer(order),
+                        child: Row(
+                          children: [
+                            Icon(
+                              _hasLinkedCustomer(order)
+                                  ? Icons.person
+                                  : Icons.person_add_outlined,
+                              color: _hasLinkedCustomer(order)
+                                  ? AppColors.terra600
+                                  : context.palette.ink70,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _hasLinkedCustomer(order)
+                                  ? Text(
+                                      order.customerName
+                                                  ?.isNotEmpty ==
+                                              true
+                                          ? order.customerName!
+                                          : 'Customer',
+                                      style: AppTypography.bodyMd.copyWith(
+                                          fontWeight: FontWeight.w600),
+                                    )
+                                  : const Text('Link Customer',
+                                      style: AppTypography.bodyMd),
+                            ),
+                            Icon(Icons.chevron_right,
+                                color: context.palette.ink30, size: 18),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
                     if (_billGenerated) ...[
                       AppCard(
                         background: AppColors.success.withValues(alpha: 0.06),
@@ -813,12 +836,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     ),
                     ],
 
-                    if (isSent &&
-                        !_paymentCollected &&
-                        !ref.watch(isWaiterProvider)) ...[
+                    if (isSent && !_paymentCollected) ...[
 
                       if (!_billGenerated &&
-                          (flags.discounts || flags.offers)) ...[
+                          (flags.discounts || flags.offers) &&
+                          !ref.watch(isWaiterProvider)) ...[
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -859,39 +881,48 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                           ],
                         ),
                       ],
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-
-                          Expanded(
-                            child: _billGenerated
-                                ? LiquidPrimaryButton(
-                                    label: 'Collect Payment',
-                                    fullWidth: true,
-                                    leadingIcon: Icons.payment_outlined,
-                                    onPressed: _openPayment,
-                                  )
-                                : LiquidPrimaryButton(
-                                    label: _generatingBill
-                                        ? 'Generating...'
-                                        : 'Generate Bill',
-                                    fullWidth: true,
-                                    leadingIcon: _generatingBill
-                                        ? Icons.hourglass_top
-                                        : Icons.receipt_long_outlined,
-                                    onPressed: _generatingBill
-                                        ? null
-                                        : () => _generateBill(order),
-                                  ),
+                      if (_billGenerated) ...[
+                        if (!ref.watch(isWaiterProvider)) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: LiquidPrimaryButton(
+                                  label: 'Collect Payment',
+                                  fullWidth: true,
+                                  leadingIcon: Icons.payment_outlined,
+                                  onPressed: _openPayment,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
-                      ),
+                      ] else ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: LiquidPrimaryButton(
+                                label: _generatingBill
+                                    ? 'Generating...'
+                                    : 'Generate Bill',
+                                fullWidth: true,
+                                leadingIcon: _generatingBill
+                                    ? Icons.hourglass_top
+                                    : Icons.receipt_long_outlined,
+                                onPressed: _generatingBill
+                                    ? null
+                                    : () => _generateBill(order),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
 
                     if (_billGenerated &&
                         flags.billPrinting &&
-                        (_bills.isNotEmpty || _billId != null) &&
-                        !ref.watch(isWaiterProvider)) ...[
+                        (_bills.isNotEmpty || _billId != null)) ...[
                       const SizedBox(height: 8),
                       LiquidSecondaryButton(
                         label: _bills.length > 1

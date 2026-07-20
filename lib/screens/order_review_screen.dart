@@ -12,7 +12,6 @@ import '../services/pin_guard.dart';
 import '../services/platform_surfaces.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
-import '../widgets/customer_sheet.dart';
 import '../widgets/quick_action_tile.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/order_submitting_overlay.dart';
@@ -60,6 +59,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     super.initState();
     _notes.text = ref.read(orderNotesProvider);
     _notesNotifier = ref.read(orderNotesProvider.notifier);
+    _scheduleTotalsPreview(ref.read(cartProvider));
   }
 
   bool _submitted = false;
@@ -68,6 +68,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
   bool _running = false;
 
+  // Server-authoritative totals (GST/service-charge/discount) for the current
+  // cart — never derived locally. Debounced on cart changes; keeps the last
+  // good value while a fresh preview is in flight so the total doesn't blank
+  // out between keystrokes/taps.
+  Map<String, dynamic>? _serverTotals;
+  Timer? _totalsDebounce;
+
   @override
   void dispose() {
 
@@ -75,7 +82,46 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       _notesNotifier?.state = '';
     }
     _notes.dispose();
+    _totalsDebounce?.cancel();
     super.dispose();
+  }
+
+  void _scheduleTotalsPreview(List<CartLine> cart) {
+    _totalsDebounce?.cancel();
+    if (cart.isEmpty) {
+      // Guards against calling setState() synchronously from initState()'s
+      // first call (cart is usually empty then); nothing to clear if it's
+      // already null.
+      if (_serverTotals != null) {
+        setState(() => _serverTotals = null);
+      }
+      return;
+    }
+    _totalsDebounce = Timer(const Duration(milliseconds: 200), () {
+      _fetchTotalsPreview(cart);
+    });
+  }
+
+  Future<void> _fetchTotalsPreview(List<CartLine> cart) async {
+    final socketService = ref.read(socketServiceProvider);
+    final items = cart
+        .map((l) => <String, dynamic>{
+              'item_id': l.item.id,
+              'item_type': l.item.kitchenSection,
+              'total_price': l.lineTotal,
+            })
+        .toList();
+    final response = await socketService.emitAck(
+      'order:preview-totals',
+      <String, dynamic>{'items': items},
+    );
+    if (!mounted || response['kind'] == 'error') return;
+    final totals = response['totals'];
+    if (totals is Map) {
+      setState(() {
+        _serverTotals = Map<String, dynamic>.from(totals);
+      });
+    }
   }
 
   String _kitchenLabel(String key) => switch (key) {
@@ -726,7 +772,11 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   @override
   Widget build(BuildContext context) {
     final cart = ref.watch(cartProvider);
+    ref.listen<List<CartLine>>(cartProvider, (previous, next) {
+      _scheduleTotalsPreview(next);
+    });
     final total = cart.fold(0.0, (s, l) => s + l.lineTotal);
+    final serverTotal = (_serverTotals?['totalAmount'] as num?)?.toDouble();
     final byKitchen = <String, List<CartLine>>{};
     for (final l in cart) {
       byKitchen.putIfAbsent(l.item.kitchenSection, () => []).add(l);
@@ -904,9 +954,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
                             AppCard(
                               onTap: () async {
-                                final result = await CustomerSheet.show(
-                                  context,
-                                );
+                                final result = await ref
+                                    .read(customerLinkServiceProvider)
+                                    .pickAndLinkCustomer(context);
                                 if (result != null && mounted) {
                                   setState(() => _customer = result);
                                 }
@@ -1193,8 +1243,10 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                       ),
                                     ],
                                     const SizedBox(height: 4),
-                                    const Text(
-                                      'Taxes added on bill (admin desktop)',
+                                    Text(
+                                      serverTotal != null
+                                          ? 'Includes GST & service charge'
+                                          : 'Calculating final total…',
                                       style: AppTypography.caption,
                                       textAlign: TextAlign.right,
                                     ),
@@ -1217,7 +1269,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                           child: Material(
                                             color: Colors.transparent,
                                             child: KineticRupeeCounter(
-                                              amount: total,
+                                              amount: serverTotal ?? total,
                                               fontSize: 24,
                                               color: context.palette.ink,
                                             ),

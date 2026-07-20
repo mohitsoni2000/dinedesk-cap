@@ -1011,6 +1011,36 @@ class _BillTag extends StatelessWidget {
   }
 }
 
+class _CustomerTag extends StatelessWidget {
+  final String name;
+  const _CustomerTag({required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      constraints: const BoxConstraints(maxWidth: 90),
+      decoration: BoxDecoration(
+        color: context.palette.terraSoft,
+        borderRadius: const BorderRadius.all(AppRadii.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.person, size: 10, color: AppColors.terraInk),
+          const SizedBox(width: 3),
+          Flexible(
+            child: Text(name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.pill.copyWith(color: AppColors.terraInk)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FloorTag extends StatelessWidget {
   final String floor;
   const _FloorTag({required this.floor});
@@ -1232,6 +1262,12 @@ class _TableCard extends ConsumerWidget {
       (list) => list.any((t) => t.tableId == table.serverId),
     ));
     final isMine = table.state == TableState.mine;
+    final customerName = ref.watch(flagsProvider.select((f) => f.customers))
+        ? ref.watch(historyProvider.select((orders) => orders
+            .where((o) => o.orderId == table.activeOrderId)
+            .firstOrNull
+            ?.customerName))
+        : null;
 
     final card = RepaintBoundary(
       child: JellyTap(
@@ -1325,6 +1361,10 @@ class _TableCard extends ConsumerWidget {
                     if (table.activeBillCount > 0) ...[
                       const SizedBox(width: 6),
                       const _BillTag(),
+                    ],
+                    if (customerName != null && customerName.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      _CustomerTag(name: customerName),
                     ],
                     if (isLinked) ...[
                       const SizedBox(width: 6),

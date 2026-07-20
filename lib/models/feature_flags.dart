@@ -29,7 +29,6 @@ class FeatureFlags {
   final bool operatorPinBillReprint;
   final bool autoKot;
   final int autoKotThreshold;
-  final bool predictiveMotion;
   final bool itemVariations;
   final bool waiterAssignment;
   final bool manualEntry;
@@ -75,10 +74,10 @@ class FeatureFlags {
   final bool billingButton;
 
   const FeatureFlags({
-    this.discounts = true,
+    this.discounts = false,
     this.complimentary = false,
-    this.voidBills = true,
-    this.splitPayment = true,
+    this.voidBills = false,
+    this.splitPayment = false,
     this.liquorBilling = false,
     this.beveragesBilling = false,
     this.serviceCharge = true,
@@ -105,7 +104,6 @@ class FeatureFlags {
     this.operatorPinBillReprint = false,
     this.autoKot = false,
     this.autoKotThreshold = 5,
-    this.predictiveMotion = false,
     this.itemVariations = false,
     this.waiterAssignment = false,
     this.manualEntry = false,
@@ -161,10 +159,10 @@ class FeatureFlags {
     }
 
     return FeatureFlags(
-      discounts: flag('flag_discounts', true),
+      discounts: flag('flag_discounts'),
       complimentary: flag('flag_complimentary'),
-      voidBills: flag('flag_void_bills', true),
-      splitPayment: flag('flag_split_payment', true),
+      voidBills: flag('flag_void_bills'),
+      splitPayment: flag('flag_split_payment'),
       liquorBilling: flag('flag_liquor_billing'),
       beveragesBilling: flag('flag_beverages_billing'),
       serviceCharge: flag('flag_service_charge', true),
@@ -192,13 +190,12 @@ class FeatureFlags {
       operatorPinBillReprint: flag('operator_pin_bill_reprint'),
       autoKot: flag('flag_auto_kot'),
       autoKotThreshold: int.tryParse('${map['auto_kot_threshold']}') ?? 5,
-      predictiveMotion: flag('flag_predictive_motion'),
-      itemVariations: flag('flag_item_variations') || flag('item_variations'),
-      waiterAssignment: flag('flag_waiter_assignment') || flag('waiter_assignment'),
-      manualEntry: flag('flag_manual_entry') || flag('manual_entry'),
-      kotEdit: flag('flag_kot_edit') || flag('kot_edit'),
-      kitchenDisplay: flag('flag_kitchen_display') || flag('kitchen_display'),
-      readyToServe: flag('flag_ready_to_serve') || flag('ready_to_serve'),
+      itemVariations: flag('flag_item_variations'),
+      waiterAssignment: flag('flag_waiter_assignment'),
+      manualEntry: flag('flag_manual_entry'),
+      kotEdit: flag('flag_kot_edit'),
+      kitchenDisplay: flag('flag_kitchen_display'),
+      readyToServe: flag('flag_ready_to_serve'),
       cashOnlyDiscounts: flag('flag_cash_only_discounts'),
       reports: flag('flag_reports', true),
       advancedReports: flag('flag_advanced_reports'),

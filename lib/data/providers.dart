@@ -2,6 +2,7 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/feature_flags.dart';
+import '../services/customer_link_service.dart';
 import '../services/socket_service.dart';
 import '../services/sync_service.dart';
 
@@ -288,6 +289,7 @@ class MenuItem {
   final String? note;
 
   final String? measureUnit;
+  final int sortOrder;
   final List<MenuOptionGroup> optionGroups;
   final List<MenuItemVariation> variations;
   final List<AddonGroup> addonGroups;
@@ -301,6 +303,7 @@ class MenuItem {
     this.available = true,
     this.note,
     this.measureUnit,
+    this.sortOrder = 0,
     this.optionGroups = const [],
     this.variations = const [],
     this.addonGroups = const [],
@@ -308,6 +311,16 @@ class MenuItem {
 
   bool get isWeighed => measureUnit != null && measureUnit!.isNotEmpty;
 }
+
+/// Admin-configured category display order, independent of any particular
+/// item's own sort_order — menu tabs must follow this, not item occurrence.
+class MenuCategory {
+  final String name;
+  final int sortOrder;
+  const MenuCategory({required this.name, required this.sortOrder});
+}
+
+final menuCategoriesProvider = StateProvider<List<MenuCategory>>((_) => []);
 
 class Modifier {
   final String id;
@@ -469,6 +482,8 @@ class OperatorStats {
 }
 
 class HistoryOrder {
+  static const _absent = Object();
+
   final String id;
   final String orderId;
   final String tableId;
@@ -480,6 +495,8 @@ class HistoryOrder {
   final List<HistoryOrderLine> lines;
   final String? notes;
   final String? createdBy;
+  final String? customerId;
+  final String? customerName;
   const HistoryOrder({
     required this.id,
     required this.orderId,
@@ -492,7 +509,33 @@ class HistoryOrder {
     required this.lines,
     this.notes,
     this.createdBy,
+    this.customerId,
+    this.customerName,
   });
+
+  HistoryOrder copyWith({
+    OrderStatus? status,
+    Object? customerId = _absent,
+    Object? customerName = _absent,
+  }) =>
+      HistoryOrder(
+        id: id,
+        orderId: orderId,
+        tableId: tableId,
+        time: time,
+        date: date,
+        itemCount: itemCount,
+        total: total,
+        status: status ?? this.status,
+        lines: lines,
+        notes: notes,
+        createdBy: createdBy,
+        customerId:
+            customerId == _absent ? this.customerId : customerId as String?,
+        customerName: customerName == _absent
+            ? this.customerName
+            : customerName as String?,
+      );
 }
 
 class HistoryOrderLine {
@@ -741,6 +784,10 @@ final activeOrdersProvider =
 final socketServiceProvider = Provider<SocketService>((_) => SocketService());
 final syncServiceProvider = Provider<SyncService>(
   (ref) => SyncService(ref.read(socketServiceProvider), ref),
+);
+final customerLinkServiceProvider = Provider<CustomerLinkService>(
+  (ref) => CustomerLinkService(
+      ref.read(socketServiceProvider), ref.read(syncServiceProvider)),
 );
 
 final tablePresencesProvider = StateProvider<Map<String, String>>((_) => {});

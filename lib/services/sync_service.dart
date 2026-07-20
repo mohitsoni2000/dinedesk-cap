@@ -85,6 +85,20 @@ class SyncService {
       _ref.read(tablesProvider.notifier).state = tables;
     });
 
+    _socket.on('room:updated', (data) {
+      final map = _toMap(data);
+      final sr = ServerRoom.fromMap(map);
+      final updated = _serverRoomToLocal(sr);
+      final rooms = [..._ref.read(roomsProvider)];
+      final idx = rooms.indexWhere((r) => r.serverId == updated.serverId);
+      if (idx >= 0) {
+        rooms[idx] = updated;
+      } else {
+        rooms.add(updated);
+      }
+      _ref.read(roomsProvider.notifier).state = rooms;
+    });
+
     _socket.on('order:created', (data) {
       final env = BroadcastEnvelope(_toMap(data));
       final orderMap = env.orderMap;
@@ -121,19 +135,7 @@ class SyncService {
         _ref.read(historyProvider.notifier).state = [
           for (final h in _ref.read(historyProvider))
             if (h.orderId == id)
-              HistoryOrder(
-                id: h.id,
-                orderId: h.orderId,
-                tableId: h.tableId,
-                time: h.time,
-                date: h.date,
-                itemCount: h.itemCount,
-                total: h.total,
-                status: OrderStatus.cancelled,
-                lines: h.lines,
-                notes: h.notes,
-                createdBy: h.createdBy,
-              )
+              h.copyWith(status: OrderStatus.cancelled)
             else
               h,
         ];
@@ -152,19 +154,7 @@ class SyncService {
           final kotType = env.kotMap?['kot_type']?.toString();
           var entry = _serverOrderToHistory(order);
           if (kotType == 'modified') {
-            entry = HistoryOrder(
-              id: entry.id,
-              orderId: entry.orderId,
-              tableId: entry.tableId,
-              time: entry.time,
-              date: entry.date,
-              itemCount: entry.itemCount,
-              total: entry.total,
-              status: OrderStatus.modified,
-              lines: entry.lines,
-              notes: entry.notes,
-              createdBy: entry.createdBy,
-            );
+            entry = entry.copyWith(status: OrderStatus.modified);
           }
           _upsertHistory(entry);
         }
@@ -194,19 +184,7 @@ class SyncService {
         _ref.read(historyProvider.notifier).state = [
           for (final h in _ref.read(historyProvider))
             if (h.orderId == id)
-              HistoryOrder(
-                id: h.id,
-                orderId: h.orderId,
-                tableId: h.tableId,
-                time: h.time,
-                date: h.date,
-                itemCount: h.itemCount,
-                total: h.total,
-                status: OrderStatus.paid,
-                lines: h.lines,
-                notes: h.notes,
-                createdBy: h.createdBy,
-              )
+              h.copyWith(status: OrderStatus.paid)
             else
               h,
         ];
@@ -774,6 +752,8 @@ class SyncService {
       lines: so.items.map(_serverItemToLine).toList(),
       notes: so.notes,
       createdBy: so.createdBy,
+      customerId: so.customerId,
+      customerName: so.customerName,
     );
   }
 
@@ -920,6 +900,8 @@ class SyncService {
     final variationsByItem = _parseVariationsByItem(data);
     final addonGroupsByItem = _parseAddonGroupsByItem(data);
     final categoryById = _categoryMap(rawCategories);
+    _ref.read(menuCategoriesProvider.notifier).state =
+        _parseCategoryOrder(rawCategories);
 
     if (rawItems is List) {
       for (final entry in rawItems) {
@@ -1050,6 +1032,23 @@ class SyncService {
     return byItem;
   }
 
+  List<MenuCategory> _parseCategoryOrder(dynamic rawCategories) {
+    if (rawCategories is! List) return const [];
+    final list = <MenuCategory>[];
+    for (final raw in rawCategories) {
+      if (raw is! Map) continue;
+      final category = Map<String, dynamic>.from(raw);
+      final name = category['name']?.toString() ?? 'Other';
+      final sortOrder = int.tryParse('${category['sort_order'] ?? 0}') ?? 0;
+      list.add(MenuCategory(name: name, sortOrder: sortOrder));
+    }
+    list.sort((a, b) {
+      final cmp = a.sortOrder.compareTo(b.sortOrder);
+      return cmp != 0 ? cmp : a.name.compareTo(b.name);
+    });
+    return list;
+  }
+
   Map<String, ({String name, String type})> _categoryMap(
       dynamic rawCategories) {
     final map = <String, ({String name, String type})>{};
@@ -1086,6 +1085,7 @@ class SyncService {
       available: si.isAvailable,
       note: si.note,
       measureUnit: si.measureUnit,
+      sortOrder: si.sortOrder,
       addonGroups: si.addonGroups
           .map((g) => AddonGroup(
                 id: g.id,

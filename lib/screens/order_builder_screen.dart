@@ -460,6 +460,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   @override
   Widget build(BuildContext context) {
     final menu = ref.watch(menuProvider);
+    final menuCategories = ref.watch(menuCategoriesProvider);
     final cart = ref.watch(cartProvider);
     final orderNotes = ref.watch(orderNotesProvider);
 
@@ -472,8 +473,26 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
       if (_activeSection != null && m.section != _activeSection) continue;
       sections.putIfAbsent(m.section, () => []).add(m);
     }
+    for (final items in sections.values) {
+      items.sort((a, b) {
+        final cmp = a.sortOrder.compareTo(b.sortOrder);
+        return cmp != 0 ? cmp : a.name.compareTo(b.name);
+      });
+    }
 
-    final allSections = menu.map((m) => m.section).toSet().toList();
+    // Tab order follows the admin's configured category order, not the
+    // order categories happen to first appear in a globally item-sorted
+    // list. Falls back to alphabetical for any section absent from the
+    // category sync (older payload shape).
+    final presentSections = menu.map((m) => m.section).toSet();
+    final orderedCategoryNames = menuCategories
+        .map((c) => c.name)
+        .where(presentSections.contains)
+        .toList();
+    final leftoverSections =
+        presentSections.difference(orderedCategoryNames.toSet()).toList()
+          ..sort();
+    final allSections = [...orderedCategoryNames, ...leftoverSections];
 
     final tables = ref.watch(tablesProvider);
     final rooms = ref.watch(roomsProvider);

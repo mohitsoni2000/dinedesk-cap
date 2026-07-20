@@ -163,6 +163,8 @@ class ServerOrder {
   final String? notes;
   final String? kotNumber;
   final String? createdBy;
+  final String? customerId;
+  final String? customerName;
   final List<ServerOrderItem> items;
 
   bool get isRoom => roomId.isNotEmpty;
@@ -183,6 +185,8 @@ class ServerOrder {
     this.notes,
     this.kotNumber,
     this.createdBy,
+    this.customerId,
+    this.customerName,
   });
 
   factory ServerOrder.fromMap(Map<String, dynamic> m) {
@@ -219,6 +223,8 @@ class ServerOrder {
       notes: m['notes']?.toString(),
       kotNumber: m['kot_number']?.toString(),
       createdBy: m['created_by']?.toString() ?? m['operator_id']?.toString(),
+      customerId: m['customer_id']?.toString(),
+      customerName: m['customer_name']?.toString(),
     );
   }
 }
@@ -284,6 +290,7 @@ class ServerMenuItem {
   final String? note;
 
   final String? measureUnit;
+  final int sortOrder;
   final List<ServerMenuOptionGroup> optionGroups;
   final List<ServerItemVariation> variations;
   final List<ServerAddonGroup> addonGroups;
@@ -298,6 +305,7 @@ class ServerMenuItem {
     required this.isAvailable,
     this.note,
     this.measureUnit,
+    this.sortOrder = 0,
     this.optionGroups = const [],
     this.variations = const [],
     this.addonGroups = const [],
@@ -317,6 +325,7 @@ class ServerMenuItem {
       isAvailable: _toBool(m['is_available'] ?? m['available'], true),
       note: m['note']?.toString(),
       measureUnit: m['measure_unit']?.toString(),
+      sortOrder: _toInt(m['sort_order']),
       optionGroups: const [],
       variations: const [],
       addonGroups: const [],
@@ -338,6 +347,7 @@ class ServerMenuItem {
         isAvailable: isAvailable,
         note: note,
         measureUnit: measureUnit,
+        sortOrder: sortOrder,
         optionGroups: optionGroups ?? this.optionGroups,
         variations: variations ?? this.variations,
         addonGroups: addonGroups ?? this.addonGroups,

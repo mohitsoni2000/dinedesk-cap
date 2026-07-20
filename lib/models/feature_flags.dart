@@ -31,7 +31,6 @@ class FeatureFlags {
   final int autoKotThreshold;
   final bool itemVariations;
   final bool waiterAssignment;
-  final bool manualEntry;
   final bool kotEdit;
   final bool kitchenDisplay;
   final bool readyToServe;
@@ -106,7 +105,6 @@ class FeatureFlags {
     this.autoKotThreshold = 5,
     this.itemVariations = false,
     this.waiterAssignment = false,
-    this.manualEntry = false,
     this.kotEdit = false,
     this.kitchenDisplay = false,
     this.readyToServe = false,
@@ -192,7 +190,6 @@ class FeatureFlags {
       autoKotThreshold: int.tryParse('${map['auto_kot_threshold']}') ?? 5,
       itemVariations: flag('flag_item_variations'),
       waiterAssignment: flag('flag_waiter_assignment'),
-      manualEntry: flag('flag_manual_entry'),
       kotEdit: flag('flag_kot_edit'),
       kitchenDisplay: flag('flag_kitchen_display'),
       readyToServe: flag('flag_ready_to_serve'),

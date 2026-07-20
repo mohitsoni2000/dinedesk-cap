@@ -11,6 +11,7 @@ import '../services/kot_queue_service.dart';
 import '../services/pin_guard.dart';
 import '../services/platform_surfaces.dart';
 import '../theme/tokens.dart';
+import '../utils/request_id.dart';
 import '../widgets/app_card.dart';
 import '../widgets/quick_action_tile.dart';
 import '../widgets/liquid_chrome.dart';
@@ -65,6 +66,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   bool _submitted = false;
 
   String? _kotSentOrderId;
+
+  // Reused across retries of the *same* order create/update attempt so a
+  // lost ack followed by a user-initiated retry replays the server's cached
+  // response instead of creating a second order. Cleared once that attempt
+  // actually succeeds (_kotSentOrderId gets set) or the flow resets.
+  String? _pendingOrderRequestId;
 
   bool _running = false;
 
@@ -148,7 +155,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         .map((l) => <String, dynamic>{
               'item_id': l.item.id,
               if (l.variationId != null) 'variation_id': l.variationId,
-              if (l.variationName != null) 'variation_name': l.variationName,
               'quantity': l.qty,
               'selected_options':
                   l.selectedOptions.map((o) => o.toJson()).toList(),
@@ -242,11 +248,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   }) {
     final socketService = ref.read(socketServiceProvider);
     final existingOrderId = _activeOrderIdForTable();
+    final requestId = _pendingOrderRequestId ??= newRequestId();
     if (existingOrderId != null && items.isNotEmpty) {
       return socketService.emitAck('order:update', <String, dynamic>{
         'order_id': existingOrderId,
         'items_add': items,
         'notes': notes,
+        'client_request_id': requestId,
       });
     }
     return socketService.emitAck('order:create', <String, dynamic>{
@@ -261,6 +269,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           : (_orderType == _OrderType.dineIn ? 'dine_in' : 'takeaway'),
       if (_customer != null && _customer!['id'] != null)
         'customer_id': _customer!['id'],
+      'client_request_id': requestId,
     });
   }
 
@@ -304,6 +313,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
       ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.pending);
       _kotSentOrderId = orderId;
+      _pendingOrderRequestId = null;
       Map<String, dynamic> kotResponse;
       try {
         kotResponse = await ref
@@ -388,43 +398,60 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         includeHistory: true, markTableBilled: true);
     if (!collectPayment) return const _OrderFlowStepResult();
 
-    final bills = billResponse['bills'];
-    final bill = (bills is List && bills.isNotEmpty && bills.first is Map)
-        ? Map<String, dynamic>.from(bills.first as Map)
-        : null;
-    final billId = bill?['id']?.toString();
-    if (billId == null || billId.isEmpty) {
+    final bills = (billResponse['bills'] is List)
+        ? (billResponse['bills'] as List)
+            .whereType<Map>()
+            .map((b) => Map<String, dynamic>.from(b))
+            .toList()
+        : <Map<String, dynamic>>[];
+    if (bills.isEmpty) {
       return _OrderFlowStepResult(
         failedStep: _OrderFlowStep.billGenerate,
         errorMessage: 'Bill generated but ID not returned — please retry',
       );
     }
 
-    final total = cart.fold(0.0, (double s, CartLine l) => s + l.lineTotal);
-    final billTotal = (bill?['total_amount'] as num?)?.toDouble() ?? total;
-    final paymentResponse = await socketService.emitAck(
-      'bill:payment',
-      <String, dynamic>{
-        'bill_id': billId,
-        'payments': [
-          {'payment_mode': quickSettleMode, 'amount': billTotal}
-        ],
-      },
-    );
-    if (paymentResponse['kind'] == 'error') {
-      return _OrderFlowStepResult(
-        failedStep: _OrderFlowStep.payment,
-        errorMessage: 'Payment failed — please retry from the bill screen',
-      );
-    }
-    ref
-        .read(syncServiceProvider)
-        .applyOrderAck(paymentResponse, includeHistory: true);
-
-    for (final b in (bills is List ? bills : <dynamic>[])) {
-      if (b is Map && b['id'] != null) {
-        socketService.emit('print:bill', <String, dynamic>{'bill_id': b['id']});
+    // An order can carry more than one bill (liquor/beverages billed
+    // separately) — quick-settle must pay every one of them, not just the
+    // first, or the desk is left showing the table as unsettled.
+    for (final bill in bills) {
+      final billId = bill['id']?.toString();
+      if (billId == null || billId.isEmpty) {
+        return _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.billGenerate,
+          errorMessage: 'Bill generated but ID not returned — please retry',
+        );
       }
+      final billTotal = (bill['total_amount'] as num?)?.toDouble();
+      if (billTotal == null) {
+        return _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.payment,
+          errorMessage: 'Bill total missing — please settle from the bill screen',
+        );
+      }
+      final paymentResponse = await socketService.emitAck(
+        'bill:payment',
+        <String, dynamic>{
+          'bill_id': billId,
+          'payments': [
+            {'payment_mode': quickSettleMode, 'amount': billTotal}
+          ],
+          'client_request_id': newRequestId(),
+        },
+      );
+      if (paymentResponse['kind'] == 'error') {
+        return _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.payment,
+          errorMessage: 'Payment failed — please retry from the bill screen',
+        );
+      }
+      ref
+          .read(syncServiceProvider)
+          .applyOrderAck(paymentResponse, includeHistory: true);
+    }
+
+    for (final bill in bills) {
+      socketService.emit('print:bill', <String, dynamic>{'bill_id': bill['id']});
     }
     return const _OrderFlowStepResult();
   }
@@ -466,6 +493,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       if (ok) {
         _submitted = true;
         _kotSentOrderId = null;
+        _pendingOrderRequestId = null;
         ref.read(cartProvider.notifier).clear();
         ref.read(orderNotesProvider.notifier).state = '';
         if (returnToBuilder) {

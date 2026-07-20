@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'socket_service.dart';
+import '../utils/request_id.dart';
 
 /// Offline-first KOT pipeline.
 ///
@@ -13,16 +14,13 @@ import 'socket_service.dart';
 /// `kot:send` payloads that can't reach the desk are persisted locally and
 /// flushed automatically the moment the socket is verified again (login,
 /// reconnect-resync, or the next send). Every payload carries a
-/// `client_kot_id` so the desk can de-duplicate retries server-side.
+/// `client_request_id` so the desk can de-duplicate retries server-side.
 final kotQueueProvider = Provider<KotQueueService>((ref) => KotQueueService());
 
 class KotQueueService {
   static const _prefsKey = 'pending_kots_v1';
   static const _tag = '[KotQueue]';
   bool _flushing = false;
-
-  String _newClientId() =>
-      'ck_${DateTime.now().millisecondsSinceEpoch}_${identityHashCode(this)}';
 
   Future<List<Map<String, dynamic>>> _read() async {
     final prefs = await SharedPreferences.getInstance();
@@ -63,7 +61,7 @@ class KotQueueService {
     SocketService socket,
     Map<String, dynamic> payload,
   ) async {
-    payload = <String, dynamic>{...payload, 'client_kot_id': _newClientId()};
+    payload = <String, dynamic>{...payload, 'client_request_id': newRequestId()};
 
     if (socket.state != SocketState.verified) {
       await _enqueue(payload);

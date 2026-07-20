@@ -211,7 +211,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
         .map((l) => <String, dynamic>{
               'item_id': l.item.id,
               if (l.variationId != null) 'variation_id': l.variationId,
-              if (l.variationName != null) 'variation_name': l.variationName,
               'quantity': l.qty,
               'selected_options':
                   l.selectedOptions.map((o) => o.toJson()).toList(),

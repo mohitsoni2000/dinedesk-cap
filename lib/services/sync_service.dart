@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,7 @@ import '../models/feature_flags.dart';
 import '../models/server_models.dart';
 import '../motion/feedback_kind.dart';
 import '../motion/feedback_service.dart';
+import 'app_messenger.dart';
 import 'kot_queue_service.dart';
 import 'platform_surfaces.dart';
 import 'socket_service.dart';
@@ -45,6 +47,7 @@ class SyncService {
   StreamSubscription<SocketState>? _stateSubscription;
   Map<String, String> _floorMap = {};
   Map<String, DateTime> _tableTimerCache = {};
+  Map<String, dynamic>? _lastFlagsMap;
 
   SyncService(this._socket, this._ref);
 
@@ -175,7 +178,14 @@ class SyncService {
     _socket.on('bill:paid', (data) {
       final env = BroadcastEnvelope(_toMap(data));
       final id = env.orderId;
-      if (id != null) {
+      // An order can carry more than one bill (liquor/beverages billed
+      // separately), and a single bill can itself be paid in partial
+      // installments — BILL_PAID fires after every payment, not just the
+      // one that finally settles the order. Only treat the order as
+      // settled when the server says every bill is paid/credit; otherwise
+      // just let the amounts refresh via the normal order/table sync.
+      final orderSettled = env.raw['order_settled'] == true;
+      if (id != null && orderSettled) {
         _ref.read(activeOrdersProvider.notifier).state = _ref
             .read(activeOrdersProvider)
             .where((o) => o['id']?.toString() != id)
@@ -268,9 +278,39 @@ class SyncService {
       final flagsMap =
           (flagsRaw is Map) ? Map<String, dynamic>.from(flagsRaw) : envelope;
       _ref.read(flagsProvider.notifier).state = FeatureFlags.fromMap(flagsMap);
+
       // Per-staff permissions: floor/menu access may have changed with the
-      // flags — pull a fresh, freshly-filtered sync right away.
+      // flags — pull a fresh, freshly-filtered sync right away. But at 15+
+      // online devices, an unconditional resync here means every admin
+      // permissions tweak re-ships the full menu+orders snapshot to every
+      // device — skip it when this push didn't actually change anything
+      // (e.g. a redundant re-broadcast).
+      const flagsEquality = DeepCollectionEquality();
+      final unchanged = _lastFlagsMap != null &&
+          flagsEquality.equals(_lastFlagsMap, flagsMap);
+      _lastFlagsMap = flagsMap;
+      if (!unchanged) _requestResync();
+    });
+
+    // Fires when an admin edits a menu-access group's contents (not just
+    // whether an operator is assigned one) — without this, crew's menu only
+    // ever refreshed on the next flags:updated or manual resync, leaving it
+    // showing items the operator can no longer sell (or missing newly
+    // granted ones) until then.
+    _socket.on('menu:access:updated', (_) {
       _requestResync();
+    });
+
+    // Fire-and-forget emits (e.g. quick-settle's print:bill loop) have no
+    // onAck — a server-side rejection previously vanished into these two
+    // events with nothing listening. Surface it instead of failing silently.
+    _socket.on('error:validation', (data) {
+      final message = _toMap(data)['message']?.toString();
+      if (message != null && message.isNotEmpty) showAppSnackBar(message);
+    });
+    _socket.on('error:permission', (data) {
+      final message = _toMap(data)['message']?.toString();
+      if (message != null && message.isNotEmpty) showAppSnackBar(message);
     });
 
     _socket.on('menu:updated', (data) async {
@@ -845,13 +885,27 @@ class SyncService {
     _ref.read(tablesProvider.notifier).state = tables;
   }
 
+  // Upserts by id rather than replacing the whole list — a floor-restricted
+  // operator's initial sync is filtered to their allowed floors, but some
+  // broadcasts (table shift/merge) still carry every table system-wide.
+  // Wholesale-replacing on those would overwrite the filtered set with the
+  // unrestricted universe within seconds of any table activity.
   void _applyTablesFromEnvelope(BroadcastEnvelope env) {
     final tableMaps = env.tablesList;
     if (tableMaps.isEmpty) return;
-    final tables = tableMaps.map((m) {
+    final updates = tableMaps.map((m) {
       final st = ServerTable.fromMap(m);
       return _serverTableToLocal(st);
     }).toList();
+    final tables = [..._ref.read(tablesProvider)];
+    for (final updated in updates) {
+      final idx = tables.indexWhere((t) => t.serverId == updated.serverId);
+      if (idx >= 0) {
+        tables[idx] = updated;
+      } else {
+        tables.add(updated);
+      }
+    }
     _ref.read(tablesProvider.notifier).state = tables;
   }
 

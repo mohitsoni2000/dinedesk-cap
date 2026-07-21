@@ -322,6 +322,11 @@ class MenuCategory {
 
 final menuCategoriesProvider = StateProvider<List<MenuCategory>>((_) => []);
 
+/// Floor names in the admin's configured display_order — the Tables screen
+/// must build its floor tabs from this, not from whichever floor a table
+/// happens to appear under first in a table list sorted by something else.
+final floorNamesProvider = StateProvider<List<String>>((_) => []);
+
 class Modifier {
   final String id;
   final String groupId;
@@ -737,11 +742,6 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
 }
 
 final operatorProvider = StateProvider<Operator?>((_) => null);
-
-final isWaiterProvider = Provider<bool>((ref) {
-  final role = ref.watch(operatorProvider)?.role.toLowerCase().trim() ?? '';
-  return role == 'waiter';
-});
 
 final operatorStatsProvider = Provider<OperatorStats>((ref) {
   final myId = ref.watch(operatorProvider)?.username ?? '';

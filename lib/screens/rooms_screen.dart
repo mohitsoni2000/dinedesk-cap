@@ -7,6 +7,7 @@ import '../data/currency.dart';
 import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
+import '../widgets/dynamic_toast.dart';
 import '../widgets/liquid_chrome.dart';
 
 class RoomsScreen extends ConsumerStatefulWidget {
@@ -86,12 +87,10 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
   }
 
   void _showRoomError(String message) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-      ));
+    DynamicToast.show(context,
+        message: message,
+        kind: ToastKind.error,
+        duration: const Duration(seconds: 2));
   }
 
   @override

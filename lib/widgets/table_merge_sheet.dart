@@ -8,6 +8,7 @@ import '../data/providers.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
+import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
@@ -211,15 +212,10 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                             if (!mounted) return;
                             setState(() => _submitting = false);
                             if (response['kind'] == 'error') {
-                              ScaffoldMessenger.of(context)
-                                ..clearSnackBars()
-                                ..showSnackBar(SnackBar(
-                                  backgroundColor: AppColors.danger,
-                                  content: Text(
-                                    response['message']?.toString() ??
-                                        'Merge failed',
-                                  ),
-                                ));
+                              DynamicToast.show(context,
+                                  message: response['message']?.toString() ??
+                                      'Merge failed',
+                                  kind: ToastKind.error);
                               return;
                             }
                             Navigator.of(context).pop();

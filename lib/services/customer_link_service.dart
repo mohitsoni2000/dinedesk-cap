@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../theme/tokens.dart';
 import '../widgets/customer_sheet.dart';
+import '../widgets/dynamic_toast.dart';
 import 'socket_service.dart';
 import 'sync_service.dart';
 
@@ -36,15 +36,10 @@ class CustomerLinkService {
 
     if (response['kind'] == 'error') {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(
-            backgroundColor: AppColors.danger,
-            content: Text(
-              response['message']?.toString() ?? 'Could not link customer',
-              style: AppTypography.bodyMd.copyWith(color: Colors.white),
-            ),
-          ));
+        DynamicToast.show(context,
+            message: response['message']?.toString() ??
+                'Could not link customer',
+            kind: ToastKind.error);
       }
       return null;
     }

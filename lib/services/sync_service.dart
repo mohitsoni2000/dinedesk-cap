@@ -306,11 +306,11 @@ class SyncService {
     // events with nothing listening. Surface it instead of failing silently.
     _socket.on('error:validation', (data) {
       final message = _toMap(data)['message']?.toString();
-      if (message != null && message.isNotEmpty) showAppSnackBar(message);
+      if (message != null && message.isNotEmpty) showAppToast(message);
     });
     _socket.on('error:permission', (data) {
       final message = _toMap(data)['message']?.toString();
-      if (message != null && message.isNotEmpty) showAppSnackBar(message);
+      if (message != null && message.isNotEmpty) showAppToast(message);
     });
 
     _socket.on('menu:updated', (data) async {
@@ -444,6 +444,10 @@ class SyncService {
         }
       }
     }
+    // _floorMap is a LinkedHashMap built by iterating floorsList in the
+    // order the server sent it (ORDER BY display_order ASC) — its values
+    // are already in the right order, just never exposed to the UI before.
+    _ref.read(floorNamesProvider.notifier).state = _floorMap.values.toList();
     debugPrint(
         '$_tag   Floors: ${_floorMap.length} → ${_floorMap.values.toList()}');
 

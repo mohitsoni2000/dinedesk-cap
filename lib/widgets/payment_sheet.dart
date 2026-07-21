@@ -10,6 +10,7 @@ import '../data/currency.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
+import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
@@ -162,12 +163,9 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
   Future<void> _pay() async {
     if (_submitting) return;
     if (_isCreditBlocked) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(const SnackBar(
-          content: Text('Link a customer before using Credit payment'),
-          backgroundColor: AppColors.danger,
-        ));
+      DynamicToast.show(context,
+          message: 'Link a customer before using Credit payment',
+          kind: ToastKind.error);
       return;
     }
 
@@ -251,13 +249,10 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       Navigator.of(context).pop(true);
     } else {
       setState(() => _submitting = false);
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(SnackBar(
-          backgroundColor: AppColors.danger,
-          content: Text(
-              'Paid $billsPaid of ${widget.bills.length} bills — retry remaining'),
-        ));
+      DynamicToast.show(context,
+          message:
+              'Paid $billsPaid of ${widget.bills.length} bills — retry remaining',
+          kind: ToastKind.error);
     }
   }
 

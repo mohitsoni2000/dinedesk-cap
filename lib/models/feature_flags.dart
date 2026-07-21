@@ -41,10 +41,15 @@ class FeatureFlags {
   final bool multiTerminal;
   final bool takeaway;
   final bool billPrinting;
+  final bool generateBill;
+  final bool printSummary;
   final bool tableReservationAlerts;
   final bool customerCredit;
   final bool companyBill;
   final bool tableMerge;
+  final bool tableShift;
+  final bool tableLink;
+  final bool collectPayment;
   final bool shiftManagement;
   final bool tableZones;
   final bool floorSeparateRevenue;
@@ -114,10 +119,15 @@ class FeatureFlags {
     this.multiTerminal = false,
     this.takeaway = false,
     this.billPrinting = false,
+    this.generateBill = false,
+    this.printSummary = false,
     this.tableReservationAlerts = false,
     this.customerCredit = false,
     this.companyBill = false,
     this.tableMerge = false,
+    this.tableShift = false,
+    this.tableLink = false,
+    this.collectPayment = false,
     this.shiftManagement = false,
     this.tableZones = false,
     this.floorSeparateRevenue = false,
@@ -159,7 +169,7 @@ class FeatureFlags {
     return FeatureFlags(
       discounts: flag('flag_discounts'),
       complimentary: flag('flag_complimentary'),
-      voidBills: flag('flag_void_bills'),
+      voidBills: flag('flag_void_bills', true),
       splitPayment: flag('flag_split_payment'),
       liquorBilling: flag('flag_liquor_billing'),
       beveragesBilling: flag('flag_beverages_billing'),
@@ -199,10 +209,15 @@ class FeatureFlags {
       multiTerminal: flag('flag_multi_terminal'),
       takeaway: flag('flag_takeaway', true),
       billPrinting: flag('flag_bill_printing', true),
+      generateBill: flag('flag_generate_bill'),
+      printSummary: flag('flag_print_summary'),
       tableReservationAlerts: flag('flag_table_reservation_alerts'),
       customerCredit: flag('flag_customer_credit'),
       companyBill: flag('flag_company_bill'),
       tableMerge: flag('flag_table_merge', true),
+      tableShift: flag('flag_table_shift', true),
+      tableLink: flag('flag_table_link', true),
+      collectPayment: flag('flag_collect_payment', true),
       shiftManagement: flag('flag_shift_management'),
       tableZones: flag('flag_table_zones'),
       floorSeparateRevenue: flag('flag_floor_separate_revenue'),

@@ -9,6 +9,7 @@ import '../data/currency.dart';
 import '../theme/tokens.dart';
 import '../utils/socket_helpers.dart';
 import 'app_surface.dart';
+import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
@@ -108,15 +109,9 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
           _submitting = false;
           _pendingOfferId = null;
         });
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(
-            backgroundColor: AppColors.danger,
-            content: Text(
-              response['message']?.toString() ?? 'Offer action failed',
-              style: AppTypography.bodyMd.copyWith(color: Colors.white),
-            ),
-          ));
+        DynamicToast.show(context,
+            message: response['message']?.toString() ?? 'Offer action failed',
+            kind: ToastKind.error);
         return;
       }
       final orderMap = response['order'];
@@ -145,11 +140,9 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
           _submitting = false;
           _pendingOfferId = null;
         });
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(const SnackBar(
-            content: Text('Offer request timed out — please retry'),
-          ));
+        DynamicToast.show(context,
+            message: 'Offer request timed out — please retry',
+            kind: ToastKind.error);
       },
     );
   }

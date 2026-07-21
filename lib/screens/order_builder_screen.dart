@@ -15,11 +15,11 @@ import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_surface.dart';
+import '../widgets/dynamic_toast.dart';
 import '../widgets/item_detail_sheet.dart';
 import '../widgets/kot_history_sheet.dart';
 import '../widgets/quick_action_tile.dart';
 import '../widgets/package_sheet.dart';
-import '../widgets/payment_sheet.dart';
 import '../widgets/table_link_sheet.dart';
 import '../widgets/table_shift_sheet.dart';
 
@@ -75,7 +75,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _joinPresence();
-        _maybeAutoShowPayment();
       }
     });
   }
@@ -117,32 +116,15 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
           .emitAck(event, {'table_id': tableServerId});
       if (response['kind'] == 'error') {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(
-            content: Text(response['message']?.toString() ?? errorFallback),
-          ));
+        DynamicToast.show(context,
+            message: response['message']?.toString() ?? errorFallback,
+            kind: ToastKind.error);
         return;
       }
       ref.read(syncServiceProvider).applyTableAck(response);
     } finally {
       if (mounted) setState(() => _tableMembershipInFlight = false);
     }
-  }
-
-  int _activeBillCountForSlot() {
-    if (widget.isRoom) {
-      final room = ref
-          .read(roomsProvider)
-          .where((r) => r.serverId == widget.tableId)
-          .firstOrNull;
-      return room?.activeBillCount ?? 0;
-    }
-    final table = ref
-        .read(tablesProvider)
-        .where((t) => t.serverId == widget.tableId)
-        .firstOrNull;
-    return table?.activeBillCount ?? 0;
   }
 
   String? _activeOrderIdForSlot() {
@@ -158,33 +140,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
         .where((t) => t.serverId == widget.tableId)
         .firstOrNull;
     return table?.activeOrderId;
-  }
-
-  void _maybeAutoShowPayment() {
-    if (_activeBillCountForSlot() <= 0) return;
-
-    final activeOrders = ref.read(activeOrdersProvider);
-    final activeOrderId = _activeOrderIdForSlot();
-    final slotKey = widget.isRoom ? 'room_id' : 'table_id';
-    final orderMap = activeOrders.where((o) {
-      final id = o['id']?.toString();
-      final slotId = o[slotKey]?.toString();
-      return (activeOrderId != null && id == activeOrderId) ||
-          slotId == widget.tableId;
-    }).firstOrNull;
-    if (orderMap == null) return;
-
-    final billsRaw = orderMap['bills'];
-    if (billsRaw is! List || billsRaw.isEmpty) return;
-
-    final bills = billsRaw
-        .whereType<Map>()
-        .map((b) => BillInfo.fromMap(Map<String, dynamic>.from(b)))
-        .where((b) => b.id.isNotEmpty)
-        .toList();
-    if (bills.isEmpty) return;
-
-    PaymentSheet.show(context, bills: bills);
   }
 
   ServerOrder? _runningOrder(List<RestaurantTable> tables) {
@@ -204,7 +159,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     if (_isSaving) return;
     setState(() => _isSaving = true);
 
-    final messenger = ScaffoldMessenger.of(context);
     final socketService = ref.read(socketServiceProvider);
     final notes = ref.read(orderNotesProvider);
     final items = ref.read(cartProvider)
@@ -239,32 +193,20 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     setState(() => _isSaving = false);
 
     if (response['kind'] == 'error') {
-      messenger
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              response['message']?.toString() ?? 'Could not save draft — please try again',
-            ),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.danger,
-          ),
-        );
+      DynamicToast.show(context,
+          message: response['message']?.toString() ??
+              'Could not save draft — please try again',
+          kind: ToastKind.error);
       return;
     }
 
     ref.read(syncServiceProvider).applyOrderAck(response, includeHistory: true);
     ref.read(cartProvider.notifier).clear();
     ref.read(orderNotesProvider.notifier).state = '';
-    messenger
-      ..clearSnackBars()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('Draft saved — resume anytime'),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 3),
-        ),
-      );
+    DynamicToast.show(context,
+        message: 'Draft saved — resume anytime',
+        kind: ToastKind.success,
+        duration: const Duration(seconds: 3));
     _leaveOrder();
   }
 
@@ -377,13 +319,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   void _addOrConfigure(BuildContext context, MenuItem item, {bool track = true}) {
     if (_readOnly) {
 
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(const SnackBar(
-          content:
-              Text('Another waiter is editing this table — view only right now.'),
-          duration: Duration(seconds: 2),
-        ));
+      DynamicToast.show(context,
+          message: 'Another waiter is editing this table — view only right now.',
+          kind: ToastKind.warning,
+          duration: const Duration(seconds: 2));
       return;
     }
     final variationsEnabled = ref.read(flagsProvider).itemVariations;
@@ -462,6 +401,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     final menuCategories = ref.watch(menuCategoriesProvider);
     final cart = ref.watch(cartProvider);
     final orderNotes = ref.watch(orderNotesProvider);
+    final flags = ref.watch(flagsProvider);
 
     final sections = <String, List<MenuItem>>{};
     for (final m in menu) {
@@ -731,7 +671,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                         final isLinked = linkGroups.values
                             .any((ids) => ids.contains(widget.tableId));
                         final flags = ref.watch(flagsProvider);
-                        final isWaiter = ref.watch(isWaiterProvider);
                         if (!isTableAction && !flags.packages) {
                           return const SizedBox.shrink();
                         }
@@ -760,7 +699,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           }
                         },
                         itemBuilder: (ctx) => [
-                          if (isTableAction && !isWaiter)
+                          if (isTableAction && flags.tableShift)
                             PopupMenuItem(
                               value: 'shift',
                               child: Row(
@@ -775,7 +714,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                 ],
                               ),
                             ),
-                          if (isTableAction && !isLinked && !isWaiter)
+                          if (isTableAction && !isLinked && flags.tableLink)
                             PopupMenuItem(
                               value: 'link',
                               child: Row(
@@ -933,7 +872,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           order: runningOrder,
                           tableId: widget.tableId,
                           cartIsEmpty: cart.isEmpty,
-                          isWaiter: ref.watch(isWaiterProvider),
+                          showPrintSummary: flags.printSummary,
                           onPrintSummary: () {
                             ref.read(socketServiceProvider).emit(
                               'print:summary',
@@ -1372,7 +1311,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       onViewBill: runningOrder != null
                           ? () => context.push('/history/${runningOrder.id}')
                           : null,
-                      onPrintSummary: (runningOrder != null &&
+                      onPrintSummary: (flags.printSummary &&
+                              runningOrder != null &&
                               runningOrder.itemCount > 0)
                           ? () {
                               ref.read(socketServiceProvider).emit(
@@ -1515,14 +1455,14 @@ class _RunningOrderCard extends StatefulWidget {
   final ServerOrder order;
   final String tableId;
   final bool cartIsEmpty;
-  final bool isWaiter;
+  final bool showPrintSummary;
   final VoidCallback onPrintSummary;
 
   const _RunningOrderCard({
     required this.order,
     required this.tableId,
     required this.cartIsEmpty,
-    required this.isWaiter,
+    required this.showPrintSummary,
     required this.onPrintSummary,
   });
 
@@ -1629,7 +1569,7 @@ class _RunningOrderCardState extends State<_RunningOrderCard> {
                             ),
                           ],
                         ],
-                        if (widget.cartIsEmpty && !widget.isWaiter) ...[
+                        if (widget.cartIsEmpty && widget.showPrintSummary) ...[
                           const SizedBox(height: 10),
                           const Divider(
                               height: 1,

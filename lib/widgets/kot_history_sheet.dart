@@ -148,9 +148,7 @@ class _KotCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
 
-    final canEdit = ref.watch(flagsProvider).kotEdit &&
-        _isEditable &&
-        !ref.watch(isWaiterProvider);
+    final canEdit = ref.watch(flagsProvider).kotEdit && _isEditable;
     final myId = ref.watch(operatorProvider)?.username;
     final isMine = order.createdBy != null && order.createdBy == myId;
     return Container(

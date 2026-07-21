@@ -10,6 +10,7 @@ import '../theme/theme_mode_provider.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_surface.dart';
+import '../widgets/dynamic_toast.dart';
 import '../widgets/liquid_chrome.dart';
 
 class _SettingsState {
@@ -574,16 +575,12 @@ class _BiometricRowState extends ConsumerState<_BiometricRow> {
     if (_enabled == true) {
       await bio.disable();
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(const SnackBar(
-            content: Text('Biometric unlock off — you\'ll sign in with your PIN')));
+      DynamicToast.show(context,
+          message: 'Biometric unlock off — you\'ll sign in with your PIN');
     } else {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(const SnackBar(
-            content: Text(
-                'Sign in with your PIN next time — you\'ll find the enable option right here')));
+      DynamicToast.show(context,
+          message:
+              'Sign in with your PIN next time — you\'ll find the enable option right here');
     }
     _load();
   }

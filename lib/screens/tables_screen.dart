@@ -12,6 +12,7 @@ import '../motion/motion.dart';
 import '../services/socket_service.dart' show SocketState;
 import '../theme/tokens.dart';
 import '../widgets/app_surface.dart';
+import '../widgets/dynamic_toast.dart';
 import '../widgets/table_merge_sheet.dart';
 
 class TablesScreen extends ConsumerStatefulWidget {
@@ -121,8 +122,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
               onLongPress: ((t.state == TableState.mine ||
                           t.state == TableState.other) &&
                       ref.watch(
-                          flagsProvider.select((f) => f.tableMerge)) &&
-                      !ref.watch(isWaiterProvider))
+                          flagsProvider.select((f) => f.tableMerge)))
                   ? () => TableMergeSheet.show(context, t)
                   : null,
               occupiedSince: t.occupiedSince,
@@ -203,12 +203,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   }
 
   void _showTableError(String message) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-      ));
+    DynamicToast.show(context,
+        message: message,
+        kind: ToastKind.error,
+        duration: const Duration(seconds: 2));
   }
 
   Future<void> _refresh() async {
@@ -222,12 +220,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     try {
       await ref.read(syncServiceProvider).requestResync();
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(const SnackBar(
-          content: Text('Resynced with the desk · just now'),
-          duration: Duration(seconds: 2),
-        ));
+      DynamicToast.show(context,
+          message: 'Resynced with the desk · just now',
+          kind: ToastKind.success,
+          duration: const Duration(seconds: 2));
     } finally {
       if (mounted) {
         _refreshController.stop();
@@ -247,7 +243,18 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     final restaurantName = restaurant?.name ?? 'Restaurant';
     final activeOps = ref.watch(activeOperatorsProvider);
 
-    final allFloors = tables.map((t) => t.floor).toSet().toList();
+    // Tab order follows the admin's configured floor display_order, not
+    // whichever floor a table happens to appear under first — falls back to
+    // table-occurrence order for any floor absent from the floor sync
+    // (older payload shape).
+    final presentFloors = tables.map((t) => t.floor).toSet();
+    final orderedFloorNames = ref
+        .watch(floorNamesProvider)
+        .where(presentFloors.contains)
+        .toList();
+    final leftoverFloors =
+        presentFloors.difference(orderedFloorNames.toSet()).toList()..sort();
+    final allFloors = [...orderedFloorNames, ...leftoverFloors];
     final floors = allFloors.isNotEmpty ? allFloors : ['Ground'];
     final activeFloor = _floor ?? floors.first;
 

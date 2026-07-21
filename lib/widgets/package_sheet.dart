@@ -7,6 +7,7 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
+import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
@@ -88,12 +89,10 @@ class PackageSheet extends ConsumerWidget {
                         onAdd: () {
                           _addPackageToCart(ref, packages[i]);
                           Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context)
-                            ..clearSnackBars()
-                            ..showSnackBar(SnackBar(
-                              content:
-                                  Text('${packages[i]['name']} added to cart'),
-                            ));
+                          DynamicToast.show(context,
+                              message:
+                                  '${packages[i]['name']} added to cart',
+                              kind: ToastKind.success);
                         },
                       ),
                     ),

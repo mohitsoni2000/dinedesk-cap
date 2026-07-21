@@ -27,12 +27,17 @@ import 'widgets/page_transitions.dart';
 import 'widgets/ready_orders_banner.dart';
 import 'widgets/root_shell.dart';
 
+/// Lets code with no BuildContext of its own (background services like
+/// sync_service.dart) reach the root Overlay — e.g. to show a DynamicToast.
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final routerProvider = Provider<GoRouter>((ref) {
 
   final authed = ref.watch(isAuthenticatedProvider);
   final forceDisconnected = ref.watch(forceDisconnectedProvider);
 
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     redirect: (context, state) {
       final loc = state.matchedLocation;

@@ -1,15 +1,12 @@
-import 'package:flutter/material.dart';
+import '../router.dart';
+import '../widgets/dynamic_toast.dart';
 
-/// App-wide SnackBar host. Background services (sync_service.dart) have no
-/// BuildContext of their own, but still need to surface server-side action
-/// failures (error:validation / error:permission) that a fire-and-forget
-/// emit() would otherwise drop silently.
-final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
-
-void showAppSnackBar(String message) {
-  final messenger = scaffoldMessengerKey.currentState;
-  if (messenger == null) return;
-  messenger
-    ..clearSnackBars()
-    ..showSnackBar(SnackBar(content: Text(message)));
+/// Lets background services (sync_service.dart) with no BuildContext of
+/// their own surface server-side action failures (error:validation /
+/// error:permission) that a fire-and-forget emit() would otherwise drop
+/// silently — routed through the same DynamicToast every screen uses.
+void showAppToast(String message, {ToastKind kind = ToastKind.error}) {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null) return;
+  DynamicToast.show(context, message: message, kind: kind);
 }

@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'motion/app_scroll_behavior.dart';
 import 'motion/motion.dart';
 import 'router.dart';
-import 'services/app_messenger.dart';
 import 'services/platform_surfaces.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_mode_provider.dart';
@@ -28,7 +27,6 @@ class RestroApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) => MaterialApp.router(
         title: 'Commond.Crew',
         debugShowCheckedModeBanner: false,
-        scaffoldMessengerKey: scaffoldMessengerKey,
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
         themeMode: ref.watch(themeModeProvider),

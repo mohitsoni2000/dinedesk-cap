@@ -12,6 +12,7 @@ import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import '../utils/socket_helpers.dart';
 import '../widgets/app_card.dart';
+import '../widgets/dynamic_toast.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/payment_sheet.dart';
 import '../widgets/discount_sheet.dart';
@@ -84,22 +85,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         acked = true;
         if (!mounted) return;
         if (response['kind'] == 'error') {
-          ScaffoldMessenger.of(context)
-            ..clearSnackBars()
-            ..showSnackBar(SnackBar(
-              backgroundColor: AppColors.danger,
-              content: Text(
-                response['message']?.toString() ?? 'Reprint failed',
-                style: AppTypography.bodyMd.copyWith(color: Colors.white),
-              ),
-            ));
+          DynamicToast.show(context,
+              message: response['message']?.toString() ?? 'Reprint failed',
+              kind: ToastKind.error);
         } else {
-          ScaffoldMessenger.of(context)
-            ..clearSnackBars()
-            ..showSnackBar(const SnackBar(
-              content: Text('Reprint queued · admin desktop'),
-              duration: Duration(seconds: 2),
-            ));
+          DynamicToast.show(context,
+              message: 'Reprint queued · admin desktop',
+              kind: ToastKind.success,
+              duration: const Duration(seconds: 2));
         }
       },
     );
@@ -108,11 +101,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       isMounted: () => mounted,
       isStillWaiting: () => !acked,
       onTimeout: () {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(const SnackBar(
-            content: Text('Reprint request timed out — please retry'),
-          ));
+        DynamicToast.show(context,
+            message: 'Reprint request timed out — please retry',
+            kind: ToastKind.error);
       },
     );
   }
@@ -154,15 +145,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     }, onAck: (response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(
-            backgroundColor: AppColors.danger,
-            content: Text(
-              response['message']?.toString() ?? 'Cancel failed',
-              style: AppTypography.bodyMd.copyWith(color: Colors.white),
-            ),
-          ));
+        DynamicToast.show(context,
+            message: response['message']?.toString() ?? 'Cancel failed',
+            kind: ToastKind.error);
         return;
       }
 
@@ -175,11 +160,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             o,
       ];
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: AppColors.danger,
-          content: Text('Order ${order.id} cancelled',
-              style: AppTypography.bodyMd.copyWith(color: Colors.white)),
-        ));
+        DynamicToast.show(context,
+            message: 'Order ${order.id} cancelled', kind: ToastKind.warning);
         context.pop();
       }
     });
@@ -200,15 +182,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() => _generatingBill = false);
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(
-            backgroundColor: AppColors.danger,
-            content: Text(
-              response['message']?.toString() ?? 'Bill generation failed',
-              style: AppTypography.bodyMd.copyWith(color: Colors.white),
-            ),
-          ));
+        DynamicToast.show(context,
+            message:
+                response['message']?.toString() ?? 'Bill generation failed',
+            kind: ToastKind.error);
       } else {
         final billsRaw = response['bills'];
         final parsedBills = <BillInfo>[];
@@ -243,15 +220,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               (response['discount'] as num?)?.toDouble();
           _discountLabel = response['discount_label']?.toString();
         });
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(
-            backgroundColor: AppColors.success,
-            content: Text(
-              'Bill generated${_billNumber != null ? ' · $_billNumber' : ''}',
-              style: AppTypography.bodyMd.copyWith(color: Colors.white),
-            ),
-          ));
+        DynamicToast.show(context,
+            message:
+                'Bill generated${_billNumber != null ? ' · $_billNumber' : ''}',
+            kind: ToastKind.success);
       }
     });
 
@@ -261,11 +233,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       isStillWaiting: () => _generatingBill,
       onTimeout: () {
         setState(() => _generatingBill = false);
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(const SnackBar(
-            content: Text('Bill generation timed out — please retry'),
-          ));
+        DynamicToast.show(context,
+            message: 'Bill generation timed out — please retry',
+            kind: ToastKind.error);
       },
     );
   }
@@ -291,13 +261,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     );
     if (paid == true && mounted) {
       setState(() => _paymentCollected = true);
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(SnackBar(
-          backgroundColor: AppColors.success,
-          content: Text('Payment collected',
-              style: AppTypography.bodyMd.copyWith(color: Colors.white)),
-        ));
+      DynamicToast.show(context,
+          message: 'Payment collected', kind: ToastKind.success);
     }
   }
 
@@ -332,15 +297,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         _billId = null;
         _generateBill(order);
       }
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(SnackBar(
-          backgroundColor: AppColors.success,
-          content: Text(
-            'Discount applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
-            style: AppTypography.bodyMd.copyWith(color: Colors.white),
-          ),
-        ));
+      DynamicToast.show(context,
+          message:
+              'Discount applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
+          kind: ToastKind.success);
     }
   }
 
@@ -360,15 +320,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         _billId = null;
         _generateBill(order);
       }
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(SnackBar(
-          backgroundColor: AppColors.success,
-          content: Text(
-            'Coupon applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
-            style: AppTypography.bodyMd.copyWith(color: Colors.white),
-          ),
-        ));
+      DynamicToast.show(context,
+          message:
+              'Coupon applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
+          kind: ToastKind.success);
     }
   }
 
@@ -385,15 +340,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         _billId = null;
         _generateBill(order);
       }
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(SnackBar(
-          backgroundColor: AppColors.success,
-          content: Text(
-            'Offer applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
-            style: AppTypography.bodyMd.copyWith(color: Colors.white),
-          ),
-        ));
+      DynamicToast.show(context,
+          message:
+              'Offer applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
+          kind: ToastKind.success);
     }
   }
 
@@ -817,8 +767,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                             ),
                           ),
 
-                        if (!_billGenerated &&
-                            !ref.watch(isWaiterProvider)) ...[
+                        if (!_billGenerated && flags.voidBills) ...[
                           if (flags.kotReprint) const SizedBox(width: 8),
                           Expanded(
                             child: LiquidSecondaryButton(
@@ -839,8 +788,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     if (isSent && !_paymentCollected) ...[
 
                       if (!_billGenerated &&
-                          (flags.discounts || flags.offers) &&
-                          !ref.watch(isWaiterProvider)) ...[
+                          (flags.discounts || flags.offers)) ...[
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -882,7 +830,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                         ),
                       ],
                       if (_billGenerated) ...[
-                        if (!ref.watch(isWaiterProvider)) ...[
+                        if (flags.collectPayment) ...[
                           const SizedBox(height: 8),
                           Row(
                             children: [
@@ -897,7 +845,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                             ],
                           ),
                         ],
-                      ] else ...[
+                      ] else if (flags.generateBill) ...[
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -942,12 +890,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                               if (!mounted) return;
                               printed++;
                               if (printed == billIds.length) {
-                                ScaffoldMessenger.of(context)
-                                  ..clearSnackBars()
-                                  ..showSnackBar(SnackBar(
-                                    content: Text(
-                                        '${billIds.length} bill${billIds.length > 1 ? "s" : ""} queued · admin desktop'),
-                                  ));
+                                DynamicToast.show(context,
+                                    message:
+                                        '${billIds.length} bill${billIds.length > 1 ? "s" : ""} queued · admin desktop',
+                                    kind: ToastKind.success);
                               }
                             });
                           }

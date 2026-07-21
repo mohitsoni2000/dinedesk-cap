@@ -8,6 +8,7 @@ import '../data/currency.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
+import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
@@ -88,20 +89,13 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() => _submitting = false);
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(
-            backgroundColor: AppColors.danger,
-            content: Text(response['message']?.toString() ?? 'Edit failed'),
-          ));
+        DynamicToast.show(context,
+            message: response['message']?.toString() ?? 'Edit failed',
+            kind: ToastKind.error);
       } else {
         Navigator.of(context).pop(true);
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(const SnackBar(
-            backgroundColor: AppColors.success,
-            content: Text('KOT updated'),
-          ));
+        DynamicToast.show(context,
+            message: 'KOT updated', kind: ToastKind.success);
       }
     });
   }

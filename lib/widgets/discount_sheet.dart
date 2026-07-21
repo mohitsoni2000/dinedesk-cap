@@ -9,6 +9,7 @@ import '../data/currency.dart';
 import '../theme/tokens.dart';
 import '../utils/socket_helpers.dart';
 import 'app_surface.dart';
+import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
@@ -106,15 +107,9 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() => _submitting = false);
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(
-            backgroundColor: AppColors.danger,
-            content: Text(
-              response['message']?.toString() ?? 'Discount failed',
-              style: AppTypography.bodyMd.copyWith(color: Colors.white),
-            ),
-          ));
+        DynamicToast.show(context,
+            message: response['message']?.toString() ?? 'Discount failed',
+            kind: ToastKind.error);
       } else {
         Navigator.of(context).pop(response);
       }
@@ -126,11 +121,9 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       isStillWaiting: () => _submitting,
       onTimeout: () {
         setState(() => _submitting = false);
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(const SnackBar(
-            content: Text('Discount request timed out — please retry'),
-          ));
+        DynamicToast.show(context,
+            message: 'Discount request timed out — please retry',
+            kind: ToastKind.error);
       },
     );
   }

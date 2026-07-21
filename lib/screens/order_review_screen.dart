@@ -14,9 +14,9 @@ import '../theme/tokens.dart';
 import '../utils/request_id.dart';
 import '../widgets/app_card.dart';
 import '../widgets/quick_action_tile.dart';
+import '../widgets/dynamic_toast.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/order_submitting_overlay.dart';
-import '../widgets/payment_sheet.dart';
 import '../widgets/stepper_button.dart';
 
 class OrderReviewScreen extends ConsumerStatefulWidget {
@@ -199,32 +199,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     return active?['id']?.toString();
   }
 
-  List<BillInfo> _currentBills() {
-    final slotKey = widget.isRoom ? 'room_id' : 'table_id';
-    final orderMap = ref.read(activeOrdersProvider).where((o) {
-      return o[slotKey]?.toString() == widget.tableId;
-    }).firstOrNull;
-    final billsRaw = orderMap?['bills'];
-    if (billsRaw is! List) return [];
-    return billsRaw
-        .whereType<Map>()
-        .map((b) => BillInfo.fromMap(Map<String, dynamic>.from(b)))
-        .where((b) => b.id.isNotEmpty)
-        .toList();
-  }
-
-  void _openBilling() {
-    final bills = _currentBills();
-    if (bills.isEmpty) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(const SnackBar(
-            content: Text('No bill found for this table')));
-      return;
-    }
-    PaymentSheet.show(context, bills: bills);
-  }
-
   String? _orderIdFromResponse(
     Map<String, dynamic> response, {
     String? fallback,
@@ -369,14 +343,10 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           <String, dynamic>{'order_id': orderId},
           onAck: (response) {
             if (!mounted || response['kind'] != 'error') return;
-            ScaffoldMessenger.of(context)
-              ..clearSnackBars()
-              ..showSnackBar(SnackBar(
-                content: Text(
-                  response['message']?.toString() ??
-                      'KOT print failed — check the kitchen printer',
-                ),
-              ));
+            DynamicToast.show(context,
+                message: response['message']?.toString() ??
+                    'KOT print failed — check the kitchen printer',
+                kind: ToastKind.error);
           },
         );
       }
@@ -499,11 +469,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         if (returnToBuilder) {
 
           final kotLabel = ref.read(lastKotIdProvider);
-          ScaffoldMessenger.of(context)
-            ..clearSnackBars()
-            ..showSnackBar(SnackBar(
-              content: Text('KOT $kotLabel sent to kitchen — not printed'),
-            ));
+          DynamicToast.show(context,
+              message: 'KOT $kotLabel sent to kitchen — not printed',
+              kind: ToastKind.success);
           context.go(_builderRoute);
           return;
         }
@@ -511,7 +479,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         return;
       }
 
-      final messenger = ScaffoldMessenger.of(context);
       String msg = 'Order could not be confirmed — please retry';
       try {
         final result = await runningFlow;
@@ -531,9 +498,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
       }
 
-      messenger
-        ..clearSnackBars()
-        ..showSnackBar(SnackBar(content: Text(msg)));
+      if (mounted) {
+        DynamicToast.show(context, message: msg, kind: ToastKind.error);
+      }
     } finally {
       if (mounted) setState(() => _running = false);
     }
@@ -559,7 +526,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     try {
       ref.read(feedbackServiceProvider).fire(const FeedbackHeavy());
       ref.read(orderNotesProvider.notifier).state = _notes.text;
-      final messenger = ScaffoldMessenger.of(context);
 
       final cart = ref.read(cartProvider);
       final orderResponse = await _createOrUpdateOrder(
@@ -567,10 +533,11 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         notes: _notes.text,
       );
       if (orderResponse['kind'] == 'error') {
-        messenger
-          ..clearSnackBars()
-          ..showSnackBar(const SnackBar(
-              content: Text('Could not save order — please retry')));
+        if (mounted) {
+          DynamicToast.show(context,
+              message: 'Could not save order — please retry',
+              kind: ToastKind.error);
+        }
         return;
       }
       ref
@@ -582,10 +549,11 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         fallback: _activeOrderIdForTable(),
       );
       if (orderId == null || orderId.isEmpty) {
-        messenger
-          ..clearSnackBars()
-          ..showSnackBar(const SnackBar(
-              content: Text('Order saved but ID not returned — please retry')));
+        if (mounted) {
+          DynamicToast.show(context,
+              message: 'Order saved but ID not returned — please retry',
+              kind: ToastKind.error);
+        }
         return;
       }
 
@@ -593,11 +561,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           .read(socketServiceProvider)
           .emitAck('order:hold', <String, dynamic>{'order_id': orderId});
       if (holdResponse['kind'] == 'error') {
-        messenger
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(
-              content: Text(holdResponse['message']?.toString() ??
-                  'Could not hold order — please retry')));
+        if (mounted) {
+          DynamicToast.show(context,
+              message: holdResponse['message']?.toString() ??
+                  'Could not hold order — please retry',
+              kind: ToastKind.error);
+        }
         return;
       }
       ref
@@ -608,10 +577,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       _submitted = true;
       ref.read(cartProvider.notifier).clear();
       ref.read(orderNotesProvider.notifier).state = '';
-      messenger
-        ..clearSnackBars()
-        ..showSnackBar(
-            const SnackBar(content: Text('Order held — table reserved')));
+      DynamicToast.show(context,
+          message: 'Order held — table reserved', kind: ToastKind.success);
       context.go('/tables');
     } finally {
       if (mounted) setState(() => _running = false);
@@ -963,9 +930,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                 child: cart.isEmpty
                     ? _EmptyCartGuard(
                         onBackToMenu: () => context.pop(),
-                        billAlreadyGenerated: billAlreadyGenerated,
-                        onOpenBilling:
-                            flags.billingButton ? _openBilling : null,
                       )
                     : ListView(
                         padding: EdgeInsets.fromLTRB(
@@ -1091,24 +1055,15 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                             .removeAt(idx);
                                       }
 
-                                      ScaffoldMessenger.of(context)
-                                        ..clearSnackBars()
-                                        ..showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              '${deleted.item.name} removed',
-                                            ),
-                                            duration: const Duration(
-                                              seconds: 4,
-                                            ),
-                                            action: SnackBarAction(
-                                              label: 'UNDO',
-                                              textColor: AppColors.terra400,
-                                              onPressed: () =>
-                                                  _undoDelete(deleted),
-                                            ),
-                                          ),
-                                        );
+                                      DynamicToast.show(
+                                        context,
+                                        message:
+                                            '${deleted.item.name} removed',
+                                        duration:
+                                            const Duration(seconds: 4),
+                                        actionLabel: 'Undo',
+                                        onAction: () => _undoDelete(deleted),
+                                      );
                                     },
                                     child: GestureDetector(
                                       onLongPress: () => _showCartLineMenu(
@@ -1465,7 +1420,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                         ],
                       ),
 
-                      if (!ref.watch(isWaiterProvider)) ...[
+                      if (flags.generateBill) ...[
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -1479,34 +1434,30 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                     : _submitKotAndBill,
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: LiquidSecondaryButton(
-                                label: 'Quick Settle',
-                                leadingIcon: Icons.payments_outlined,
-                                onPressed:
-                                    billAlreadyGenerated ? null : _quickSettle,
+                            if (flags.collectPayment) ...[
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: LiquidSecondaryButton(
+                                  label: 'Quick Settle',
+                                  leadingIcon: Icons.payments_outlined,
+                                  onPressed: billAlreadyGenerated
+                                      ? null
+                                      : _quickSettle,
+                                ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       ],
                       if (billAlreadyGenerated) ...[
                         const SizedBox(height: 8),
-                        if (flags.billingButton)
-                          LiquidSecondaryButton(
-                            label: 'Billing',
-                            leadingIcon: Icons.receipt_long,
-                            onPressed: _openBilling,
-                          )
-                        else
-                          Text(
-                            'Bill already generated — go back to collect payment',
-                            style: AppTypography.caption.copyWith(
-                              color: context.palette.ink50,
-                            ),
-                            textAlign: TextAlign.center,
+                        Text(
+                          'Bill already generated — go back to collect payment',
+                          style: AppTypography.caption.copyWith(
+                            color: context.palette.ink50,
                           ),
+                          textAlign: TextAlign.center,
+                        ),
                       ],
                     ],
                   ),
@@ -1705,12 +1656,8 @@ class _KotRow extends StatelessWidget {
 
 class _EmptyCartGuard extends ConsumerWidget {
   final VoidCallback onBackToMenu;
-  final bool billAlreadyGenerated;
-  final VoidCallback? onOpenBilling;
   const _EmptyCartGuard({
     required this.onBackToMenu,
-    this.billAlreadyGenerated = false,
-    this.onOpenBilling,
   });
 
   @override
@@ -1747,14 +1694,6 @@ class _EmptyCartGuard extends ConsumerWidget {
               leadingIcon: Icons.add,
               onPressed: () => context.pop(),
             ),
-            if (billAlreadyGenerated && onOpenBilling != null) ...[
-              const SizedBox(height: 8),
-              LiquidSecondaryButton(
-                label: 'Billing',
-                leadingIcon: Icons.receipt_long,
-                onPressed: onOpenBilling!,
-              ),
-            ],
             const SizedBox(height: 12),
             Builder(
               builder: (_) {
@@ -1809,14 +1748,10 @@ class _EmptyCartGuard extends ConsumerWidget {
                             'skipped: '
                             '${skipped.take(3).join(', ')}'
                             '${skipped.length > 3 ? ' (+${skipped.length - 3} more)' : ''}';
-                    ScaffoldMessenger.of(context)
-                      ..clearSnackBars()
-                      ..showSnackBar(
-                        SnackBar(
-                          content: Text(summary),
-                          duration: const Duration(seconds: 4),
-                        ),
-                      );
+                    DynamicToast.show(context,
+                        message: summary,
+                        kind: ToastKind.success,
+                        duration: const Duration(seconds: 4));
                   },
                 );
               },

@@ -1,0 +1,9 @@
+What's new in 1.0.2
+
+- Fixed sign-in asking for your PIN too often after locking or backgrounding the phone — sessions now stay signed in automatically for up to an hour of no connection.
+- Fixed KOTs sometimes not reaching the kitchen printer after a WiFi hiccup mid-shift.
+- Fixed a bug where retrying a failed KOT could duplicate order items.
+- You're now notified directly on your phone if a KOT genuinely fails to print, instead of failing silently.
+- PIN-required settings can now be configured per staff role for all actions (previously only some).
+- The "connection lost" screen now recovers automatically instead of requiring a fresh QR scan.
+- Removed the Sales figure from the Profile screen.

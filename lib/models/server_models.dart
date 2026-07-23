@@ -42,6 +42,7 @@ class ServerTable {
   final int kotCount;
   final List<String> operatorIds;
   final List<String> operatorNames;
+  final bool isActive;
 
   const ServerTable({
     required this.id,
@@ -59,6 +60,7 @@ class ServerTable {
     this.kotCount = 0,
     this.operatorIds = const [],
     this.operatorNames = const [],
+    this.isActive = true,
   });
 
   factory ServerTable.fromMap(Map<String, dynamic> m) {
@@ -86,6 +88,7 @@ class ServerTable {
           operators.map((o) => _toStr(o['operator_id'])).toList(),
       operatorNames:
           operators.map((o) => _toStr(o['operator_name'])).toList(),
+      isActive: _toBool(m['is_active'], true),
     );
   }
 }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../data/currency.dart';
 import '../data/providers.dart';
 import '../services/session_service.dart';
 import '../theme/tokens.dart';
@@ -27,15 +26,6 @@ class ProfileScreen extends ConsumerWidget {
     final restaurantDevice = restaurant?.adminDeviceLabel ?? '';
     final restaurantIp = restaurant?.adminIp ?? '';
     final conn = ref.watch(connectionProvider);
-
-    final today = ref.watch(historyProvider.select((history) {
-      final now = DateTime.now();
-      final todayStr =
-          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-      return history
-          .where((o) => o.date == todayStr && o.status != OrderStatus.cancelled)
-          .fold<double>(0, (s, o) => s + o.total);
-    }));
 
     return ColoredBox(
       color: context.palette.paper,
@@ -130,23 +120,12 @@ class ProfileScreen extends ConsumerWidget {
                           label: 'Tables',
                           tint: AppColors.violet,
                         )),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
+                        const SizedBox(width: 8),
                         Expanded(
                             child: _Kpi(
                           value: '${stats.itemsSold}',
                           label: 'Items',
                           tint: AppColors.success,
-                        )),
-                        const SizedBox(width: 8),
-                        Expanded(
-                            child: _Kpi(
-                          value: formatRupeesCompact(today),
-                          label: 'Sales',
-                          tint: AppColors.teal,
                         )),
                       ],
                     ),

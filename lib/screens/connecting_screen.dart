@@ -81,20 +81,10 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
       if (!mounted) return;
       debugPrint('[Connect] Socket state changed: $state');
       if (state == SocketState.connected) {
-        debugPrint('[Connect] ✓ Connected → advancing stages then → /auth');
+        debugPrint('[Connect] ✓ Connected → checking for a resumable session');
         _timeoutTimer?.cancel();
-
         setState(() => _stage = 1);
-        _stageTimer = Timer(const Duration(milliseconds: 700), () {
-          if (!mounted) return;
-          setState(() => _stage = 2);
-          _stageTimer = Timer(const Duration(milliseconds: 500), () {
-            if (mounted) {
-              debugPrint('[Connect] Navigating to /auth');
-              context.go('/auth');
-            }
-          });
-        });
+        _attemptSilentResume();
       } else if (state == SocketState.disconnected && _stage > 0) {
         debugPrint('[Connect] ✗ Connection lost during handshake');
         setState(() => _errorMsg = 'Connection lost — retrying…');
@@ -103,6 +93,31 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
 
     debugPrint('[Connect] Starting socket connection...');
     socketService.connect(pairing.host, pairing.port, pairing.token);
+  }
+
+  /// If the operator was disconnected for less than the backend's PIN grace
+  /// window (e.g. the app was killed/backgrounded and relaunched, or a WiFi
+  /// blip just reconnected), the server still trusts the prior PIN
+  /// verification — resume straight to /tables instead of prompting again.
+  Future<void> _attemptSilentResume() async {
+    final resumed = await ref.read(syncServiceProvider).requestResync();
+    if (!mounted) return;
+    if (resumed) {
+      debugPrint('[Connect] ✓ Session resumed silently → /tables');
+      final syncService = ref.read(syncServiceProvider);
+      syncService.unregisterListeners();
+      syncService.registerListeners();
+      context.go('/tables');
+      return;
+    }
+    debugPrint('[Connect] Session needs PIN → /auth');
+    setState(() => _stage = 2);
+    _stageTimer = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        debugPrint('[Connect] Navigating to /auth');
+        context.go('/auth');
+      }
+    });
   }
 
   void _runDemoStages() {

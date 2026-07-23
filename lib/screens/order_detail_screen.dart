@@ -69,7 +69,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         _ => Icons.restaurant_menu,
       };
 
-  void _reprintKot(BuildContext context) {
+  Future<void> _reprintKot(BuildContext context) async {
+    final pinOk = await requirePinIfNeeded(context, ref, 'kot_reprint');
+    if (!pinOk || !context.mounted) return;
+
     HapticFeedback.mediumImpact();
     final socketService = ref.read(socketServiceProvider);
 
@@ -106,6 +109,30 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             kind: ToastKind.error);
       },
     );
+  }
+
+  Future<void> _printBill(BuildContext context) async {
+    final pinOk = await requirePinIfNeeded(context, ref, 'bill_reprint');
+    if (!pinOk || !context.mounted) return;
+
+    final socketService = ref.read(socketServiceProvider);
+    final billIds =
+        _bills.isNotEmpty ? _bills.map((b) => b.id).toList() : [_billId!];
+    int printed = 0;
+    for (final id in billIds) {
+      socketService.emit('print:bill', <String, dynamic>{
+        'bill_id': id,
+      }, onAck: (response) {
+        if (!mounted) return;
+        printed++;
+        if (printed == billIds.length) {
+          DynamicToast.show(context,
+              message:
+                  '${billIds.length} bill${billIds.length > 1 ? "s" : ""} queued · admin desktop',
+              kind: ToastKind.success);
+        }
+      });
+    }
   }
 
   Future<void> _confirmCancel(BuildContext context, HistoryOrder order) async {
@@ -877,27 +904,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                             ? 'Print All Bills (${_bills.length})'
                             : 'Print Bill',
                         leadingIcon: Icons.receipt_long_outlined,
-                        onPressed: () {
-                          final socketService = ref.read(socketServiceProvider);
-                          final billIds = _bills.isNotEmpty
-                              ? _bills.map((b) => b.id).toList()
-                              : [_billId!];
-                          int printed = 0;
-                          for (final id in billIds) {
-                            socketService.emit('print:bill', <String, dynamic>{
-                              'bill_id': id,
-                            }, onAck: (response) {
-                              if (!mounted) return;
-                              printed++;
-                              if (printed == billIds.length) {
-                                DynamicToast.show(context,
-                                    message:
-                                        '${billIds.length} bill${billIds.length > 1 ? "s" : ""} queued · admin desktop',
-                                    kind: ToastKind.success);
-                              }
-                            });
-                          }
-                        },
+                        onPressed: () => _printBill(context),
                       ),
                     ],
                   ],

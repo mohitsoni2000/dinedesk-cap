@@ -286,14 +286,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       }
 
       ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.pending);
-      _kotSentOrderId = orderId;
-      _pendingOrderRequestId = null;
       Map<String, dynamic> kotResponse;
       try {
         kotResponse = await ref
             .read(kotQueueProvider)
             .sendKot(socketService, <String, dynamic>{'order_id': orderId});
       } catch (_) {
+        // Not sent, not queued — leave _kotSentOrderId unset so a retry tap
+        // actually resends the KOT instead of silently treating it as done.
         ref.read(cartProvider.notifier).setSyncStatusFailed();
         return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.kotSend,
@@ -301,6 +301,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         );
       }
       if (kotResponse['kind'] == 'queued') {
+        // Durably queued on-device for auto-flush on reconnect — mark this
+        // order's KOT as handled so a retry tap doesn't queue a duplicate
+        // (of either the KOT itself or, via a fresh client_request_id, the
+        // order's line items).
+        _kotSentOrderId = orderId;
+        _pendingOrderRequestId = null;
         return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.kotSend,
           errorMessage:
@@ -309,12 +315,15 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         );
       }
       if (kotResponse['kind'] == 'error') {
+        // Same as the exception case above — nothing was sent or queued.
         ref.read(cartProvider.notifier).setSyncStatusFailed();
         return _OrderFlowStepResult(
           failedStep: _OrderFlowStep.kotSend,
           errorMessage: 'Failed to send KOT to kitchen — please retry',
         );
       }
+      _kotSentOrderId = orderId;
+      _pendingOrderRequestId = null;
       ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.synced);
       ref
           .read(syncServiceProvider)

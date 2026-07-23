@@ -66,6 +66,20 @@ class SocketService {
   SocketState get state => _state;
   io.Socket? get socket => _socket;
 
+  /// Nudges an already-configured socket that's sitting disconnected — the
+  /// OS can freeze background networking for a while, so the engine.io
+  /// heartbeat that would normally notice a dead connection (and Socket.IO's
+  /// own reconnection loop) may not have had a chance to run yet by the time
+  /// the app comes back to the foreground. A no-op if we're already
+  /// connecting/connected, or if connect() was never called this session
+  /// (nothing to reconnect — e.g. still on /scan or /connecting).
+  void reconnectIfNeeded() {
+    if (_state == SocketState.disconnected && _socket != null) {
+      debugPrint('$_tag App resumed while disconnected — nudging reconnect');
+      _socket!.connect();
+    }
+  }
+
   void connect(String host, int port, String token) {
     disconnect();
     _setState(SocketState.connecting);
@@ -144,6 +158,14 @@ class SocketService {
               ? "Server didn't respond — check the connection and retry"
               : 'Connection error');
         });
+  }
+
+  /// Restores the transport to `verified` after a successful resync confirms
+  /// the server still trusts our prior PIN-verified session — reconnecting
+  /// (e.g. after a WiFi blip) otherwise leaves us stuck at `connected`
+  /// forever, which silently blocks anything gated on `verified` (KOT send).
+  void markVerified() {
+    if (_state != SocketState.disconnected) _setState(SocketState.verified);
   }
 
   void emit(String event, Map<String, dynamic> data,

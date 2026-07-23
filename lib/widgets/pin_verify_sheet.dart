@@ -43,6 +43,12 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
     'payment': 'Accept Payment',
     'kot_edit': 'Edit KOT',
     'quick_settle': 'Quick Settle',
+    'hold': 'Hold Order',
+    'table_shift': 'Shift Table',
+    'table_merge': 'Merge Tables',
+    'kot_reprint': 'Reprint KOT',
+    'bill_reprint': 'Reprint Bill',
+    'rename_table': 'Rename Table',
   };
 
   String get _actionLabel => _actionLabels[widget.action] ?? widget.action;

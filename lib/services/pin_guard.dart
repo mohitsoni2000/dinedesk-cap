@@ -41,6 +41,15 @@ Future<bool> requirePinIfNeeded(
     case 'quick_settle':
       required = flags.operatorPinQuickSettle;
       break;
+    case 'kot_reprint':
+      required = flags.operatorPinKotReprint;
+      break;
+    case 'bill_reprint':
+      required = flags.operatorPinBillReprint;
+      break;
+    case 'rename_table':
+      required = flags.operatorPinRenameTable;
+      break;
     case 'table_shift':
     case 'table_merge':
       required = flags.operatorPinKot;

@@ -14,8 +14,53 @@ import '../widgets/liquid_chrome.dart';
 class DisconnectedScreen extends ConsumerWidget {
   const DisconnectedScreen({super.key});
 
+  Future<void> _confirmScanQr(BuildContext context, WidgetRef ref) async {
+    // The background socket keeps retrying forever and may well have already
+    // reconnected by the time staff looks at the phone again — scanning a
+    // fresh QR wipes the still-possibly-valid saved pairing and forces a trip
+    // to the admin desktop, so make sure that's really what's needed first.
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: dialogContext.palette.surface,
+        title: const Text('Scan a new QR?', style: AppTypography.title),
+        content: const Text(
+          'This clears the current pairing — you\'ll need the admin desktop '
+          'to show a fresh QR code. If the WiFi has since come back, try '
+          '"Try reconnect once more" first instead.',
+          style: AppTypography.bodyMd,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Scan QR',
+                style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
+    SessionService().clearPairing();
+    ref.read(isAuthenticatedProvider.notifier).state = false;
+    ref.read(cartProvider.notifier).clear();
+    context.go('/scan');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // The background socket (SocketService) keeps retrying indefinitely even
+    // while this screen is up — if it silently reconnects (e.g. the WiFi
+    // dead zone was left a minute after the 15-minute banner gave up),
+    // there's no reason to keep stranding the operator here.
+    ref.listen(connectionProvider.select((c) => c.online), (prev, online) {
+      if (online == true) context.go('/tables');
+    });
+
     return ColoredBox(
       color: context.palette.paper,
       child: Scaffold(
@@ -80,25 +125,16 @@ class DisconnectedScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 24),
                         LiquidPrimaryButton(
-                          label: 'Scan QR',
+                          label: 'Try reconnect once more',
                           fullWidth: true,
-                          leadingIcon: Icons.qr_code_scanner,
-                          onPressed: () {
-                            ref
-                                .read(feedbackServiceProvider)
-                                .fire(const FeedbackMedium());
-                            SessionService().clearPairing();
-                            ref.read(isAuthenticatedProvider.notifier).state =
-                                false;
-                            ref.read(cartProvider.notifier).clear();
-                            context.go('/scan');
-                          },
+                          leadingIcon: Icons.refresh,
+                          onPressed: () => context.go('/connecting'),
                         ),
                         const SizedBox(height: 8),
                         LiquidSecondaryButton(
-                          label: 'Try reconnect once more',
-                          leadingIcon: Icons.refresh,
-                          onPressed: () => context.go('/connecting'),
+                          label: 'Scan QR',
+                          leadingIcon: Icons.qr_code_scanner,
+                          onPressed: () => _confirmScanQr(context, ref),
                         ),
                       ],
                     ),

@@ -77,8 +77,17 @@ class SyncService {
     _socket.on('table:updated', (data) {
       final map = _toMap(data);
       final st = ServerTable.fromMap(map);
-      final updated = _serverTableToLocal(st);
       final tables = [..._ref.read(tablesProvider)];
+      // A deactivated table (e.g. a temp table from a table-rename split, freed
+      // once its order settles) drops out of every future full-list push — the
+      // server only tells us about it going away via this single-table event,
+      // so it must be removed here rather than upserted like an active table.
+      if (!st.isActive) {
+        tables.removeWhere((t) => t.serverId == st.id);
+        _ref.read(tablesProvider.notifier).state = tables;
+        return;
+      }
+      final updated = _serverTableToLocal(st);
       final idx = tables.indexWhere((t) => t.serverId == updated.serverId);
       if (idx >= 0) {
         tables[idx] = updated;
@@ -408,6 +417,35 @@ class SyncService {
           const ConnectionStatus(online: false, label: 'Disconnected by admin');
       _socket.disconnect();
     });
+
+    _socket.on('kot:print:failed', (data) {
+      final map = _toMap(data);
+      final orderId = map['order_id']?.toString();
+      final kotNumber = map['kot_number']?.toString();
+      showKotPrintFailedAlert(
+        tableOrOrderLabel: _tableLabelForOrder(orderId),
+        kotNumber: kotNumber,
+      );
+    });
+  }
+
+  /// Best-effort table label for a phone-facing alert — falls back to the
+  /// raw order id if the order/table can't be found locally (e.g. it was
+  /// already cleared from activeOrdersProvider by the time the failure
+  /// notification arrives).
+  String _tableLabelForOrder(String? orderId) {
+    if (orderId == null) return 'an order';
+    final order = _ref
+        .read(activeOrdersProvider)
+        .where((o) => o['id']?.toString() == orderId)
+        .firstOrNull;
+    final tableId = order?['table_id']?.toString();
+    if (tableId == null) return 'order $orderId';
+    final table = _ref
+        .read(tablesProvider)
+        .where((t) => t.serverId == tableId)
+        .firstOrNull;
+    return table != null ? 'Table ${table.id}' : 'order $orderId';
   }
 
   Future<void> applyInitialSync(Map<String, dynamic> data) async {
@@ -599,11 +637,13 @@ class SyncService {
   }
 
   /// Public entry point for a user-triggered resync (e.g. the Tables screen
-  /// refresh button). Internal auto-resync triggers call [_requestResync]
-  /// directly and don't need the returned future.
-  Future<void> requestResync() => _requestResync();
+  /// refresh button) and for silently resuming a still-valid session right
+  /// after connecting (e.g. app relaunch within the server's PIN grace
+  /// window) — see [ConnectingScreen]. Returns true if the operator is now
+  /// fully synced and authenticated, false if PIN re-entry is required.
+  Future<bool> requestResync() => _requestResync();
 
-  Future<void> _requestResync() {
+  Future<bool> _requestResync() {
     _ref.read(connectionProvider.notifier).state = const ConnectionStatus(
       online: true,
       label: 'Syncing…',
@@ -615,9 +655,27 @@ class SyncService {
         if (syncRaw is Map) {
           await applyInitialSync(Map<String, dynamic>.from(syncRaw));
         }
+        final opData = res['operator'];
+        if (opData is Map) {
+          final om = Map<String, dynamic>.from(opData);
+          _ref.read(operatorProvider.notifier).state = Operator(
+            name: om['name']?.toString() ?? 'Operator',
+            role: om['role']?.toString() ?? 'Waiter',
+            shift: om['shift']?.toString() ?? 'Day',
+            username: om['id']?.toString() ?? om['username']?.toString() ?? '',
+          );
+        }
+        // The server only reports success here if our session is still
+        // pinVerified — restore the transport's verified state (unblocks
+        // KOT sending after any reconnect) and the app-level auth flag
+        // (unblocks a silent resume right after a cold start).
+        _socket.markVerified();
+        _ref.read(isAuthenticatedProvider.notifier).state = true;
         _ref.read(kotQueueProvider).flush(_socket);
+        return true;
       } else {
         _ref.read(isAuthenticatedProvider.notifier).state = false;
+        return false;
       }
     }).catchError((_) {
       debugPrint('$_tag Resync failed — data may be stale');
@@ -627,6 +685,7 @@ class SyncService {
         label:
             'Connected · ${restaurant?.name ?? "Restaurant"} — sync failed, tap to retry',
       );
+      return false;
     });
   }
 
@@ -653,6 +712,7 @@ class SyncService {
       'table:links:updated',
       'table:presence:updated',
       'order:ready',
+      'kot:print:failed',
     ]) {
       _socket.off(event);
     }
@@ -897,12 +957,14 @@ class SyncService {
   void _applyTablesFromEnvelope(BroadcastEnvelope env) {
     final tableMaps = env.tablesList;
     if (tableMaps.isEmpty) return;
-    final updates = tableMaps.map((m) {
-      final st = ServerTable.fromMap(m);
-      return _serverTableToLocal(st);
-    }).toList();
+    final parsed = tableMaps.map((m) => ServerTable.fromMap(m)).toList();
     final tables = [..._ref.read(tablesProvider)];
-    for (final updated in updates) {
+    for (final st in parsed) {
+      if (!st.isActive) {
+        tables.removeWhere((t) => t.serverId == st.id);
+        continue;
+      }
+      final updated = _serverTableToLocal(st);
       final idx = tables.indexWhere((t) => t.serverId == updated.serverId);
       if (idx >= 0) {
         tables[idx] = updated;
@@ -922,6 +984,7 @@ class SyncService {
         return OrderStatus.modified;
       case 'paid':
       case 'closed':
+      case 'credit':
         return OrderStatus.paid;
       default:
         return OrderStatus.sent;

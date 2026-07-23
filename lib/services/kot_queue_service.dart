@@ -20,7 +20,7 @@ final kotQueueProvider = Provider<KotQueueService>((ref) => KotQueueService());
 class KotQueueService {
   static const _prefsKey = 'pending_kots_v1';
   static const _tag = '[KotQueue]';
-  bool _flushing = false;
+  Future<void>? _flushFuture;
 
   Future<List<Map<String, dynamic>>> _read() async {
     final prefs = await SharedPreferences.getInstance();
@@ -87,37 +87,43 @@ class KotQueueService {
 
   /// Fire every pending KOT, oldest first. Stops on the first failure so
   /// order is preserved; the next verified moment retries the rest.
-  Future<void> flush(SocketService socket) async {
-    if (_flushing || socket.state != SocketState.verified) return;
+  ///
+  /// A caller that arrives while a flush is already running (e.g. a resync
+  /// on reconnect racing a new order's own pre-send flush) awaits that same
+  /// in-flight run instead of starting a second one — otherwise two flushes
+  /// could interleave sends out of order and clobber each other's writes to
+  /// the on-disk queue.
+  Future<void> flush(SocketService socket) {
+    if (socket.state != SocketState.verified) return Future.value();
+    return _flushFuture ??=
+        _doFlush(socket).whenComplete(() => _flushFuture = null);
+  }
+
+  Future<void> _doFlush(SocketService socket) async {
     var items = await _read();
     if (items.isEmpty) return;
-    _flushing = true;
     debugPrint('$_tag flushing ${items.length} pending KOT(s)…');
-    try {
-      while (items.isNotEmpty) {
-        final payload =
-            Map<String, dynamic>.from(items.first['payload'] as Map);
-        Map<String, dynamic> res;
-        try {
-          res = await socket
-              .emitAck('kot:send', payload)
-              .timeout(const Duration(seconds: 8));
-        } catch (_) {
-          break; // still unreachable — keep the rest for next time
-        }
-        final msg = res['message']?.toString().toLowerCase() ?? '';
-        final accepted = res['kind'] != 'error' ||
-            msg.contains('duplicate') ||
-            msg.contains('already');
-        if (!accepted) {
-          debugPrint('$_tag desk rejected queued KOT: $msg — dropping');
-        }
-        items.removeAt(0);
-        await _write(items);
+    while (items.isNotEmpty) {
+      final payload =
+          Map<String, dynamic>.from(items.first['payload'] as Map);
+      Map<String, dynamic> res;
+      try {
+        res = await socket
+            .emitAck('kot:send', payload)
+            .timeout(const Duration(seconds: 8));
+      } catch (_) {
+        break; // still unreachable — keep the rest for next time
       }
-    } finally {
-      _flushing = false;
-      debugPrint('$_tag flush done (${items.length} left)');
+      final msg = res['message']?.toString().toLowerCase() ?? '';
+      final accepted = res['kind'] != 'error' ||
+          msg.contains('duplicate') ||
+          msg.contains('already');
+      if (!accepted) {
+        debugPrint('$_tag desk rejected queued KOT: $msg — dropping');
+      }
+      items.removeAt(0);
+      await _write(items);
     }
+    debugPrint('$_tag flush done (${items.length} left)');
   }
 }

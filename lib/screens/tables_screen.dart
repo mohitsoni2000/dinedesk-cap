@@ -922,9 +922,10 @@ String _pillLabel(TableState state, List<String> operatorNames) {
     case TableState.other:
       final first =
           operatorNames.isNotEmpty ? operatorNames.first.trim() : null;
-      return (first == null || first.isEmpty)
-          ? 'OTHER'
-          : first.split(' ').first.toUpperCase();
+      if (first == null || first.isEmpty) return 'OTHER';
+      final label = first.split(' ').first.toUpperCase();
+      final extra = operatorNames.length - 1;
+      return extra > 0 ? '$label +$extra' : label;
     case TableState.dirty:
       return 'DIRTY';
     case TableState.reserved:
@@ -932,6 +933,13 @@ String _pillLabel(TableState state, List<String> operatorNames) {
     case TableState.free:
       return 'FREE';
   }
+}
+
+/// Full roster for the pill's long-press tooltip — the pill itself only ever
+/// shows the first joined operator's name (see _pillLabel).
+String? _pillTooltip(TableState state, List<String> operatorNames) {
+  if (state != TableState.other || operatorNames.length < 2) return null;
+  return '${operatorNames.join(', ')} are working here';
 }
 
 Widget _applySpotlight(
@@ -969,7 +977,7 @@ class _StatePill extends StatelessWidget {
   Widget build(BuildContext context) {
     final bg = _pillBg(context, state);
     final fg = _pillFg(context, state);
-    return Container(
+    final pill = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: bg,
@@ -991,6 +999,8 @@ class _StatePill extends StatelessWidget {
         ],
       ),
     );
+    final tooltip = _pillTooltip(state, operatorNames);
+    return tooltip == null ? pill : Tooltip(message: tooltip, child: pill);
   }
 }
 

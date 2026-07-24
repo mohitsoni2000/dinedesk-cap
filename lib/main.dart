@@ -5,7 +5,9 @@ import 'data/providers.dart';
 import 'motion/app_scroll_behavior.dart';
 import 'motion/motion.dart';
 import 'router.dart';
+import 'services/app_messenger.dart';
 import 'services/platform_surfaces.dart';
+import 'services/update_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_mode_provider.dart';
 
@@ -30,10 +32,13 @@ class RestroApp extends ConsumerStatefulWidget {
 
 class _RestroAppState extends ConsumerState<RestroApp>
     with WidgetsBindingObserver {
+  final _updateService = UpdateService();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
   }
 
   @override
@@ -51,6 +56,28 @@ class _RestroAppState extends ConsumerState<RestroApp>
     // heartbeat/backoff timers.
     if (state == AppLifecycleState.resumed) {
       ref.read(socketServiceProvider).reconnectIfNeeded();
+      _checkForUpdate();
+    }
+  }
+
+  // A fixed-mount POS tablet can sit on the same app launch for days, so a
+  // once-at-cold-start check alone would miss updates published in between —
+  // re-checking on every foreground resume catches those without needing a
+  // background timer running the rest of the time.
+  Future<void> _checkForUpdate() async {
+    final result = await _updateService.check();
+    if (!result.available || !mounted) return;
+
+    if (result.androidInfo != null) {
+      final info = result.androidInfo!;
+      showUpdateAvailableDialog(
+        onUpdateNow: () => _updateService.startAndroidUpdate(info),
+      );
+    } else if (result.iosStoreUrl != null) {
+      final url = result.iosStoreUrl!;
+      showUpdateAvailableDialog(
+        onUpdateNow: () => _updateService.openStoreUrl(url),
+      );
     }
   }
 

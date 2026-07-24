@@ -57,5 +57,12 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Lets url_launcher's canLaunchUrl() see a browser under Android 11+
+             package visibility rules — used to open the Play Store listing if
+             an in-app update can't be started directly. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
 </manifest>

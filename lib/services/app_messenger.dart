@@ -77,3 +77,44 @@ Future<bool> promptPinReverify() async {
     _pinReverifyShowing = false;
   }
 }
+
+/// Surfaces "a new version is available" (see update_service.dart, checked
+/// at startup and on each foreground resume in main.dart). Dismissing just
+/// hides it for the rest of this app session — it never blocks the app, and
+/// the next cold start / resume checks again regardless.
+bool _updateAlertShowing = false;
+
+void showUpdateAvailableDialog({required VoidCallback onUpdateNow}) {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null || _updateAlertShowing) return;
+  _updateAlertShowing = true;
+
+  showDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: dialogContext.palette.surface,
+      icon: const Icon(Icons.system_update_rounded,
+          color: AppColors.terra, size: 32),
+      title: const Text('Update Available', style: AppTypography.title),
+      content: const Text(
+        'A new version of Command.Crew is available with the latest fixes. '
+        'Update now to stay up to date.',
+        style: AppTypography.bodyMd,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('Later'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.of(dialogContext).pop();
+            onUpdateNow();
+          },
+          child: const Text('Update Now'),
+        ),
+      ],
+    ),
+  ).then((_) => _updateAlertShowing = false);
+}

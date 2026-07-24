@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../router.dart';
 import '../theme/tokens.dart';
 import '../widgets/dynamic_toast.dart';
+import '../widgets/pin_verify_sheet.dart';
 
 /// Lets background services (sync_service.dart) with no BuildContext of
 /// their own surface server-side action failures (error:validation /
@@ -54,4 +55,25 @@ void showKotPrintFailedAlert({
       ],
     ),
   ).then((_) => _printFailedAlertShowing = false);
+}
+
+/// A reconnect's silent resync can come back rejected because the desktop's
+/// (RAM-only, per-process) PIN-verified flag has genuinely lapsed — the only
+/// case that should ever interrupt the operator. This asks for the PIN
+/// in-place, over whatever screen they're already on, instead of the old
+/// behaviour of clearing auth state and hard-navigating to the full login
+/// screen. Only one prompt at a time; a second rejection while one is
+/// already up is dropped rather than stacking sheets.
+bool _pinReverifyShowing = false;
+
+Future<bool> promptPinReverify() async {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null || _pinReverifyShowing) return false;
+  _pinReverifyShowing = true;
+  try {
+    final result = await PinVerifySheet.show(context, action: 'resync');
+    return result == true;
+  } finally {
+    _pinReverifyShowing = false;
+  }
 }

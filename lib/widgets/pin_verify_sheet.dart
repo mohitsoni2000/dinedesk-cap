@@ -49,6 +49,7 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
     'kot_reprint': 'Reprint KOT',
     'bill_reprint': 'Reprint Bill',
     'rename_table': 'Rename Table',
+    'resync': 'Resume Session',
   };
 
   String get _actionLabel => _actionLabels[widget.action] ?? widget.action;

@@ -673,8 +673,20 @@ class SyncService {
         _ref.read(isAuthenticatedProvider.notifier).state = true;
         _ref.read(kotQueueProvider).flush(_socket);
         return true;
+      } else if (res['code'] == 'reauth_required') {
+        // The desktop's PIN-verified flag has genuinely lapsed (grace window
+        // expired, or its process restarted mid-session) — ask for the PIN
+        // in place rather than clearing isAuthenticatedProvider, which would
+        // bounce the operator to the full login screen from wherever they
+        // are. Every other rejection here (a mid-flight disconnect, a
+        // dropped packet) falls through to the transient-failure branch
+        // below and never touches auth state at all — the next automatic
+        // reconnect just retries.
+        if (await promptPinReverify()) {
+          return await _requestResync();
+        }
+        return false;
       } else {
-        _ref.read(isAuthenticatedProvider.notifier).state = false;
         return false;
       }
     }).catchError((_) {

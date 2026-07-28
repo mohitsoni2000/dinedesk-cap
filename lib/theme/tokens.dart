@@ -1,6 +1,9 @@
-
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+
+import 'perf_mode.dart';
+import 'perf_scope.dart';
 
 class AppColors {
   AppColors._();
@@ -102,13 +105,13 @@ class AppPalette {
   final Color readOnlyBannerText;
 
   // ---- v2 semantic tokens (theme-aware; prefer these over AppColors) ----
-  final Color paper;          // scaffold / app background
-  final Color paperHint;      // subtle warm hint surface
-  final Color elevated;       // sheets, dialogs, popovers
-  final Color hairline;       // 1px borders
-  final Color scrim;          // modal barrier
-  final Color terraSoft;      // brand tint chip bg
-  final Color onTerraSoft;    // text on terraSoft
+  final Color paper; // scaffold / app background
+  final Color paperHint; // subtle warm hint surface
+  final Color elevated; // sheets, dialogs, popovers
+  final Color hairline; // 1px borders
+  final Color scrim; // modal barrier
+  final Color terraSoft; // brand tint chip bg
+  final Color onTerraSoft; // text on terraSoft
   final Color tableMineWashStart;
   final Color tableMineWashEnd;
   final Color tableMineBorder;
@@ -116,16 +119,26 @@ class AppPalette {
   final Color tableOtherText;
   final Color tableDirtyText;
   final Color tableReservedText;
-  final Color successBg; final Color successText;
-  final Color warnBg;    final Color warnText;
-  final Color dangerBg;  final Color dangerText;
-  final Color infoBg;    final Color infoText;
-  final Color timerOkBg;   final Color timerOkText;
-  final Color timerWarnBg; final Color timerWarnText;
-  final Color timerBadBg;  final Color timerBadText;
-  final Color paidBg;      final Color paidText;    // history PAID pill
-  final Color alertDeep;   final Color onAlertDeep; // ready-to-serve banner
-  final Color navBar;      final Color navHairline; // bottom nav surface
+  final Color successBg;
+  final Color successText;
+  final Color warnBg;
+  final Color warnText;
+  final Color dangerBg;
+  final Color dangerText;
+  final Color infoBg;
+  final Color infoText;
+  final Color timerOkBg;
+  final Color timerOkText;
+  final Color timerWarnBg;
+  final Color timerWarnText;
+  final Color timerBadBg;
+  final Color timerBadText;
+  final Color paidBg;
+  final Color paidText; // history PAID pill
+  final Color alertDeep;
+  final Color onAlertDeep; // ready-to-serve banner
+  final Color navBar;
+  final Color navHairline; // bottom nav surface
   final Color selectedPill; // solid 'active' pill fill (white text on top)
 
   const AppPalette._({
@@ -160,16 +173,26 @@ class AppPalette {
     required this.tableOtherText,
     required this.tableDirtyText,
     required this.tableReservedText,
-    required this.successBg, required this.successText,
-    required this.warnBg,    required this.warnText,
-    required this.dangerBg,  required this.dangerText,
-    required this.infoBg,    required this.infoText,
-    required this.timerOkBg,   required this.timerOkText,
-    required this.timerWarnBg, required this.timerWarnText,
-    required this.timerBadBg,  required this.timerBadText,
-    required this.paidBg,      required this.paidText,
-    required this.alertDeep,   required this.onAlertDeep,
-    required this.navBar,      required this.navHairline,
+    required this.successBg,
+    required this.successText,
+    required this.warnBg,
+    required this.warnText,
+    required this.dangerBg,
+    required this.dangerText,
+    required this.infoBg,
+    required this.infoText,
+    required this.timerOkBg,
+    required this.timerOkText,
+    required this.timerWarnBg,
+    required this.timerWarnText,
+    required this.timerBadBg,
+    required this.timerBadText,
+    required this.paidBg,
+    required this.paidText,
+    required this.alertDeep,
+    required this.onAlertDeep,
+    required this.navBar,
+    required this.navHairline,
     required this.selectedPill,
   });
 
@@ -178,14 +201,23 @@ class AppPalette {
   /// Card shadow tuned per brightness (dark needs deeper, softer shadows).
   List<BoxShadow> get cardShadow => isDark
       ? const [
-          BoxShadow(color: Color(0x33000000), blurRadius: 2, offset: Offset(0, 1)),
-          BoxShadow(color: Color(0x59000000), blurRadius: 26, offset: Offset(0, 12), spreadRadius: -16),
+          BoxShadow(
+              color: Color(0x33000000), blurRadius: 2, offset: Offset(0, 1)),
+          BoxShadow(
+              color: Color(0x59000000),
+              blurRadius: 26,
+              offset: Offset(0, 12),
+              spreadRadius: -16),
         ]
       : AppShadows.card;
 
   List<BoxShadow> get mineShadow => isDark
       ? const [
-          BoxShadow(color: Color(0x4DE05D38), blurRadius: 30, offset: Offset(0, 14), spreadRadius: -18),
+          BoxShadow(
+              color: Color(0x4DE05D38),
+              blurRadius: 30,
+              offset: Offset(0, 14),
+              spreadRadius: -18),
         ]
       : AppShadows.terraWash;
 
@@ -230,16 +262,26 @@ class AppPalette {
     tableOtherText: AppColors.tableOtherText,
     tableDirtyText: AppColors.tableDirtyText,
     tableReservedText: AppColors.tableReservedText,
-    successBg: AppColors.tableFreeBg, successText: AppColors.tableFreeText,
-    warnBg: AppColors.tableDirtyBg,   warnText: AppColors.tableDirtyText,
-    dangerBg: AppColors.timerBadBg,   dangerText: AppColors.timerBadText,
-    infoBg: AppColors.tableOtherBg,   infoText: AppColors.tableOtherText,
-    timerOkBg: AppColors.tableFreeBg,   timerOkText: AppColors.tableFreeText,
-    timerWarnBg: AppColors.tableDirtyBg, timerWarnText: AppColors.tableDirtyText,
-    timerBadBg: AppColors.timerBadBg,    timerBadText: AppColors.timerBadText,
-    paidBg: Color(0xFFDDF3F0), paidText: Color(0xFF0B6E61),
-    alertDeep: Color(0xFF0F5E30), onAlertDeep: Color(0xFFFFFFFF),
-    navBar: Color(0xF0FFFFFF), navHairline: AppColors.hairline,
+    successBg: AppColors.tableFreeBg,
+    successText: AppColors.tableFreeText,
+    warnBg: AppColors.tableDirtyBg,
+    warnText: AppColors.tableDirtyText,
+    dangerBg: AppColors.timerBadBg,
+    dangerText: AppColors.timerBadText,
+    infoBg: AppColors.tableOtherBg,
+    infoText: AppColors.tableOtherText,
+    timerOkBg: AppColors.tableFreeBg,
+    timerOkText: AppColors.tableFreeText,
+    timerWarnBg: AppColors.tableDirtyBg,
+    timerWarnText: AppColors.tableDirtyText,
+    timerBadBg: AppColors.timerBadBg,
+    timerBadText: AppColors.timerBadText,
+    paidBg: Color(0xFFDDF3F0),
+    paidText: Color(0xFF0B6E61),
+    alertDeep: Color(0xFF0F5E30),
+    onAlertDeep: Color(0xFFFFFFFF),
+    navBar: Color(0xF0FFFFFF),
+    navHairline: AppColors.hairline,
     selectedPill: AppColors.ink,
   );
 
@@ -275,16 +317,26 @@ class AppPalette {
     tableOtherText: Color(0xFF9CC3FF),
     tableDirtyText: Color(0xFFFFD37A),
     tableReservedText: Color(0xFFD7B8FF),
-    successBg: Color(0xFF1C3024), successText: Color(0xFF7BE0A8),
-    warnBg: Color(0xFF3A2C12),    warnText: Color(0xFFFFD37A),
-    dangerBg: Color(0xFF46201B),  dangerText: Color(0xFFFF9C8F),
-    infoBg: Color(0xFF1D2B3D),    infoText: Color(0xFF9CC3FF),
-    timerOkBg: Color(0xFF1C3024),   timerOkText: Color(0xFF7BE0A8),
-    timerWarnBg: Color(0xFF3A2C12), timerWarnText: Color(0xFFFFD37A),
-    timerBadBg: Color(0xFF46201B),  timerBadText: Color(0xFFFF9C8F),
-    paidBg: Color(0xFF12332F), paidText: Color(0xFF6FD9C8),
-    alertDeep: Color(0xFF0F5E30), onAlertDeep: Color(0xFFFFFFFF),
-    navBar: Color(0xF01E1710), navHairline: Color(0x24F5EEE3),
+    successBg: Color(0xFF1C3024),
+    successText: Color(0xFF7BE0A8),
+    warnBg: Color(0xFF3A2C12),
+    warnText: Color(0xFFFFD37A),
+    dangerBg: Color(0xFF46201B),
+    dangerText: Color(0xFFFF9C8F),
+    infoBg: Color(0xFF1D2B3D),
+    infoText: Color(0xFF9CC3FF),
+    timerOkBg: Color(0xFF1C3024),
+    timerOkText: Color(0xFF7BE0A8),
+    timerWarnBg: Color(0xFF3A2C12),
+    timerWarnText: Color(0xFFFFD37A),
+    timerBadBg: Color(0xFF46201B),
+    timerBadText: Color(0xFFFF9C8F),
+    paidBg: Color(0xFF12332F),
+    paidText: Color(0xFF6FD9C8),
+    alertDeep: Color(0xFF0F5E30),
+    onAlertDeep: Color(0xFFFFFFFF),
+    navBar: Color(0xF01E1710),
+    navHairline: Color(0x24F5EEE3),
     selectedPill: AppColors.terra600,
   );
 
@@ -466,6 +518,31 @@ class AppShadows {
     BoxShadow(color: Color(0x12140E08), blurRadius: 28, offset: Offset(0, 14)),
     BoxShadow(color: Color(0x0A140E08), blurRadius: 56, offset: Offset(0, 28)),
   ];
+
+  /// One shadow instead of three or four. Each [BoxShadow] is its own blurred
+  /// draw, so stacking them is the quiet expense in an otherwise flat design.
+  static const List<BoxShadow> flat = [
+    BoxShadow(color: Color(0x1F140E08), blurRadius: 8, offset: Offset(0, 3)),
+  ];
+
+  /// [glass], collapsed to [flat] when effects are reduced.
+  static List<BoxShadow> glassFor(BuildContext context) =>
+      AppPerf.reduceEffects(context) ? flat : glass;
+
+  /// [elevated], collapsed to [flat] when effects are reduced.
+  static List<BoxShadow> elevatedFor(BuildContext context) =>
+      AppPerf.reduceEffects(context) ? flat : elevated;
+
+  /// The palette's per-brightness card shadow, collapsed to [flat] when
+  /// effects are reduced. This is the one that matters most at scale — a
+  /// tables floor draws it once per tile, every frame.
+  static List<BoxShadow> cardFor(BuildContext context) =>
+      AppPerf.reduceEffects(context) ? flat : context.palette.cardShadow;
+
+  /// The terra wash behind a table you're serving. Same story as [cardFor] —
+  /// it's per-tile, so it collapses too.
+  static List<BoxShadow> mineFor(BuildContext context) =>
+      AppPerf.reduceEffects(context) ? flat : context.palette.mineShadow;
 }
 
 class AppAlphas {
@@ -574,9 +651,11 @@ class AppSheetPadding {
 
   static const EdgeInsets large = EdgeInsets.all(24);
 
-  static const EdgeInsets content = EdgeInsets.symmetric(horizontal: 20, vertical: 16);
+  static const EdgeInsets content =
+      EdgeInsets.symmetric(horizontal: 20, vertical: 16);
 
-  static const EdgeInsets input = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
+  static const EdgeInsets input =
+      EdgeInsets.symmetric(horizontal: 16, vertical: 12);
 }
 
 class AppSectionSpacing {
@@ -611,13 +690,17 @@ class AppMotion {
 class AppChipPadding {
   AppChipPadding._();
 
-  static const EdgeInsets filterChip = EdgeInsets.symmetric(horizontal: 14, vertical: 12);
+  static const EdgeInsets filterChip =
+      EdgeInsets.symmetric(horizontal: 14, vertical: 12);
 
-  static const EdgeInsets compactChip = EdgeInsets.symmetric(horizontal: 12, vertical: 10);
+  static const EdgeInsets compactChip =
+      EdgeInsets.symmetric(horizontal: 12, vertical: 10);
 
-  static const EdgeInsets statusBadge = EdgeInsets.symmetric(horizontal: 8, vertical: 4);
+  static const EdgeInsets statusBadge =
+      EdgeInsets.symmetric(horizontal: 8, vertical: 4);
 
-  static const EdgeInsets sectionLabel = EdgeInsets.symmetric(horizontal: 14, vertical: 8);
+  static const EdgeInsets sectionLabel =
+      EdgeInsets.symmetric(horizontal: 14, vertical: 8);
 }
 
 /// ============================================================
@@ -628,54 +711,74 @@ class AppChipPadding {
 class AppBreakpoints {
   AppBreakpoints._();
 
-  /// Small phones and default handsets.
-  static const double compact = 600;
+  /// Phone vs tablet. Below this is a handset in either orientation.
+  static const double tablet = 600;
 
-  /// Large phones / small tablets (portrait).
-  static const double medium = 920;
-
-  /// Tablets landscape / desktop — unlocks two-pane layouts.
-  static const double expanded = 920;
-
-  /// Wide desktop — content is clamped so lines stay readable.
-  static const double large = 1280;
+  /// Enough room for two panes — a side nav rail, an order rail, a
+  /// master/detail split. A 10" tablet lands here in landscape and in the
+  /// [tablet] bucket in portrait.
+  static const double tabletWide = 920;
 }
 
-enum AppSizeClass { compact, medium, expanded }
+enum AppSizeClass { phone, tablet, tabletWide }
 
 extension AdaptiveContext on BuildContext {
   double get _w => MediaQuery.sizeOf(this).width;
 
-  AppSizeClass get sizeClass => _w >= AppBreakpoints.expanded
-      ? AppSizeClass.expanded
-      : _w >= AppBreakpoints.compact
-          ? AppSizeClass.medium
-          : AppSizeClass.compact;
+  AppSizeClass get sizeClass => _w >= AppBreakpoints.tabletWide
+      ? AppSizeClass.tabletWide
+      : _w >= AppBreakpoints.tablet
+          ? AppSizeClass.tablet
+          : AppSizeClass.phone;
 
-  bool get isCompact => sizeClass == AppSizeClass.compact;
-  bool get isMediumUp => _w >= AppBreakpoints.compact;
+  bool get isPhone => sizeClass == AppSizeClass.phone;
+  bool get isTabletUp => _w >= AppBreakpoints.tablet;
 
-  /// Two-pane layouts (order builder rail, side navigation) switch on here.
-  bool get isExpanded => _w >= AppBreakpoints.expanded;
+  /// Whole-window signal — right for page-level decisions like content
+  /// clamping. For a two-pane split use [AdaptiveConstraints.isTwoPane] on a
+  /// local [LayoutBuilder] instead: inside a Row that has already given away
+  /// width to a rail, the window width no longer describes the space left.
+  bool get isTabletWide => _w >= AppBreakpoints.tabletWide;
 
   /// Pick a value per size class: `context.adaptive(phone: 16, tablet: 24)`.
-  T adaptive<T>({required T phone, T? tablet, T? desktop}) =>
-      switch (sizeClass) {
-        AppSizeClass.compact => phone,
-        AppSizeClass.medium => tablet ?? phone,
-        AppSizeClass.expanded => desktop ?? tablet ?? phone,
+  T adaptive<T>({required T phone, T? tablet}) => switch (sizeClass) {
+        AppSizeClass.phone => phone,
+        AppSizeClass.tablet || AppSizeClass.tabletWide => tablet ?? phone,
       };
-
-  /// Readable clamp for top-level content on very wide displays.
-  double get contentMaxWidth =>
-      _w >= AppBreakpoints.large ? 1180 : double.infinity;
 
   /// Grid tile sizing for the tables floor — wider screens get roomier
   /// tiles while the max-extent delegate keeps column count fluid.
-  double get tableTileExtent => adaptive(phone: 200, tablet: 212, desktop: 224);
+  double get tableTileExtent => adaptive(phone: 200, tablet: 212);
 
-  /// Honors OS "reduce motion" — heavy ambient effects switch off.
-  bool get reduceMotion => MediaQuery.of(this).disableAnimations;
+  /// Space to leave at the bottom of a bottom sheet.
+  ///
+  /// Sheets shown with `isScrollControlled: true` get no automatic keyboard
+  /// padding, so they have to account for it themselves. Whichever of the two
+  /// insets is larger is the right answer, and they are never added: with the
+  /// keyboard open its height already spans the gesture-bar area, so summing
+  /// them double-counts; with it closed the keyboard inset is zero and only
+  /// the safe area remains.
+  double get sheetBottomInset => math.max(
+        MediaQuery.viewInsetsOf(this).bottom,
+        MediaQuery.viewPaddingOf(this).bottom,
+      );
+
+  /// A linear stand-in for the system font scale, for sizing math that has to
+  /// grow with text. Android's curve flattens at the top end, so this is an
+  /// upper bound rather than exact.
+  double get effectiveTextScale =>
+      (MediaQuery.textScalerOf(this).scale(100) / 100).clamp(1.0, 2.0);
+
+  /// Honors performance mode and OS "reduce motion" — heavy ambient effects
+  /// switch off.
+  bool get reduceMotion => AppPerf.reduceEffects(this);
+}
+
+extension AdaptiveConstraints on BoxConstraints {
+  /// Whether the space actually available here fits two panes. Measured from
+  /// a local [LayoutBuilder] rather than the window, so a pane nested inside
+  /// another split sees its own width.
+  bool get isTwoPane => maxWidth >= AppBreakpoints.tabletWide;
 }
 
 /// Performance guardrails for low-end devices. Ambient effects consult
@@ -683,10 +786,19 @@ extension AdaptiveContext on BuildContext {
 class AppPerf {
   AppPerf._();
 
-  /// True when the OS asks for reduced motion (also our low-end signal:
-  /// budget devices commonly ship with animations dialed down).
+  /// True when heavy ambient effects should be skipped — either the operator
+  /// asked for it, the device was detected as low-tier, or the OS wants
+  /// reduced motion. Resolved by [PerfScope]; the [MediaQuery] fallback keeps
+  /// widget tests that pump a subtree without a [PerfScope] ancestor working.
   static bool reduceEffects(BuildContext context) =>
+      PerfInheritedScope.maybeOf(context)?.reduceEffects ??
       MediaQuery.of(context).disableAnimations;
+
+  static PerfMode mode(BuildContext context) =>
+      PerfInheritedScope.maybeOf(context)?.mode ?? PerfMode.auto;
+
+  static PerfTier tier(BuildContext context) =>
+      PerfInheritedScope.maybeOf(context)?.tier ?? PerfTier.capable;
 
   /// List prefetch window — enough to hide jank, small enough for RAM.
   static const double listCacheExtent = 500;

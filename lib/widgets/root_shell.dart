@@ -49,7 +49,7 @@ class RootShell extends ConsumerWidget {
     }
 
     return LayoutBuilder(builder: (context, box) {
-      final bool wide = box.maxWidth >= AppBreakpoints.expanded;
+      final bool wide = box.isTwoPane;
       if (wide) {
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,

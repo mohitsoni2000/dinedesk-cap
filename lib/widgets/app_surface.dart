@@ -34,7 +34,7 @@ class AppSurface extends StatelessWidget {
         color: tint ?? context.palette.surface,
         borderRadius: borderRadius,
         border: border ?? Border.all(color: context.palette.hairline, width: 1),
-        boxShadow: shadow ?? context.palette.cardShadow,
+        boxShadow: shadow ?? AppShadows.cardFor(context),
       ),
       child: child,
     );

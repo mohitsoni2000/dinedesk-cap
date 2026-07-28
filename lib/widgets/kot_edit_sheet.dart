@@ -170,7 +170,7 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
             ),
             Padding(
               padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + MediaQuery.of(context).viewPadding.bottom),
+                  16, 8, 16, 16 + context.sheetBottomInset),
               child: LiquidPrimaryButton(
                 label: _submitting ? 'Updating...' : 'Save Changes',
                 fullWidth: true,

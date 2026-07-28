@@ -99,7 +99,7 @@ class PackageSheet extends ConsumerWidget {
             ),
             Padding(
               padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + MediaQuery.of(context).viewPadding.bottom),
+                  16, 8, 16, 16 + context.sheetBottomInset),
               child: LiquidSecondaryButton(
                 label: 'Close',
                 onPressed: () => Navigator.of(context).pop(),
@@ -165,7 +165,7 @@ class _PackageCard extends StatelessWidget {
           color: context.palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.md),
           border: Border.all(color: AppColors.violet.withValues(alpha: 0.2)),
-          boxShadow: context.palette.cardShadow,
+          boxShadow: AppShadows.cardFor(context),
         ),
         child: Row(
           children: [

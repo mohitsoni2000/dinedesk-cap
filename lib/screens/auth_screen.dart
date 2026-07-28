@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +12,7 @@ import '../services/socket_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_surface.dart';
 import '../widgets/help_sheet.dart';
+import '../widgets/page_content_clamp.dart';
 import '../widgets/pin_pad.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
@@ -257,17 +256,25 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
       child: Scaffold(
         backgroundColor: Colors.transparent,
         resizeToAvoidBottomInset: true,
+        // SliverFillRemaining(hasScrollBody: false) forces the child to fill
+        // and *overflows* when it can't fit — with two Spacers and a keypad
+        // in here, a short viewport had nowhere to go. This scrolls instead,
+        // while minHeight keeps the spaced-out look whenever there is room.
         body: SafeArea(
-          child: CustomScrollView(
-            slivers: [
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.lg),
-                sliver: SliverFillRemaining(
-                  hasScrollBody: false,
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.lg),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight:
+                      constraints.maxHeight - AppSpacing.xl - AppSpacing.lg,
+                ),
+                child: PageContentClamp(
+                  maxWidth: 480,
                   child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-
                       AppSurface(
                         borderRadius: const BorderRadius.all(AppRadii.md),
                         padding: const EdgeInsets.symmetric(
@@ -316,33 +323,30 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                           ],
                         ),
                       ),
-
-                      const Spacer(),
-
+                      const SizedBox(height: 24),
                       Hero(
                         tag: HeroTags.appLogo,
                         child: RubberBand(
-                          maxDrag: 42,
-                          child: Container(
-                          width: 64,
-                          height: 64,
-                          decoration: const BoxDecoration(
-                            color: AppColors.logoBg,
-                            borderRadius: BorderRadius.all(AppRadii.md),
-                            boxShadow: AppShadows.terraGlow,
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Padding(
-                            padding: const EdgeInsets.all(7),
-                            child: Image.asset(
-                              'assets/images/appicon_cream.png',
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                        )),
+                            maxDrag: 42,
+                            child: Container(
+                              width: 64,
+                              height: 64,
+                              decoration: const BoxDecoration(
+                                color: AppColors.logoBg,
+                                borderRadius: BorderRadius.all(AppRadii.md),
+                                boxShadow: AppShadows.terraGlow,
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: Padding(
+                                padding: const EdgeInsets.all(7),
+                                child: Image.asset(
+                                  'assets/images/appicon_cream.png',
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            )),
                       ),
                       const SizedBox(height: 18),
-
                       Text(
                         'Welcome back',
                         style: TextStyle(
@@ -362,9 +366,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                           color: context.palette.ink50,
                         ),
                       ),
-
                       const SizedBox(height: 32),
-
                       AnimatedBuilder(
                         animation: _shakeAnim,
                         builder: (_, child) => Transform.translate(
@@ -392,8 +394,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                         AppColors.terra500, t)!;
                                 return AnimatedContainer(
                                   duration: const Duration(milliseconds: 120),
-                                  margin: const EdgeInsets.symmetric(
-                                      horizontal: 8),
+                                  margin:
+                                      const EdgeInsets.symmetric(horizontal: 8),
                                   width: filled ? 18 : 16,
                                   height: filled ? 18 : 16,
                                   decoration: BoxDecoration(
@@ -420,9 +422,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                           }),
                         ),
                       ),
-
                       const SizedBox(height: 8),
-
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 200),
                         child: _error != null
@@ -453,20 +453,17 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                 : _submitting
                                     ? Padding(
                                         key: const ValueKey('checking'),
-                                        padding:
-                                            const EdgeInsets.only(top: 6),
+                                        padding: const EdgeInsets.only(top: 6),
                                         child: Text(
                                           '⟳ Checking with the desk…',
-                                          style: AppTypography.caption
-                                              .copyWith(
+                                          style: AppTypography.caption.copyWith(
                                             color: context.palette.ink50,
                                           ),
                                         ),
                                       )
                                     : Padding(
                                         key: const ValueKey('label'),
-                                        padding:
-                                            const EdgeInsets.only(top: 6),
+                                        padding: const EdgeInsets.only(top: 6),
                                         child: Text(
                                           '4-DIGIT PIN',
                                           style: AppTypography.micro.copyWith(
@@ -476,9 +473,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                         ),
                                       ),
                       ),
-
-                      const Spacer(),
-
+                      const SizedBox(height: 24),
                       PinPad(
                         onKeyPress: _press,
                         onForgot: () => showForgotPinDialog(context),
@@ -486,7 +481,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                         enabled: !_submitting,
                       ),
                       const SizedBox(height: 16),
-
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -519,7 +513,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                   ),
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),

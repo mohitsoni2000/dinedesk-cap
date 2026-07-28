@@ -1,10 +1,9 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'data/providers.dart';
+import 'services/session_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/qr_scan_screen.dart';
 import 'screens/connecting_screen.dart';
@@ -32,7 +31,6 @@ import 'widgets/root_shell.dart';
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final routerProvider = Provider<GoRouter>((ref) {
-
   final authed = ref.watch(isAuthenticatedProvider);
   final forceDisconnected = ref.watch(forceDisconnectedProvider);
 
@@ -74,25 +72,34 @@ final routerProvider = Provider<GoRouter>((ref) {
               liquidPage(key: s.pageKey, child: const QrScanScreen())),
       GoRoute(
           path: '/connecting',
-          pageBuilder: (_, s) =>
-              liquidPage(key: s.pageKey, child: const ConnectingScreen())),
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              child: ConnectingScreen(
+                  initialPairing:
+                      s.extra is PairingInfo ? s.extra as PairingInfo : null))),
       GoRoute(
           path: '/auth',
           pageBuilder: (_, s) =>
               liquidPage(key: s.pageKey, child: const AuthScreen())),
-
       StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) => LiquidMeshBackground(
-          child: ConnectionBanner(
-            child: ReadyOrdersBanner(
-              child: RootShell(navigationShell: navigationShell),
+        // The shell's own chrome — nav rail/bar and the two banners — sits
+        // outside every branch's Scaffold, so without a Material ancestor its
+        // text renders in Flutter's "you forgot Material" style (yellow double
+        // underline). `transparency` supplies the ancestor without painting
+        // over the mesh background behind it.
+        builder: (context, state, navigationShell) => Material(
+          type: MaterialType.transparency,
+          child: LiquidMeshBackground(
+            child: ConnectionBanner(
+              child: ReadyOrdersBanner(
+                child: RootShell(navigationShell: navigationShell),
+              ),
             ),
           ),
         ),
         branches: [
           StatefulShellBranch(routes: [
-            GoRoute(
-                path: '/tables', builder: (_, __) => const TablesScreen()),
+            GoRoute(path: '/tables', builder: (_, __) => const TablesScreen()),
           ]),
           StatefulShellBranch(routes: [
             GoRoute(path: '/rooms', builder: (_, __) => const RoomsScreen()),
@@ -107,12 +114,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           ]),
           StatefulShellBranch(routes: [
             GoRoute(
-                path: '/settings',
-                builder: (_, __) => const SettingsScreen()),
+                path: '/settings', builder: (_, __) => const SettingsScreen()),
           ]),
         ],
       ),
-
       GoRoute(
           path: '/order/:tableId',
           pageBuilder: (_, s) => liquidPage(
@@ -141,16 +146,14 @@ final routerProvider = Provider<GoRouter>((ref) {
               key: s.pageKey,
               child: ConnectionBanner(
                   child: OrderBuilderScreen(
-                      tableId: s.pathParameters['roomId']!,
-                      isRoom: true)))),
+                      tableId: s.pathParameters['roomId']!, isRoom: true)))),
       GoRoute(
           path: '/order/room/:roomId/review',
           pageBuilder: (_, s) => liquidPage(
               key: s.pageKey,
               child: ConnectionBanner(
                   child: OrderReviewScreen(
-                      tableId: s.pathParameters['roomId']!,
-                      isRoom: true)))),
+                      tableId: s.pathParameters['roomId']!, isRoom: true)))),
       GoRoute(
           path: '/order/room/:roomId/success',
           pageBuilder: (_, s) => liquidPage(
@@ -158,8 +161,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               fromBottom: true,
               child: ConnectionBanner(
                   child: OrderSuccessScreen(
-                      tableId: s.pathParameters['roomId']!,
-                      isRoom: true)))),
+                      tableId: s.pathParameters['roomId']!, isRoom: true)))),
       GoRoute(
           path: '/history/:orderId',
           pageBuilder: (_, s) => liquidPage(

@@ -53,25 +53,36 @@ class PinPad extends StatelessWidget {
     ['forgot', '0', 'del'],
   ];
 
+  /// Keys are [Expanded], so without a ceiling the pad grows to whatever width
+  /// it is handed — on a tablet that means single keys hundreds of points
+  /// wide. Clamped here rather than at each call site so every caller gets it.
+  static const double maxWidth = 380;
+
   @override
   Widget build(BuildContext context) {
-    return AnimatedOpacity(
-      opacity: enabled ? 1.0 : 0.45,
-      duration: const Duration(milliseconds: 180),
-      child: IgnorePointer(
-        ignoring: !enabled,
-        child: Column(
-          children: [
-            for (final row in _keys)
-              Padding(
-                padding: EdgeInsets.symmetric(vertical: rowVerticalPadding),
-                child: Row(
-                  children: [
-                    for (final k in row) Expanded(child: _buildKey(context, k)),
-                  ],
-                ),
-              ),
-          ],
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: maxWidth),
+        child: AnimatedOpacity(
+          opacity: enabled ? 1.0 : 0.45,
+          duration: const Duration(milliseconds: 180),
+          child: IgnorePointer(
+            ignoring: !enabled,
+            child: Column(
+              children: [
+                for (final row in _keys)
+                  Padding(
+                    padding: EdgeInsets.symmetric(vertical: rowVerticalPadding),
+                    child: Row(
+                      children: [
+                        for (final k in row)
+                          Expanded(child: _buildKey(context, k)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );

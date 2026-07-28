@@ -14,7 +14,12 @@ import '../theme/tokens.dart';
 import '../widgets/app_surface.dart';
 
 class ConnectingScreen extends ConsumerStatefulWidget {
-  const ConnectingScreen({super.key});
+  /// Handed over by the splash screen, which has already paid for the
+  /// Keystore-backed read. Null when this route is entered directly (e.g. a
+  /// reconnect), in which case we read it ourselves.
+  final PairingInfo? initialPairing;
+
+  const ConnectingScreen({super.key, this.initialPairing});
   @override
   ConsumerState<ConnectingScreen> createState() => _ConnectingScreenState();
 }
@@ -47,7 +52,8 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
 
   Future<void> _connectToServer() async {
     debugPrint('[Connect] Loading saved pairing...');
-    final pairing = await SessionService().getSavedPairing();
+    final pairing =
+        widget.initialPairing ?? await SessionService().getSavedPairing();
     if (!mounted) return;
 
     if (pairing == null) {

@@ -35,7 +35,11 @@ class _ModalSheetPage<T> extends Page<T> {
       barrierColor: context.palette.scrim,
       fullscreenDialog: true,
       pageBuilder: (_, __, ___) => child,
-      transitionsBuilder: (_, animation, secondaryAnimation, page) {
+      transitionsBuilder: (ctx, animation, secondaryAnimation, page) {
+        if (AppPerf.reduceEffects(ctx)) {
+          return FadeTransition(opacity: animation, child: page);
+        }
+
         final incoming = CurvedAnimation(
           parent: animation,
           curve: Curves.easeOutCubic,

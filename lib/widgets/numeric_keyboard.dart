@@ -1,8 +1,7 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/tokens.dart';
+import 'pin_pad.dart';
 
 class NumericKeyboard extends StatelessWidget {
   final void Function(String value) onChanged;
@@ -28,7 +27,6 @@ class NumericKeyboard extends StatelessWidget {
     } else if (k == '.') {
       if (!value.contains('.')) onChanged(value.isEmpty ? '0.' : '$value.');
     } else {
-
       if (value == '0') {
         onChanged(k);
       } else {
@@ -46,48 +44,55 @@ class NumericKeyboard extends StatelessWidget {
       [allowDecimal ? '.' : '', '0', 'del'],
     ];
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Column(
-        children: [
-          for (final row in rows)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  for (final k in row) Expanded(child: _key(context, k)),
-                ],
-              ),
-            ),
-          if (onSubmit != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: GestureDetector(
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  onSubmit!();
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: const BoxDecoration(
-                    color: AppColors.terra,
-                    borderRadius: BorderRadius.all(AppRadii.md),
-                    boxShadow: AppShadows.terraGlow,
+    return Center(
+      child: ConstrainedBox(
+        // Keys are Expanded — without a ceiling the pad stretches to full
+        // tablet width. Matches PinPad.maxWidth so the two keypads agree.
+        constraints: const BoxConstraints(maxWidth: PinPad.maxWidth),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Column(
+            children: [
+              for (final row in rows)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      for (final k in row) Expanded(child: _key(context, k)),
+                    ],
                   ),
-                  child: Center(
-                    child: Text(
-                      submitLabel,
-                      style: AppTypography.bodyMd.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
+                ),
+              if (onSubmit != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      onSubmit!();
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: const BoxDecoration(
+                        color: AppColors.terra,
+                        borderRadius: BorderRadius.all(AppRadii.md),
+                        boxShadow: AppShadows.terraGlow,
+                      ),
+                      child: Center(
+                        child: Text(
+                          submitLabel,
+                          style: AppTypography.bodyMd.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -102,8 +107,8 @@ class NumericKeyboard extends StatelessWidget {
             ? Icon(Icons.backspace_outlined, color: context.palette.ink)
             : Text(
                 k,
-                style:
-                    AppTypography.headline.copyWith(fontWeight: FontWeight.w500),
+                style: AppTypography.headline
+                    .copyWith(fontWeight: FontWeight.w500),
               ),
       ),
     );

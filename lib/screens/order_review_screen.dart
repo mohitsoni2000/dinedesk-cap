@@ -34,7 +34,6 @@ enum _OrderType { dineIn, takeaway }
 enum _OrderFlowStep { orderCreate, kotSend, billGenerate, payment }
 
 final class _OrderFlowStepResult {
-
   final _OrderFlowStep? failedStep;
 
   final String? errorMessage;
@@ -84,7 +83,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
   @override
   void dispose() {
-
     if (_submitted) {
       _notesNotifier?.state = '';
     }
@@ -405,7 +403,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       if (billTotal == null) {
         return _OrderFlowStepResult(
           failedStep: _OrderFlowStep.payment,
-          errorMessage: 'Bill total missing — please settle from the bill screen',
+          errorMessage:
+              'Bill total missing — please settle from the bill screen',
         );
       }
       final paymentResponse = await socketService.emitAck(
@@ -430,7 +429,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     }
 
     for (final bill in bills) {
-      socketService.emit('print:bill', <String, dynamic>{'bill_id': bill['id']});
+      socketService
+          .emit('print:bill', <String, dynamic>{'bill_id': bill['id']});
     }
     return const _OrderFlowStepResult();
   }
@@ -476,7 +476,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         ref.read(cartProvider.notifier).clear();
         ref.read(orderNotesProvider.notifier).state = '';
         if (returnToBuilder) {
-
           final kotLabel = ref.read(lastKotIdProvider);
           DynamicToast.show(context,
               message: 'KOT $kotLabel sent to kitchen — not printed',
@@ -503,9 +502,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               ? '$stepLabel failed: ${result.errorMessage}'
               : result.errorMessage!;
         }
-      } catch (_) {
-
-      }
+      } catch (_) {}
 
       if (mounted) {
         DynamicToast.show(context, message: msg, kind: ToastKind.error);
@@ -751,7 +748,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                 ),
               ],
             ),
-            SizedBox(height: MediaQuery.of(context).viewPadding.bottom),
+            SizedBox(height: context.sheetBottomInset),
           ],
         ),
       ),
@@ -841,638 +838,648 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
             0);
     final billAlreadyGenerated = activeBillCount > 0;
 
+    // Order-type toggle + submit. Rendered under the cart on a phone, or
+    // as a persistent side rail on a tablet — same widget either way.
+    final Widget actionControls = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Column(
+        children: [
+          if (!widget.isRoom) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: hasExistingOrder
+                        ? null
+                        : () => setState(
+                              () => _orderType = _OrderType.dineIn,
+                            ),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _orderType == _OrderType.dineIn
+                            ? context.palette.ink
+                            : context.palette.surface,
+                        borderRadius: const BorderRadius.horizontal(
+                          left: AppRadii.sm,
+                        ),
+                        border: Border.all(color: context.palette.hairline),
+                      ),
+                      alignment: Alignment.center,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.restaurant,
+                            size: 16,
+                            color: _orderType == _OrderType.dineIn
+                                ? Colors.white
+                                : context.palette.ink70,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Dine-in',
+                            style: AppTypography.caption.copyWith(
+                              color: _orderType == _OrderType.dineIn
+                                  ? Colors.white
+                                  : context.palette.ink,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: hasExistingOrder
+                        ? null
+                        : () => setState(
+                              () => _orderType = _OrderType.takeaway,
+                            ),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _orderType == _OrderType.takeaway
+                            ? context.palette.ink
+                            : context.palette.surface,
+                        borderRadius: const BorderRadius.horizontal(
+                          right: AppRadii.sm,
+                        ),
+                        border: Border.all(color: context.palette.hairline),
+                      ),
+                      alignment: Alignment.center,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.takeout_dining,
+                            size: 16,
+                            color: _orderType == _OrderType.takeaway
+                                ? Colors.white
+                                : context.palette.ink70,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Takeaway',
+                            style: AppTypography.caption.copyWith(
+                              color: _orderType == _OrderType.takeaway
+                                  ? Colors.white
+                                  : context.palette.ink,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: const BorderRadius.all(AppRadii.md),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.terra400.withValues(alpha: 0.35),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: LiquidPrimaryButton(
+              label: 'Send to Kitchen',
+              fullWidth: true,
+              leadingIcon: Icons.restaurant_menu,
+              onPressed: _submit,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: LiquidSecondaryButton(
+                  label: 'Hold',
+                  leadingIcon: Icons.pause_circle_outline,
+                  onPressed: _holdOrder,
+                ),
+              ),
+              if (flags.directKot) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: LiquidSecondaryButton(
+                    label: 'Only KOT',
+                    leadingIcon: Icons.print_disabled_outlined,
+                    onPressed: _submitOnlyKot,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (flags.generateBill) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: LiquidSecondaryButton(
+                    label: 'KOT + Bill',
+                    leadingIcon: Icons.receipt_long,
+                    onPressed: billAlreadyGenerated ? null : _submitKotAndBill,
+                  ),
+                ),
+                if (flags.collectPayment) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: LiquidSecondaryButton(
+                      label: 'Quick Settle',
+                      leadingIcon: Icons.payments_outlined,
+                      onPressed: billAlreadyGenerated ? null : _quickSettle,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+          if (billAlreadyGenerated) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Bill already generated — go back to collect payment',
+              style: AppTypography.caption.copyWith(
+                color: context.palette.ink50,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+    );
+
     return ColoredBox(
       color: context.palette.paper,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
-          child: Column(
-            children: [
-              Hero(
-                tag: HeroTags.cartBar,
-                child: Material(
-                  color: Colors.transparent,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                    child: Row(
-                      children: [
-                        Pressable(
-                          onTap: cart.isEmpty ? null : () => context.pop(),
-                          child: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: context.palette.surface,
-                              borderRadius:
-                                  const BorderRadius.all(AppRadii.sm),
-                              border: Border.all(color: context.palette.hairline),
-                            ),
-                            alignment: Alignment.center,
-                            child: Icon(Icons.arrow_back,
-                                size: 18,
-                                color: cart.isEmpty
-                                    ? context.palette.ink30
-                                    : context.palette.ink70),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            widget.isRoom
-                                ? 'Review · Room $tableDisplay'
-                                : 'Review · $tableDisplay',
-                            style: AppTypography.sheetTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              Consumer(
-                builder: (context, ref, _) {
-                  final hasFailure = ref.watch(
-                    cartProvider.select(
-                      (c) => c.any((l) => l.syncStatus == SyncStatus.failed),
-                    ),
-                  );
-                  if (!hasFailure) return const SizedBox.shrink();
-                  return GestureDetector(
-                    onTap: () {
-                      ref.read(cartProvider.notifier).retryFailed();
-                      _submit();
-                    },
-                    child: Container(
-                      width: double.infinity,
-                      color: AppColors.warn,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                        horizontal: 16,
-                      ),
-                      child: const Row(
+          child: LayoutBuilder(builder: (context, box) {
+            // Two-pane only once there's something to review — an empty cart
+            // on a wide screen would otherwise show a dead rail.
+            final bool wide = box.isTwoPane && cart.isNotEmpty;
+            final Widget mainColumn = Column(
+              children: [
+                Hero(
+                  tag: HeroTags.cartBar,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                      child: Row(
                         children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            color: Colors.white,
-                            size: 16,
+                          Pressable(
+                            onTap: cart.isEmpty ? null : () => context.pop(),
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: context.palette.surface,
+                                borderRadius:
+                                    const BorderRadius.all(AppRadii.sm),
+                                border:
+                                    Border.all(color: context.palette.hairline),
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(Icons.arrow_back,
+                                  size: 18,
+                                  color: cart.isEmpty
+                                      ? context.palette.ink30
+                                      : context.palette.ink70),
+                            ),
                           ),
-                          SizedBox(width: 8),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              'Sync failed — tap to retry',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
+                              widget.isRoom
+                                  ? 'Review · Room $tableDisplay'
+                                  : 'Review · $tableDisplay',
+                              style: AppTypography.sheetTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
                       ),
                     ),
-                  );
-                },
-              ),
-              Expanded(
-                child: cart.isEmpty
-                    ? _EmptyCartGuard(
-                        onBackToMenu: () => context.pop(),
-                      )
-                    : ListView(
-                        padding: EdgeInsets.fromLTRB(
-                          AppSpacing.lg,
-                          AppSpacing.lg,
-                          AppSpacing.lg,
-                          AppSpacing.lg +
-                              MediaQuery.of(context).viewInsets.bottom,
+                  ),
+                ),
+                Consumer(
+                  builder: (context, ref, _) {
+                    final hasFailure = ref.watch(
+                      cartProvider.select(
+                        (c) => c.any((l) => l.syncStatus == SyncStatus.failed),
+                      ),
+                    );
+                    if (!hasFailure) return const SizedBox.shrink();
+                    return GestureDetector(
+                      onTap: () {
+                        ref.read(cartProvider.notifier).retryFailed();
+                        _submit();
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        color: AppColors.warn,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                          horizontal: 16,
                         ),
-                        children: [
-
-                          if (flags.customers) ...[
-                            const SizedBox(height: 12),
-
-                            AppCard(
-                              onTap: () async {
-                                final result = await ref
-                                    .read(customerLinkServiceProvider)
-                                    .pickAndLinkCustomer(context);
-                                if (result != null && mounted) {
-                                  setState(() => _customer = result);
-                                }
-                              },
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    _customer != null
-                                        ? Icons.person
-                                        : Icons.person_add_outlined,
-                                    color: _customer != null
-                                        ? AppColors.terra600
-                                        : context.palette.ink70,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: _customer != null
-                                        ? Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                _customer!['name']
-                                                        ?.toString() ??
-                                                    'Customer',
-                                                style: AppTypography.bodyMd
-                                                    .copyWith(
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                              if (_customer!['phone'] != null &&
-                                                  _customer!['phone']
-                                                      .toString()
-                                                      .isNotEmpty)
-                                                Text(
-                                                  _customer!['phone']
-                                                      .toString(),
-                                                  style: AppTypography.caption,
-                                                ),
-                                            ],
-                                          )
-                                        : const Text(
-                                            'Add Customer',
-                                            style: AppTypography.bodyMd,
-                                          ),
-                                  ),
-                                  if (_customer != null)
-                                    GestureDetector(
-                                      onTap: () =>
-                                          setState(() => _customer = null),
-                                      child: Icon(
-                                        Icons.close,
-                                        color: context.palette.ink50,
-                                        size: 18,
-                                      ),
-                                    )
-                                  else
-                                    Icon(
-                                      Icons.chevron_right,
-                                      color: context.palette.ink30,
-                                      size: 20,
-                                    ),
-                                ],
+                        child: const Row(
+                          children: [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Sync failed — tap to retry',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ],
-                          const SizedBox(height: 12),
-
-                          AppCard(
-                            padding: EdgeInsets.zero,
-                            child: Column(
-                              children: [
-                                for (int i = 0; i < cart.length; i++) ...[
-                                  Dismissible(
-                                    key: ValueKey(cart[i].uid),
-                                    direction: DismissDirection.endToStart,
-                                    background: Container(
-                                      alignment: Alignment.centerRight,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 20,
-                                      ),
-                                      color: AppColors.danger.withValues(
-                                        alpha: 0.85,
-                                      ),
-                                      child: const Icon(
-                                        Icons.delete_outline,
-                                        color: Colors.white,
-                                      ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                Expanded(
+                  child: cart.isEmpty
+                      ? _EmptyCartGuard(
+                          onBackToMenu: () => context.pop(),
+                        )
+                      : ListView(
+                          padding: EdgeInsets.fromLTRB(
+                            AppSpacing.lg,
+                            AppSpacing.lg,
+                            AppSpacing.lg,
+                            AppSpacing.lg + context.sheetBottomInset,
+                          ),
+                          children: [
+                            if (flags.customers) ...[
+                              const SizedBox(height: 12),
+                              AppCard(
+                                onTap: () async {
+                                  final result = await ref
+                                      .read(customerLinkServiceProvider)
+                                      .pickAndLinkCustomer(context);
+                                  if (result != null && mounted) {
+                                    setState(() => _customer = result);
+                                  }
+                                },
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _customer != null
+                                          ? Icons.person
+                                          : Icons.person_add_outlined,
+                                      color: _customer != null
+                                          ? AppColors.terra600
+                                          : context.palette.ink70,
+                                      size: 20,
                                     ),
-                                    onDismissed: (_) {
-                                      ref
-                                          .read(feedbackServiceProvider)
-                                          .fire(const FeedbackMedium());
-                                      final deleted = cart[i];
-                                      final uid = deleted.uid;
-                                      final current = ref.read(cartProvider);
-                                      final idx = current.indexWhere(
-                                        (l) => l.uid == uid,
-                                      );
-                                      if (idx >= 0) {
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _customer != null
+                                          ? Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  _customer!['name']
+                                                          ?.toString() ??
+                                                      'Customer',
+                                                  style: AppTypography.bodyMd
+                                                      .copyWith(
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                if (_customer!['phone'] !=
+                                                        null &&
+                                                    _customer!['phone']
+                                                        .toString()
+                                                        .isNotEmpty)
+                                                  Text(
+                                                    _customer!['phone']
+                                                        .toString(),
+                                                    style:
+                                                        AppTypography.caption,
+                                                  ),
+                                              ],
+                                            )
+                                          : const Text(
+                                              'Add Customer',
+                                              style: AppTypography.bodyMd,
+                                            ),
+                                    ),
+                                    if (_customer != null)
+                                      GestureDetector(
+                                        onTap: () =>
+                                            setState(() => _customer = null),
+                                        child: Icon(
+                                          Icons.close,
+                                          color: context.palette.ink50,
+                                          size: 18,
+                                        ),
+                                      )
+                                    else
+                                      Icon(
+                                        Icons.chevron_right,
+                                        color: context.palette.ink30,
+                                        size: 20,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            AppCard(
+                              padding: EdgeInsets.zero,
+                              child: Column(
+                                children: [
+                                  for (int i = 0; i < cart.length; i++) ...[
+                                    Dismissible(
+                                      key: ValueKey(cart[i].uid),
+                                      direction: DismissDirection.endToStart,
+                                      background: Container(
+                                        alignment: Alignment.centerRight,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 20,
+                                        ),
+                                        color: AppColors.danger.withValues(
+                                          alpha: 0.85,
+                                        ),
+                                        child: const Icon(
+                                          Icons.delete_outline,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      onDismissed: (_) {
                                         ref
-                                            .read(cartProvider.notifier)
-                                            .removeAt(idx);
-                                      }
+                                            .read(feedbackServiceProvider)
+                                            .fire(const FeedbackMedium());
+                                        final deleted = cart[i];
+                                        final uid = deleted.uid;
+                                        final current = ref.read(cartProvider);
+                                        final idx = current.indexWhere(
+                                          (l) => l.uid == uid,
+                                        );
+                                        if (idx >= 0) {
+                                          ref
+                                              .read(cartProvider.notifier)
+                                              .removeAt(idx);
+                                        }
 
-                                      DynamicToast.show(
-                                        context,
-                                        message:
-                                            '${deleted.item.name} removed',
-                                        duration:
-                                            const Duration(seconds: 4),
-                                        actionLabel: 'Undo',
-                                        onAction: () => _undoDelete(deleted),
-                                      );
-                                    },
-                                    child: GestureDetector(
-                                      onLongPress: () => _showCartLineMenu(
-                                        context,
-                                        cart[i],
-                                        i,
+                                        DynamicToast.show(
+                                          context,
+                                          message:
+                                              '${deleted.item.name} removed',
+                                          duration: const Duration(seconds: 4),
+                                          actionLabel: 'Undo',
+                                          onAction: () => _undoDelete(deleted),
+                                        );
+                                      },
+                                      child: GestureDetector(
+                                        onLongPress: () => _showCartLineMenu(
+                                          context,
+                                          cart[i],
+                                          i,
+                                        ),
+                                        child:
+                                            _CartRow(line: cart[i], index: i),
                                       ),
-                                      child: _CartRow(line: cart[i], index: i),
                                     ),
-                                  ),
-                                  if (i < cart.length - 1)
-                                    Divider(
-                                      height: 1,
-                                      color: context.palette.ink10,
-                                    ),
+                                    if (i < cart.length - 1)
+                                      Divider(
+                                        height: 1,
+                                        color: context.palette.ink10,
+                                      ),
+                                  ],
                                 ],
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-
-                          Text(
-                            'KOT PREVIEW',
-                            style: AppTypography.micro.copyWith(
-                              letterSpacing: 1.4,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          AppCard(
-                            padding: EdgeInsets.zero,
-                            child: Column(
-                              children: [
-                                for (int i = 0;
-                                    i < byKitchen.entries.length;
-                                    i++) ...[
-                                  _KotRow(
-                                    icon: _kitchenIcon(
-                                      byKitchen.keys.elementAt(i),
-                                    ),
-                                    label: _kitchenLabel(
-                                      byKitchen.keys.elementAt(i),
-                                    ),
-                                    lines: byKitchen.values.elementAt(i),
-                                  ),
-                                  if (i < byKitchen.entries.length - 1)
-                                    Divider(
-                                      height: 1,
-                                      color: context.palette.ink10,
-                                    ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-
-                          Text(
-                            'ORDER NOTES',
-                            style: AppTypography.micro.copyWith(
-                              letterSpacing: 1.4,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          AppCard(
-                            child: TextField(
-                              controller: _notes,
-                              maxLines: 2,
-                              decoration: const InputDecoration(
-                                border: InputBorder.none,
-                                hintText: 'Allergies, urgency, etc.',
-                                isDense: true,
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-
-                          Builder(
-                            builder: (_) {
-                              double foodTotal = 0;
-                              double liquorTotal = 0;
-                              double bevTotal = 0;
-                              for (final l in cart) {
-                                final type =
-                                    l.item.kitchenSection.toLowerCase();
-                                final lineAmt = l.lineTotal;
-                                if (type == 'beverages') {
-                                  bevTotal += lineAmt;
-                                } else if (type == 'liquor' || type == 'bar') {
-                                  liquorTotal += lineAmt;
-                                } else {
-                                  foodTotal += lineAmt;
+                            const SizedBox(height: 12),
+                            Text(
+                              'KOT PREVIEW',
+                              style: AppTypography.micro.copyWith(
+                                letterSpacing: 1.4,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            AppCard(
+                              padding: EdgeInsets.zero,
+                              child: Column(
+                                children: [
+                                  for (int i = 0;
+                                      i < byKitchen.entries.length;
+                                      i++) ...[
+                                    _KotRow(
+                                      icon: _kitchenIcon(
+                                        byKitchen.keys.elementAt(i),
+                                      ),
+                                      label: _kitchenLabel(
+                                        byKitchen.keys.elementAt(i),
+                                      ),
+                                      lines: byKitchen.values.elementAt(i),
+                                    ),
+                                    if (i < byKitchen.entries.length - 1)
+                                      Divider(
+                                        height: 1,
+                                        color: context.palette.ink10,
+                                      ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'ORDER NOTES',
+                              style: AppTypography.micro.copyWith(
+                                letterSpacing: 1.4,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            AppCard(
+                              child: TextField(
+                                controller: _notes,
+                                maxLines: 2,
+                                decoration: const InputDecoration(
+                                  border: InputBorder.none,
+                                  hintText: 'Allergies, urgency, etc.',
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Builder(
+                              builder: (_) {
+                                double foodTotal = 0;
+                                double liquorTotal = 0;
+                                double bevTotal = 0;
+                                for (final l in cart) {
+                                  final type =
+                                      l.item.kitchenSection.toLowerCase();
+                                  final lineAmt = l.lineTotal;
+                                  if (type == 'beverages') {
+                                    bevTotal += lineAmt;
+                                  } else if (type == 'liquor' ||
+                                      type == 'bar') {
+                                    liquorTotal += lineAmt;
+                                  } else {
+                                    foodTotal += lineAmt;
+                                  }
                                 }
-                              }
-                              final showLiquor =
-                                  liquorTotal > 0 && flags.liquorBilling;
-                              final showBev =
-                                  bevTotal > 0 && flags.beveragesBilling;
+                                final showLiquor =
+                                    liquorTotal > 0 && flags.liquorBilling;
+                                final showBev =
+                                    bevTotal > 0 && flags.beveragesBilling;
 
-                              return AppCard(
-                                child: Column(
-                                  children: [
-                                    if (showLiquor || showBev) ...[
-                                      Row(
-                                        children: [
-                                          const Text(
-                                            'Food',
-                                            style: AppTypography.bodyMd,
-                                          ),
-                                          const Spacer(),
-                                          Text(
-                                            formatRupeesCompact(foodTotal),
-                                            style: AppTypography.bodyMd,
+                                return AppCard(
+                                  child: Column(
+                                    children: [
+                                      if (showLiquor || showBev) ...[
+                                        Row(
+                                          children: [
+                                            const Text(
+                                              'Food',
+                                              style: AppTypography.bodyMd,
+                                            ),
+                                            const Spacer(),
+                                            Text(
+                                              formatRupeesCompact(foodTotal),
+                                              style: AppTypography.bodyMd,
+                                            ),
+                                          ],
+                                        ),
+                                        if (showLiquor) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              const Text(
+                                                'Liquor',
+                                                style: AppTypography.bodyMd,
+                                              ),
+                                              const Spacer(),
+                                              Text(
+                                                formatRupeesCompact(
+                                                    liquorTotal),
+                                                style: AppTypography.bodyMd,
+                                              ),
+                                            ],
                                           ),
                                         ],
+                                        if (showBev) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              const Text(
+                                                'Beverages',
+                                                style: AppTypography.bodyMd,
+                                              ),
+                                              const Spacer(),
+                                              Text(
+                                                formatRupeesCompact(bevTotal),
+                                                style: AppTypography.bodyMd,
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ] else ...[
+                                        Row(
+                                          children: [
+                                            const Text(
+                                              'Subtotal',
+                                              style: AppTypography.bodyMd,
+                                            ),
+                                            const Spacer(),
+                                            Text(
+                                              formatRupeesCompact(total),
+                                              style: AppTypography.bodyMd,
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        serverTotal != null
+                                            ? 'Includes GST & service charge'
+                                            : 'Calculating final total…',
+                                        style: AppTypography.caption,
+                                        textAlign: TextAlign.right,
                                       ),
-                                      if (showLiquor) ...[
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            const Text(
-                                              'Liquor',
-                                              style: AppTypography.bodyMd,
-                                            ),
-                                            const Spacer(),
-                                            Text(
-                                              formatRupeesCompact(liquorTotal),
-                                              style: AppTypography.bodyMd,
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                      if (showBev) ...[
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            const Text(
-                                              'Beverages',
-                                              style: AppTypography.bodyMd,
-                                            ),
-                                            const Spacer(),
-                                            Text(
-                                              formatRupeesCompact(bevTotal),
-                                              style: AppTypography.bodyMd,
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ] else ...[
+                                      const Padding(
+                                        padding:
+                                            EdgeInsets.symmetric(vertical: 10),
+                                        child: _DashedDivider(),
+                                      ),
                                       Row(
                                         children: [
-                                          const Text(
-                                            'Subtotal',
-                                            style: AppTypography.bodyMd,
+                                          Text(
+                                            'Total',
+                                            style: AppTypography.title.copyWith(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 15.5),
                                           ),
                                           const Spacer(),
-                                          Text(
-                                            formatRupeesCompact(total),
-                                            style: AppTypography.bodyMd,
+                                          Hero(
+                                            tag: HeroTags.orderTotal,
+                                            child: Material(
+                                              color: Colors.transparent,
+                                              child: KineticRupeeCounter(
+                                                amount: serverTotal ?? total,
+                                                fontSize: 24,
+                                                color: context.palette.ink,
+                                              ),
+                                            ),
                                           ),
                                         ],
                                       ),
                                     ],
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      serverTotal != null
-                                          ? 'Includes GST & service charge'
-                                          : 'Calculating final total…',
-                                      style: AppTypography.caption,
-                                      textAlign: TextAlign.right,
-                                    ),
-                                    const Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          vertical: 10),
-                                      child: _DashedDivider(),
-                                    ),
-                                    Row(
-                                      children: [
-                                        Text(
-                                          'Total',
-                                          style: AppTypography.title.copyWith(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 15.5),
-                                        ),
-                                        const Spacer(),
-                                        Hero(
-                                          tag: HeroTags.orderTotal,
-                                          child: Material(
-                                            color: Colors.transparent,
-                                            child: KineticRupeeCounter(
-                                              amount: serverTotal ?? total,
-                                              fontSize: 24,
-                                              color: context.palette.ink,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-              ),
-              if (cart.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: Column(
-                    children: [
-
-                      if (!widget.isRoom) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: hasExistingOrder
-                                  ? null
-                                  : () => setState(
-                                        () => _orderType = _OrderType.dineIn,
-                                      ),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _orderType == _OrderType.dineIn
-                                      ? context.palette.ink
-                                      : context.palette.surface,
-                                  borderRadius: const BorderRadius.horizontal(
-                                    left: AppRadii.sm,
                                   ),
-                                  border:
-                                      Border.all(color: context.palette.hairline),
-                                ),
-                                alignment: Alignment.center,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.restaurant,
-                                      size: 16,
-                                      color: _orderType == _OrderType.dineIn
-                                          ? Colors.white
-                                          : context.palette.ink70,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Dine-in',
-                                      style: AppTypography.caption.copyWith(
-                                        color: _orderType == _OrderType.dineIn
-                                            ? Colors.white
-                                            : context.palette.ink,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: hasExistingOrder
-                                  ? null
-                                  : () => setState(
-                                        () => _orderType = _OrderType.takeaway,
-                                      ),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _orderType == _OrderType.takeaway
-                                      ? context.palette.ink
-                                      : context.palette.surface,
-                                  borderRadius: const BorderRadius.horizontal(
-                                    right: AppRadii.sm,
-                                  ),
-                                  border:
-                                      Border.all(color: context.palette.hairline),
-                                ),
-                                alignment: Alignment.center,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.takeout_dining,
-                                      size: 16,
-                                      color: _orderType == _OrderType.takeaway
-                                          ? Colors.white
-                                          : context.palette.ink70,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Takeaway',
-                                      style: AppTypography.caption.copyWith(
-                                        color: _orderType == _OrderType.takeaway
-                                            ? Colors.white
-                                            : context.palette.ink,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      ],
-
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: const BorderRadius.all(AppRadii.md),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.terra400.withValues(alpha: 0.35),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
+                                );
+                              },
                             ),
                           ],
                         ),
-                        child: LiquidPrimaryButton(
-                          label: 'Send to Kitchen',
-                          fullWidth: true,
-                          leadingIcon: Icons.restaurant_menu,
-                          onPressed: _submit,
-                        ),
-                      ),
-
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: LiquidSecondaryButton(
-                              label: 'Hold',
-                              leadingIcon: Icons.pause_circle_outline,
-                              onPressed: _holdOrder,
-                            ),
-                          ),
-                          if (flags.directKot) ...[
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: LiquidSecondaryButton(
-                                label: 'Only KOT',
-                                leadingIcon: Icons.print_disabled_outlined,
-                                onPressed: _submitOnlyKot,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-
-                      if (flags.generateBill) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: LiquidSecondaryButton(
-                                label: 'KOT + Bill',
-                                leadingIcon: Icons.receipt_long,
-
-                                onPressed: billAlreadyGenerated
-                                    ? null
-                                    : _submitKotAndBill,
-                              ),
-                            ),
-                            if (flags.collectPayment) ...[
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: LiquidSecondaryButton(
-                                  label: 'Quick Settle',
-                                  leadingIcon: Icons.payments_outlined,
-                                  onPressed: billAlreadyGenerated
-                                      ? null
-                                      : _quickSettle,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
-                      if (billAlreadyGenerated) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'Bill already generated — go back to collect payment',
-                          style: AppTypography.caption.copyWith(
-                            color: context.palette.ink50,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ],
-                  ),
                 ),
-            ],
-          ),
+                if (cart.isNotEmpty && !wide) actionControls,
+              ],
+            );
+
+            if (!wide) return mainColumn;
+
+            // Same shape as the order builder's rail so the two screens in
+            // the order flow read as one system on a tablet.
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: mainColumn),
+                Container(width: 1, color: context.palette.hairline),
+                SizedBox(
+                  width: 356,
+                  child: SingleChildScrollView(child: actionControls),
+                ),
+              ],
+            );
+          }),
         ),
       ),
     );
@@ -1529,7 +1536,6 @@ class _CartRow extends ConsumerWidget {
             ),
           ),
           if (line.item.isWeighed) ...[
-
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
@@ -1538,7 +1544,8 @@ class _CartRow extends ConsumerWidget {
               ),
               child: Text(
                 '${line.weight ?? 0} ${line.item.measureUnit ?? ''}',
-                style: AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w600),
+                style:
+                    AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w600),
               ),
             ),
           ] else ...[
@@ -1548,7 +1555,9 @@ class _CartRow extends ConsumerWidget {
               repeatOnHold: true,
               haptics: false,
               onTap: () {
-                ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
+                ref
+                    .read(feedbackServiceProvider)
+                    .fire(const FeedbackSelection());
                 ref.read(cartProvider.notifier).setQtyAt(index, line.qty - 1);
               },
             ),
@@ -1569,7 +1578,9 @@ class _CartRow extends ConsumerWidget {
               repeatOnHold: true,
               haptics: false,
               onTap: () {
-                ref.read(feedbackServiceProvider).fire(const FeedbackSelection());
+                ref
+                    .read(feedbackServiceProvider)
+                    .fire(const FeedbackSelection());
                 ref.read(cartProvider.notifier).setQtyAt(index, line.qty + 1);
               },
             ),
@@ -1583,7 +1594,6 @@ class _CartRow extends ConsumerWidget {
               textAlign: TextAlign.right,
             ),
           ),
-
           if (line.syncStatus == SyncStatus.pending) ...[
             const SizedBox(width: 8),
             const SizedBox(
@@ -1731,7 +1741,6 @@ class _EmptyCartGuard extends ConsumerWidget {
                               : m.name == line.name)
                           .firstOrNull;
                       if (menuItem != null) {
-
                         final modsExtra = line.price - menuItem.price;
                         ref.read(cartProvider.notifier).addCustom(
                               item: menuItem,

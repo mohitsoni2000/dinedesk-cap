@@ -109,7 +109,7 @@ class KotHistorySheet extends ConsumerWidget {
             ),
             Padding(
               padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + MediaQuery.of(context).viewPadding.bottom),
+                  16, 8, 16, 16 + context.sheetBottomInset),
               child: LiquidPrimaryButton(
                 label: 'Close',
                 fullWidth: true,
@@ -157,7 +157,7 @@ class _KotCard extends ConsumerWidget {
         color: context.palette.surface,
         borderRadius: const BorderRadius.all(AppRadii.md),
         border: Border.all(color: context.palette.hairline),
-        boxShadow: context.palette.cardShadow,
+        boxShadow: AppShadows.cardFor(context),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

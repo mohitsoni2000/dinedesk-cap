@@ -177,7 +177,7 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
       builder: (_, scrollCtrl) => AppSurface(
         borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.fromLTRB(
-            20, 12, 20, 16 + MediaQuery.of(context).viewPadding.bottom),
+            20, 12, 20, 16 + context.sheetBottomInset),
         child: ListView(
           controller: scrollCtrl,
           children: [

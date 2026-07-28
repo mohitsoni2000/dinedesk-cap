@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/providers.dart';
+import 'theme/tokens.dart';
 import 'motion/app_scroll_behavior.dart';
 import 'motion/motion.dart';
 import 'router.dart';
@@ -9,19 +13,48 @@ import 'services/app_messenger.dart';
 import 'services/platform_surfaces.dart';
 import 'services/update_service.dart';
 import 'theme/app_theme.dart';
+import 'theme/perf_scope.dart';
 import 'theme/theme_mode_provider.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  final container = ProviderContainer();
-  final feedback = container.read(feedbackServiceProvider);
-  await feedback.init();
-  await container.read(readyAlertsProvider).init();
-  await container.read(widgetSyncProvider).init();
+  _lockOrientationForFormFactor();
+  // Nothing is awaited here on purpose. These three inits are platform-channel
+  // round trips (an audio player pool, local notifications — which can raise
+  // the OS permission dialog) and awaiting them in sequence delayed the very
+  // first frame. They now run in parallel once the app is on screen; see
+  // _RestroAppState.initState.
   runApp(UncontrolledProviderScope(
-    container: container,
+    container: ProviderContainer(),
     child: const RestroApp(),
   ));
+}
+
+/// Phones stay portrait; tablets rotate freely.
+///
+/// A waiter holds a phone one-handed and never wants it flipping mid-order,
+/// and phone landscape leaves too little height for a screen with a keypad on
+/// it. A tablet is just as likely to sit in a landscape stand, so it keeps
+/// every orientation.
+///
+/// Keyed off the *physical* shortest side, which doesn't change when the
+/// device rotates — reading a width from MediaQuery here would flip with
+/// orientation and misclassify the device half the time.
+void _lockOrientationForFormFactor() {
+  final view = WidgetsBinding.instance.platformDispatcher.views.first;
+  final shortestSide =
+      view.physicalSize.shortestSide / view.devicePixelRatio;
+
+  SystemChrome.setPreferredOrientations(
+    shortestSide < AppBreakpoints.tablet
+        ? const [DeviceOrientation.portraitUp]
+        : const [
+            DeviceOrientation.portraitUp,
+            DeviceOrientation.portraitDown,
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ],
+  );
 }
 
 class RestroApp extends ConsumerStatefulWidget {
@@ -38,7 +71,17 @@ class _RestroAppState extends ConsumerState<RestroApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForUpdate();
+      // Safe to defer: FeedbackService.fire() no-ops until initialised, and
+      // the operator has to get through splash → connecting → auth before
+      // anything can ask for a sound.
+      unawaited(Future.wait([
+        ref.read(feedbackServiceProvider).init(),
+        ref.read(readyAlertsProvider).init(),
+        ref.read(widgetSyncProvider).init(),
+      ]));
+    });
   }
 
   @override
@@ -90,5 +133,8 @@ class _RestroAppState extends ConsumerState<RestroApp>
         themeMode: ref.watch(themeModeProvider),
         scrollBehavior: const AppScrollBehavior(),
         routerConfig: ref.watch(routerProvider),
+        // Sits under MaterialApp so it can read MediaQuery, and above every
+        // route so ambient effects can reach it via AppPerf.reduceEffects().
+        builder: (context, child) => PerfScope(child: child ?? const SizedBox()),
       );
 }

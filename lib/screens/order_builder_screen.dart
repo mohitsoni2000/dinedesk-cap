@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/menu_selectors.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
 import '../services/socket_service.dart';
@@ -142,7 +143,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     return table?.activeOrderId;
   }
 
-  ServerOrder? _runningOrder(List<RestaurantTable> tables) {
+  ServerOrder? _runningOrder() {
     final activeOrderId = _activeOrderIdForSlot();
     final slotKey = widget.isRoom ? 'room_id' : 'table_id';
     final raw = ref.read(activeOrdersProvider).where((order) {
@@ -388,7 +389,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                 ),
               ],
             ),
-            SizedBox(height: MediaQuery.of(context).viewPadding.bottom),
+            SizedBox(height: context.sheetBottomInset),
           ],
         ),
       ),
@@ -397,51 +398,52 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Grouping, sorting and category ordering are memoized upstream — they
+    // depend only on the menu, so a cart tap can no longer trigger a re-sort
+    // of the whole catalogue.
+    final sortedBySection = ref.watch(sortedMenuBySectionProvider);
+    final allSections = ref.watch(orderedCategoryNamesProvider);
+    // Flat list, only for the fast-add chip fallback below.
     final menu = ref.watch(menuProvider);
-    final menuCategories = ref.watch(menuCategoriesProvider);
     final cart = ref.watch(cartProvider);
     final orderNotes = ref.watch(orderNotesProvider);
     final flags = ref.watch(flagsProvider);
 
+    // Filter the pre-sorted catalogue. Section insertion order still follows
+    // first appearance in the menu, matching what the list below renders.
+    final query = _query.trim().toLowerCase();
     final sections = <String, List<MenuItem>>{};
-    for (final m in menu) {
-      if (_query.isNotEmpty &&
-          !m.name.toLowerCase().contains(_query.toLowerCase())) {
-        continue;
+    for (final entry in sortedBySection.entries) {
+      if (_activeSection != null && entry.key != _activeSection) continue;
+      final items = query.isEmpty
+          ? entry.value
+          : entry.value
+              .where((m) => m.name.toLowerCase().contains(query))
+              .toList(growable: false);
+      if (items.isNotEmpty) sections[entry.key] = items;
+    }
+
+    // Cart quantities for the menu tiles' badges, in one pass. Each tile used
+    // to scan the entire cart itself, making this O(cart × items) per build.
+    final simpleQtyById = <String, int>{};
+    for (final l in cart) {
+      if (l.variationId == null && l.mods.isEmpty && l.itemNote.isEmpty) {
+        simpleQtyById[l.item.id] = (simpleQtyById[l.item.id] ?? 0) + l.qty;
       }
-      if (_activeSection != null && m.section != _activeSection) continue;
-      sections.putIfAbsent(m.section, () => []).add(m);
-    }
-    for (final items in sections.values) {
-      items.sort((a, b) {
-        final cmp = a.sortOrder.compareTo(b.sortOrder);
-        return cmp != 0 ? cmp : a.name.compareTo(b.name);
-      });
     }
 
-    // Tab order follows the admin's configured category order, not the
-    // order categories happen to first appear in a globally item-sorted
-    // list. Falls back to alphabetical for any section absent from the
-    // category sync (older payload shape).
-    final presentSections = menu.map((m) => m.section).toSet();
-    final orderedCategoryNames = menuCategories
-        .map((c) => c.name)
-        .where(presentSections.contains)
-        .toList();
-    final leftoverSections =
-        presentSections.difference(orderedCategoryNames.toSet()).toList()
-          ..sort();
-    final allSections = [...orderedCategoryNames, ...leftoverSections];
-
-    final tables = ref.watch(tablesProvider);
-    final rooms = ref.watch(roomsProvider);
-    final runningOrder = _runningOrder(tables);
+    // Scoped to this screen's own slot: sync preserves the object identity of
+    // untouched entries, so an event about somebody else's table no longer
+    // rebuilds this screen.
     final table = widget.isRoom
         ? null
-        : tables.where((t) => t.serverId == widget.tableId).firstOrNull;
+        : ref.watch(tablesProvider.select(
+            (l) => l.where((t) => t.serverId == widget.tableId).firstOrNull));
     final room = widget.isRoom
-        ? rooms.where((r) => r.serverId == widget.tableId).firstOrNull
+        ? ref.watch(roomsProvider.select(
+            (l) => l.where((r) => r.serverId == widget.tableId).firstOrNull))
         : null;
+    final runningOrder = _runningOrder();
     final tableDisplay =
         widget.isRoom ? (room?.id ?? widget.tableId) : (table?.id ?? widget.tableId);
     final opName = ref.watch(operatorProvider)?.name;
@@ -494,7 +496,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
           backgroundColor: Colors.transparent,
           body: SafeArea(
             child: LayoutBuilder(builder: (context, box) {
-              final bool wide = box.maxWidth >= AppBreakpoints.expanded;
+              final bool wide = box.isTwoPane;
               final Widget mainColumn = Column(
               children: [
                 if (_readOnly)
@@ -1020,7 +1022,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                         ? 'No results for "$_query"'
                                         : _activeSection != null
                                             ? 'Nothing in "$_activeSection"'
-                                            : menu.isEmpty
+                                            : sortedBySection.isEmpty
                                                 ? 'Menu not loaded yet'
                                                 : 'No items match',
                                     style: AppTypography.title,
@@ -1065,13 +1067,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                         i++) ...[
                                       Builder(builder: (_) {
                                         final menuItem = entry.value[i];
-                                        final simpleQty = cart
-                                            .where((l) =>
-                                                l.item.id == menuItem.id &&
-                                                l.variationId == null &&
-                                                l.mods.isEmpty &&
-                                                l.itemNote.isEmpty)
-                                            .fold<int>(0, (s, l) => s + l.qty);
+                                        final simpleQty =
+                                            simpleQtyById[menuItem.id] ?? 0;
                                         return _SwipeToAddWrapper(
                                           readOnly: _readOnly,
                                           onDragTick: () => ref
@@ -1949,10 +1946,20 @@ class _SkeletonRowState extends State<_SkeletonRow>
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat();
+    );
     _anim = Tween<double>(begin: -1.0, end: 2.0).animate(
       CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (AppPerf.reduceEffects(context)) {
+      _ctrl.stop();
+    } else if (!_ctrl.isAnimating) {
+      _ctrl.repeat();
+    }
   }
 
   @override

@@ -207,7 +207,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
                 AppSpacing.lg,
                 AppSpacing.sm,
                 AppSpacing.lg,
-                AppSpacing.lg + MediaQuery.of(context).viewPadding.bottom,
+                AppSpacing.lg + context.sheetBottomInset,
               ),
               child: _showCreate
                   ? Row(

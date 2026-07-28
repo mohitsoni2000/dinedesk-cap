@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -42,113 +40,115 @@ class _CustomerCountSheetState extends State<_CustomerCountSheet> {
     final overSeated = _count > widget.table.seats;
     return AppSurface(
       borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
-      padding: EdgeInsets.fromLTRB(
-          20, 12, 20, 28 + MediaQuery.of(context).viewPadding.bottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: const SheetHandle(),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: context.palette.tableFreeBg,
-                  borderRadius: const BorderRadius.all(AppRadii.xs),
-                  border: Border.all(
-                      color: AppColors.success.withValues(alpha: 0.32)),
+      padding: EdgeInsets.zero,
+      // Stepper, 56pt counter and chip row add up past a short viewport.
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 28 + context.sheetBottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: const SheetHandle(),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: context.palette.tableFreeBg,
+                    borderRadius: const BorderRadius.all(AppRadii.xs),
+                    border: Border.all(
+                        color: AppColors.success.withValues(alpha: 0.32)),
+                  ),
+                  child: Text(widget.table.id,
+                      style: AppTypography.caption
+                          .copyWith(fontWeight: FontWeight.w700)),
                 ),
-                child: Text(widget.table.id,
-                    style: AppTypography.caption
-                        .copyWith(fontWeight: FontWeight.w700)),
-              ),
-              const SizedBox(width: 10),
-              const Text('How many guests?', style: AppTypography.sheetTitle),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text('${widget.table.seats} seats available',
-              style: AppTypography.caption),
-          const SizedBox(height: 24),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _StepperBtn(
-                  icon: Icons.remove,
-                  onTap: () => _set(_count - 1),
-                  enabled: _count > 1),
-              const SizedBox(width: 24),
-              SizedBox(
-                width: 80,
-                child: Text(
-                  '$_count',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.displayLg.copyWith(
-                    fontSize: 56,
-                    color: overSeated ? AppColors.warn : context.palette.ink,
+                const SizedBox(width: 10),
+                const Text('How many guests?', style: AppTypography.sheetTitle),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text('${widget.table.seats} seats available',
+                style: AppTypography.caption),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _StepperBtn(
+                    icon: Icons.remove,
+                    onTap: () => _set(_count - 1),
+                    enabled: _count > 1),
+                const SizedBox(width: 24),
+                // minWidth, not a fixed width — a two-digit count at a large
+                // system font scale needs more room than 80 and would clip.
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 80),
+                  child: Text(
+                    '$_count',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.displayLg.copyWith(
+                      fontSize: 56,
+                      color: overSeated ? AppColors.warn : context.palette.ink,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 24),
-              _StepperBtn(
-                  icon: Icons.add,
-                  onTap: () => _set(_count + 1),
-                  enabled: _count < 20),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (overSeated)
-            Center(
-              child: Text(
-                'Over capacity — confirm with manager',
-                style: AppTypography.caption.copyWith(color: AppColors.warn),
-              ),
+                const SizedBox(width: 24),
+                _StepperBtn(
+                    icon: Icons.add,
+                    onTap: () => _set(_count + 1),
+                    enabled: _count < 20),
+              ],
             ),
-          const SizedBox(height: 16),
-
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final n in [1, 2, 3, 4, 5, 6, 8])
-                _Chip(
-                  label: '$n',
-                  selected: _count == n,
-                  onTap: () => _set(n),
-                ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          Row(
-            children: [
-              Expanded(
-                child: LiquidSecondaryButton(
-                  label: 'Cancel',
-                  onPressed: () => Navigator.of(context).pop(),
+            const SizedBox(height: 8),
+            if (overSeated)
+              Center(
+                child: Text(
+                  'Over capacity — confirm with manager',
+                  style: AppTypography.caption.copyWith(color: AppColors.warn),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: LiquidPrimaryButton(
-                  label: 'Start order',
-                  fullWidth: true,
-                  leadingIcon: Icons.arrow_forward,
-                  onPressed: () {
-                    HapticFeedback.mediumImpact();
-                    Navigator.of(context).pop(_count);
-                  },
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final n in [1, 2, 3, 4, 5, 6, 8])
+                  _Chip(
+                    label: '$n',
+                    selected: _count == n,
+                    onTap: () => _set(n),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: LiquidSecondaryButton(
+                    label: 'Cancel',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+                const SizedBox(width: 8),
+                Expanded(
+                  child: LiquidPrimaryButton(
+                    label: 'Start order',
+                    fullWidth: true,
+                    leadingIcon: Icons.arrow_forward,
+                    onPressed: () {
+                      HapticFeedback.mediumImpact();
+                      Navigator.of(context).pop(_count);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

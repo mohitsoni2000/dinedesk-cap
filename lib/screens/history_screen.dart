@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +7,8 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
+import '../widgets/page_content_clamp.dart';
+import 'order_detail_screen.dart';
 import '../widgets/app_card.dart';
 
 enum _DateScope { today, yesterday }
@@ -22,6 +22,10 @@ class HistoryScreen extends ConsumerStatefulWidget {
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   OrderStatus? _statusFilter;
   _DateScope _dateScope = _DateScope.today;
+
+  /// Only ever set in two-pane mode. On a phone, tapping an order pushes the
+  /// detail route instead, exactly as before.
+  String? _selectedOrderId;
 
   List<HistoryOrder> _dateScoped(List<HistoryOrder> orders) {
     final now = DateTime.now();
@@ -108,106 +112,176 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
-          child: Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('History', style: AppTypography.displayLg),
-                ),
-              ),
-              const SizedBox(height: 8),
+          child: LayoutBuilder(builder: (context, box) {
+            final bool wide = box.isTwoPane;
+            // Selection is meaningless on a phone, and leaving it set would
+            // resurface a stale highlight if the tablet rotates back.
+            if (!wide && _selectedOrderId != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) setState(() => _selectedOrderId = null);
+              });
+            }
 
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: context.palette.surface,
-                  borderRadius: const BorderRadius.all(AppRadii.sm),
-                  border: Border.all(color: context.palette.hairline),
-                ),
-                child: Row(
-                  children: [
-                    _DateTab(
-                      label: 'TODAY',
-                      selected: _dateScope == _DateScope.today,
-                      onTap: () =>
-                          setState(() => _dateScope = _DateScope.today),
-                    ),
-                    _DateTab(
-                      label: 'YESTERDAY',
-                      selected: _dateScope == _DateScope.yesterday,
-                      onTap: () =>
-                          setState(() => _dateScope = _DateScope.yesterday),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            SizedBox(
-              height: AppTouchTargets.chip,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            final Widget masterColumn = PageContentClamp(
+              child: Column(
                 children: [
-
-                  ..._buildStatusChips(myOrders),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: filtered.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.receipt_long,
-                                color: context.palette.ink30, size: 48),
-                            const SizedBox(height: 12),
-                            Text(
-                                _dateScope == _DateScope.yesterday
-                                    ? 'Nothing from yesterday'
-                                    : 'No orders yet',
-                                style: AppTypography.title),
-                            const SizedBox(height: 4),
-                            Text(
-                                _statusFilter == null
-                                    ? 'Orders you send will appear here'
-                                    : 'No orders match this filter',
-                                style: context.palette.caption,
-                                textAlign: TextAlign.center),
-                          ],
-                        ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('History', style: AppTypography.displayLg),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: context.palette.surface,
+                        borderRadius: const BorderRadius.all(AppRadii.sm),
+                        border: Border.all(color: context.palette.hairline),
                       ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (_, i) {
-                        final o = filtered[i];
-                        return Entrance(
-                          delay: Duration(milliseconds: 45 * (i < 10 ? i : 10)),
-                          child: _OrderTile(
-                            order: o,
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              context.push('/history/${o.id}');
+                      child: Row(
+                        children: [
+                          _DateTab(
+                            label: 'TODAY',
+                            selected: _dateScope == _DateScope.today,
+                            onTap: () =>
+                                setState(() => _dateScope = _DateScope.today),
+                          ),
+                          _DateTab(
+                            label: 'YESTERDAY',
+                            selected: _dateScope == _DateScope.yesterday,
+                            onTap: () => setState(
+                                () => _dateScope = _DateScope.yesterday),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    height: AppTouchTargets.chip,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      children: [
+                        ..._buildStatusChips(myOrders),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: filtered.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.receipt_long,
+                                      color: context.palette.ink30, size: 48),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                      _dateScope == _DateScope.yesterday
+                                          ? 'Nothing from yesterday'
+                                          : 'No orders yet',
+                                      style: AppTypography.title),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                      _statusFilter == null
+                                          ? 'Orders you send will appear here'
+                                          : 'No orders match this filter',
+                                      style: context.palette.caption,
+                                      textAlign: TextAlign.center),
+                                ],
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (_, i) {
+                              final o = filtered[i];
+                              return Entrance(
+                                delay: Duration(
+                                    milliseconds: 45 * (i < 10 ? i : 10)),
+                                child: _OrderTile(
+                                  order: o,
+                                  selected: wide && o.id == _selectedOrderId,
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    // On a tablet the detail lives in the pane
+                                    // beside the list; on a phone it's a route.
+                                    if (wide) {
+                                      setState(() => _selectedOrderId = o.id);
+                                    } else {
+                                      context.push('/history/${o.id}');
+                                    }
+                                  },
+                                ),
+                              );
                             },
                           ),
-                        );
-                      },
-                    ),
-            ),
-          ],
+                  ),
+                ],
+              ),
+            );
+
+            if (!wide) return masterColumn;
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: masterColumn),
+                Container(width: 1, color: context.palette.hairline),
+                SizedBox(
+                  width: 420,
+                  child: _selectedOrderId == null
+                      ? const _NoOrderSelected()
+                      : OrderDetailScreen(
+                          // Keyed so switching rows rebuilds the detail state
+                          // rather than carrying the previous order's bill
+                          // and payment flags across.
+                          key: ValueKey(_selectedOrderId),
+                          orderId: _selectedOrderId!,
+                          embedded: true,
+                          onClose: () =>
+                              setState(() => _selectedOrderId = null),
+                        ),
+                ),
+              ],
+            );
+          }),
         ),
       ),
+    );
+  }
+}
+
+/// Placeholder for the detail pane before a row is picked — an empty rail on
+/// a wide screen reads as a bug.
+class _NoOrderSelected extends StatelessWidget {
+  const _NoOrderSelected();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.receipt_long, color: context.palette.ink30, size: 48),
+            const SizedBox(height: 12),
+            const Text('Select an order', style: AppTypography.title),
+            const SizedBox(height: 4),
+            const Text('Its full bill and items appear here',
+                style: AppTypography.caption, textAlign: TextAlign.center),
+          ],
+        ),
       ),
     );
   }
@@ -268,10 +342,13 @@ class _StatusChip extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? context.palette.selectedPill : context.palette.surface,
+          color:
+              selected ? context.palette.selectedPill : context.palette.surface,
           borderRadius: const BorderRadius.all(AppRadii.pill),
           border: Border.all(
-              color: selected ? context.palette.selectedPill : context.palette.hairline),
+              color: selected
+                  ? context.palette.selectedPill
+                  : context.palette.hairline),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -307,12 +384,20 @@ class _StatusChip extends StatelessWidget {
 class _OrderTile extends StatelessWidget {
   final HistoryOrder order;
   final VoidCallback onTap;
-  const _OrderTile({required this.order, required this.onTap});
+
+  /// Marks the row whose detail is showing in the pane beside it.
+  final bool selected;
+  const _OrderTile({
+    required this.order,
+    required this.onTap,
+    this.selected = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return AppCard(
       onTap: onTap,
+      border: selected ? Border.all(color: AppColors.terra, width: 1.5) : null,
       child: Row(
         children: [
           Expanded(
@@ -346,11 +431,10 @@ class _OrderTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(formatRupeesCompact(order.total),
-                  style: AppTypography.bodyMd.copyWith(
-                      fontWeight: FontWeight.w800, fontSize: 15)),
+                  style: AppTypography.bodyMd
+                      .copyWith(fontWeight: FontWeight.w800, fontSize: 15)),
               const SizedBox(height: 2),
-              Icon(Icons.chevron_right,
-                  color: context.palette.ink30, size: 18),
+              Icon(Icons.chevron_right, color: context.palette.ink30, size: 18),
             ],
           ),
         ],

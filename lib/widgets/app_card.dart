@@ -30,7 +30,7 @@ class AppCard extends StatelessWidget {
     final box = Container(
       decoration: BoxDecoration(
         borderRadius: borderRadius,
-        boxShadow: shadow ?? context.palette.cardShadow,
+        boxShadow: shadow ?? AppShadows.cardFor(context),
       ),
       child: Container(
         clipBehavior: Clip.antiAlias,

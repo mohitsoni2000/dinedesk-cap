@@ -87,12 +87,12 @@ class _ManualEntrySheetBodyState
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
+        bottom: context.sheetBottomInset,
       ),
       child: AppSurface(
         tint: AppColors.night,
         border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
-        shadow: AppShadows.elevated,
+        shadow: AppShadows.elevatedFor(context),
         borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         child: Column(

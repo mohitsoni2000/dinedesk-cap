@@ -157,7 +157,7 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
             ),
             Padding(
               padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + MediaQuery.of(context).viewPadding.bottom),
+                  16, 8, 16, 16 + context.sheetBottomInset),
               child: LiquidPrimaryButton(
                 label: _applying ? 'Applying...' : 'Apply Coupon',
                 fullWidth: true,

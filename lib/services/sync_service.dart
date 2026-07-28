@@ -12,6 +12,7 @@ import '../motion/feedback_kind.dart';
 import '../motion/feedback_service.dart';
 import 'app_messenger.dart';
 import 'kot_queue_service.dart';
+import 'menu_parser.dart';
 import 'platform_surfaces.dart';
 import 'socket_service.dart';
 
@@ -48,6 +49,53 @@ class SyncService {
   Map<String, String> _floorMap = {};
   Map<String, DateTime> _tableTimerCache = {};
   Map<String, dynamic>? _lastFlagsMap;
+
+  /// Raw payload each section was last parsed from. A resync triggered by an
+  /// unrelated change (a permissions tweak, say) re-ships the whole snapshot,
+  /// so comparing first lets us skip re-parsing what didn't move.
+  ///
+  /// Only the menu is tracked, on purpose. It's the expensive parse — nested
+  /// option, variation and addon groups across the whole catalogue — while
+  /// tables/rooms/offers/discounts are flat field mappings. Those are also
+  /// mutated by their own socket events between syncs, which would leave a
+  /// payload cache able to disagree with provider state; not worth the risk
+  /// for parses that are already cheap.
+  final Map<String, Object?> _lastSectionRaw = {};
+
+  static const _sectionEquality = DeepCollectionEquality();
+
+  /// True when this section's payload matches what it was last parsed from.
+  ///
+  /// Pure on purpose — the cache is only written once a parse has actually
+  /// been committed, so an abandoned parse can't leave it claiming a menu
+  /// that was never applied.
+  bool _sectionUnchanged(String key, Object? raw) =>
+      _lastSectionRaw.containsKey(key) &&
+      _sectionEquality.equals(_lastSectionRaw[key], raw);
+
+  /// Guards against an older off-thread menu parse landing after a newer one.
+  int _menuParseSeq = 0;
+
+  /// Parses on a background isolate, falling back to this one if it can't be
+  /// spawned. Low-RAM devices — the ones this whole change targets — are also
+  /// the likeliest to refuse an isolate, and a slow menu beats no menu.
+  Future<MenuParseResult> _parseMenuOffThread(Map<String, dynamic> raw) async {
+    try {
+      return await compute(parseMenu, raw);
+    } catch (e) {
+      debugPrint('$_tag   Isolate parse unavailable ($e) — parsing inline');
+      return parseMenu(raw);
+    }
+  }
+
+  /// Commits a parse result. [raw] is recorded as the payload the menu was
+  /// built from, so [_sectionChanged] can never compare against a stale one.
+  void _applyParsedMenu(MenuParseResult parsed, Map<String, dynamic> raw) {
+    _ref.read(menuCategoriesProvider.notifier).state = parsed.categories;
+    _ref.read(menuProvider.notifier).state = parsed.items;
+    _ref.read(rawMenuDataProvider.notifier).state = raw;
+    _lastSectionRaw['menu'] = raw;
+  }
 
   SyncService(this._socket, this._ref);
 
@@ -324,14 +372,20 @@ class SyncService {
 
     _socket.on('menu:updated', (data) async {
       final map = _toMap(data);
+      final seq = ++_menuParseSeq;
       _ref.read(menuLoadingProvider.notifier).state = true;
       try {
-        _ref.read(menuProvider.notifier).state = _parseMenuItems(map);
-        _ref.read(rawMenuDataProvider.notifier).state = map;
+        final parsed = await _parseMenuOffThread(map);
+        // Parsing is off-thread now, so two pushes in quick succession can
+        // finish out of order. Only the newest one may land.
+        if (seq != _menuParseSeq) return;
+        _applyParsedMenu(parsed, map);
       } catch (e, st) {
         debugPrint('$_tag menu:updated parse error: $e $st');
       } finally {
-        _ref.read(menuLoadingProvider.notifier).state = false;
+        if (seq == _menuParseSeq) {
+          _ref.read(menuLoadingProvider.notifier).state = false;
+        }
       }
     });
 
@@ -539,7 +593,7 @@ class SyncService {
           name: m['name']?.toString() ?? 'Offer',
           ruleType: m['rule_type']?.toString() ?? '',
           couponCode: m['coupon_code']?.toString(),
-          autoApply: _toIntOr(m['auto_apply'], 0) == 1,
+          autoApply: toIntOr(m['auto_apply'], 0) == 1,
         ));
       }
       _ref.read(offersProvider.notifier).state = offers;
@@ -548,12 +602,30 @@ class SyncService {
 
     final menuRaw = data['menu'];
     if (menuRaw is Map) {
-      final menuMap = Map<String, dynamic>.from(menuRaw);
-      _ref.read(menuLoadingProvider.notifier).state = true;
-      _ref.read(menuProvider.notifier).state = _parseMenuItems(menuMap);
-      _ref.read(rawMenuDataProvider.notifier).state = menuMap;
-      _ref.read(menuLoadingProvider.notifier).state = false;
-      debugPrint('$_tag   Menu items: ${_ref.read(menuProvider).length}');
+      if (_sectionUnchanged('menu', menuRaw)) {
+        debugPrint('$_tag   Menu: unchanged — skipping re-parse');
+      } else {
+        final menuMap = Map<String, dynamic>.from(menuRaw);
+        final seq = ++_menuParseSeq;
+        _ref.read(menuLoadingProvider.notifier).state = true;
+        try {
+          // Off the UI thread: this is the heaviest work in a sync, and it
+          // lands right as the operator is waiting on the tables screen.
+          final parsed = await _parseMenuOffThread(menuMap);
+          if (seq == _menuParseSeq) {
+            _applyParsedMenu(parsed, menuMap);
+            debugPrint('$_tag   Menu items: ${parsed.items.length}');
+          }
+        } catch (e, st) {
+          // Never let a menu problem abort the rest of the sync — fast-add,
+          // active orders and the connected status all still need to apply.
+          debugPrint('$_tag   Menu parse failed: $e $st');
+        } finally {
+          if (seq == _menuParseSeq) {
+            _ref.read(menuLoadingProvider.notifier).state = false;
+          }
+        }
+      }
     }
 
     final fastAddRaw = data['fast_add'];
@@ -704,6 +776,11 @@ class SyncService {
   void unregisterListeners() {
     _stateSubscription?.cancel();
     _stateSubscription = null;
+    // Don't let a debounced table-timer write get dropped on the way out.
+    if (_timerFlush?.isActive ?? false) {
+      _timerFlush!.cancel();
+      unawaited(_flushTimerCache());
+    }
     for (final event in [
       'table:updated',
       'order:created',
@@ -730,31 +807,70 @@ class SyncService {
     }
   }
 
+  /// Legacy per-table keys. Read once at startup for migration, then removed.
   static const _timerKeyPrefix = 'table_timer_';
 
-  Future<void> _stampTableTimer(String serverId) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-        '$_timerKeyPrefix$serverId', DateTime.now().toIso8601String());
+  /// All table timers in one key. The per-table scheme meant a full sync of N
+  /// tables fired up to N separate `getInstance()` + write round trips.
+  static const _timerBlobKey = 'table_timers_v2';
+
+  Timer? _timerFlush;
+
+  /// Coalesces a burst of table events into a single write, the same way
+  /// [WidgetSyncService.schedule] does.
+  void _scheduleTimerFlush() {
+    _timerFlush?.cancel();
+    _timerFlush = Timer(
+      const Duration(seconds: 2),
+      () => unawaited(_flushTimerCache()),
+    );
   }
 
-  Future<void> _clearTableTimer(String serverId) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('$_timerKeyPrefix$serverId');
+  Future<void> _flushTimerCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _timerBlobKey,
+        jsonEncode(
+          _tableTimerCache.map((k, v) => MapEntry(k, v.toIso8601String())),
+        ),
+      );
+    } catch (_) {
+      // A dropped timer only costs a table its "occupied for" readout.
+    }
   }
 
   Future<void> _loadTimerCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final keys = prefs.getKeys().where((k) => k.startsWith(_timerKeyPrefix));
       _tableTimerCache = {};
-      for (final key in keys) {
-        final val = prefs.getString(key);
-        if (val != null) {
-          final dt = DateTime.tryParse(val);
-          if (dt != null) {
-            _tableTimerCache[key.substring(_timerKeyPrefix.length)] = dt;
-          }
+
+      final blob = prefs.getString(_timerBlobKey);
+      if (blob != null) {
+        final decoded = jsonDecode(blob);
+        if (decoded is Map) {
+          decoded.forEach((k, v) {
+            final dt = DateTime.tryParse(v.toString());
+            if (dt != null) _tableTimerCache[k.toString()] = dt;
+          });
+        }
+        return;
+      }
+
+      // One-time migration off the per-table keys, so tables already occupied
+      // at upgrade time keep their running clock.
+      final legacy =
+          prefs.getKeys().where((k) => k.startsWith(_timerKeyPrefix)).toList();
+      for (final key in legacy) {
+        final dt = DateTime.tryParse(prefs.getString(key) ?? '');
+        if (dt != null) {
+          _tableTimerCache[key.substring(_timerKeyPrefix.length)] = dt;
+        }
+      }
+      if (legacy.isNotEmpty) {
+        await _flushTimerCache();
+        for (final key in legacy) {
+          await prefs.remove(key);
         }
       }
     } catch (_) {
@@ -776,10 +892,15 @@ class SyncService {
           .firstOrNull;
       occupiedSince =
           existing?.occupiedSince ?? _tableTimerCache[st.id] ?? DateTime.now();
-      unawaited(_stampTableTimer(st.id));
-    } else {
-      unawaited(_clearTableTimer(st.id));
-      _tableTimerCache.remove(st.id);
+      // Stage in memory and let the debounced flush persist it. Storing the
+      // actual start time rather than "now" also means the clock survives an
+      // app restart instead of restarting on the next table event.
+      if (_tableTimerCache[st.id] != occupiedSince) {
+        _tableTimerCache[st.id] = occupiedSince;
+        _scheduleTimerFlush();
+      }
+    } else if (_tableTimerCache.remove(st.id) != null) {
+      _scheduleTimerFlush();
     }
 
     return RestaurantTable(
@@ -1025,292 +1146,20 @@ class SyncService {
     }
   }
 
-  List<MenuItem> _parseMenuItems(Map<String, dynamic> data) {
-    final items = <MenuItem>[];
-    final rawItems = data['items'];
-    final rawCategories = data['categories'];
-    final optionGroupsByItem = _parseOptionGroupsByItem(data);
-    final variationsByItem = _parseVariationsByItem(data);
-    final addonGroupsByItem = _parseAddonGroupsByItem(data);
-    final categoryById = _categoryMap(rawCategories);
-    _ref.read(menuCategoriesProvider.notifier).state =
-        _parseCategoryOrder(rawCategories);
-
-    if (rawItems is List) {
-      for (final entry in rawItems) {
-        if (entry is Map) {
-          final m = Map<String, dynamic>.from(entry);
-          final categoryId = m['category_id']?.toString();
-          if (categoryId != null && categoryById.containsKey(categoryId)) {
-            final category = categoryById[categoryId]!;
-            m['category_name'] = category.name;
-            m['category_type'] ??= category.type;
-          }
-          final si = ServerMenuItem.fromMap(m);
-          items.add(_serverMenuItemToLocal(
-            si.copyWith(
-              optionGroups: optionGroupsByItem[si.id] ?? const [],
-              variations: variationsByItem[si.id] ?? const [],
-              addonGroups: addonGroupsByItem[si.id] ?? const [],
-            ),
-          ));
-        }
-      }
-    } else if (rawCategories is List) {
-      for (final cat in rawCategories) {
-        if (cat is Map) {
-          final catMap = Map<String, dynamic>.from(cat);
-          final catName = catMap['name']?.toString() ?? 'Other';
-          final catType = catMap['type']?.toString() ?? 'food';
-          final catItems = catMap['items'];
-          if (catItems is List) {
-            for (final entry in catItems) {
-              if (entry is Map) {
-                final m = Map<String, dynamic>.from(entry);
-                m['category_name'] = catName;
-                m['category_type'] = catType;
-                final si = ServerMenuItem.fromMap(m);
-                items.add(_serverMenuItemToLocal(
-                  si.copyWith(
-                    optionGroups: optionGroupsByItem[si.id] ?? const [],
-                    variations: variationsByItem[si.id] ?? const [],
-                    addonGroups: addonGroupsByItem[si.id] ?? const [],
-                  ),
-                ));
-              }
-            }
-          }
-        }
-      }
-    }
-    return items;
-  }
-
-  Map<String, List<ServerAddonGroup>> _parseAddonGroupsByItem(
-    Map<String, dynamic> data,
-  ) {
-    final rawGroupDefs = data['addon_groups'];
-    final rawLinks = data['item_addon_groups'];
-    final rawChoices = data['addon_group_choices'];
-
-    final choicesByGroup = <String, List<ServerAddonChoice>>{};
-    if (rawChoices is List) {
-      for (final raw in rawChoices) {
-        if (raw is! Map) continue;
-        final c = ServerAddonChoice.fromMap(Map<String, dynamic>.from(raw));
-        if (c.groupId.isEmpty) continue;
-        choicesByGroup.putIfAbsent(c.groupId, () => []).add(c);
-      }
-    }
-
-    final groupDefById = <String, ({String name, String selectionType})>{};
-    if (rawGroupDefs is List) {
-      for (final raw in rawGroupDefs) {
-        if (raw is! Map) continue;
-        final g = Map<String, dynamic>.from(raw);
-        final id = g['id']?.toString();
-        if (id == null || id.isEmpty) continue;
-        groupDefById[id] = (
-          name: g['name']?.toString() ?? 'Add-ons',
-          selectionType: g['selection_type']?.toString() ?? 'S',
-        );
-      }
-    }
-
-    final byItem = <String, List<ServerAddonGroup>>{};
-    if (rawLinks is List) {
-      for (final raw in rawLinks) {
-        if (raw is! Map) continue;
-        final link = Map<String, dynamic>.from(raw);
-        final itemId = link['item_id']?.toString();
-        final groupId = link['group_id']?.toString();
-        if (itemId == null || itemId.isEmpty) continue;
-        if (groupId == null || groupId.isEmpty) continue;
-        final def = groupDefById[groupId];
-        if (def == null) continue;
-        byItem.putIfAbsent(itemId, () => []).add(ServerAddonGroup(
-              id: groupId,
-              itemId: itemId,
-              name: def.name,
-              selectionType: def.selectionType,
-              minSelect: _toIntOr(link['min_select'], 0),
-              maxSelect: _toIntOr(link['max_select'], 1),
-              choices: choicesByGroup[groupId] ?? const [],
-            ));
-      }
-    }
-    return byItem;
-  }
-
-  int _toIntOr(dynamic v, int fallback) {
-    if (v is int) return v;
-    if (v is double) return v.toInt();
-    if (v is String) return int.tryParse(v) ?? fallback;
-    return fallback;
-  }
-
-  Map<String, List<ServerItemVariation>> _parseVariationsByItem(
-    Map<String, dynamic> data,
-  ) {
-    final rawVariations = data['item_variations'] ?? data['variations'];
-    final byItem = <String, List<ServerItemVariation>>{};
-    if (rawVariations is List) {
-      for (final raw in rawVariations) {
-        if (raw is! Map) continue;
-        final v = ServerItemVariation.fromMap(Map<String, dynamic>.from(raw));
-        if (v.itemId.isEmpty) continue;
-        byItem.putIfAbsent(v.itemId, () => []).add(v);
-      }
-    }
-    return byItem;
-  }
-
-  List<MenuCategory> _parseCategoryOrder(dynamic rawCategories) {
-    if (rawCategories is! List) return const [];
-    final list = <MenuCategory>[];
-    for (final raw in rawCategories) {
-      if (raw is! Map) continue;
-      final category = Map<String, dynamic>.from(raw);
-      final name = category['name']?.toString() ?? 'Other';
-      final sortOrder = int.tryParse('${category['sort_order'] ?? 0}') ?? 0;
-      list.add(MenuCategory(name: name, sortOrder: sortOrder));
-    }
-    list.sort((a, b) {
-      final cmp = a.sortOrder.compareTo(b.sortOrder);
-      return cmp != 0 ? cmp : a.name.compareTo(b.name);
-    });
-    return list;
-  }
-
-  Map<String, ({String name, String type})> _categoryMap(
-      dynamic rawCategories) {
-    final map = <String, ({String name, String type})>{};
-    if (rawCategories is! List) return map;
-    for (final raw in rawCategories) {
-      if (raw is! Map) continue;
-      final category = Map<String, dynamic>.from(raw);
-      final id = category['id']?.toString();
-      if (id == null || id.isEmpty) continue;
-      map[id] = (
-        name: category['name']?.toString() ?? 'Other',
-        type: category['type']?.toString() ?? 'food',
-      );
-    }
-    return map;
-  }
-
-  double _effectivePrice(ServerMenuItem si) {
-    if (si.basePrice > 0) return si.basePrice;
-    final prices =
-        si.variations.map((v) => v.price).where((p) => p > 0).toList();
-    if (prices.isEmpty) return si.basePrice;
-    return prices.reduce((a, b) => a < b ? a : b);
-  }
-
-  MenuItem _serverMenuItemToLocal(ServerMenuItem si) {
-    return MenuItem(
-      id: si.id,
-      name: si.name,
-      section: si.categoryName,
-      kitchenSection: si.categoryType,
-      price: _effectivePrice(si),
-      isVeg: si.isVeg,
-      available: si.isAvailable,
-      note: si.note,
-      measureUnit: si.measureUnit,
-      sortOrder: si.sortOrder,
-      addonGroups: si.addonGroups
-          .map((g) => AddonGroup(
-                id: g.id,
-                itemId: g.itemId,
-                name: g.name,
-                selectionType: g.selectionType,
-                minSelect: g.minSelect,
-                maxSelect: g.maxSelect,
-                choices: g.choices
-                    .map((c) => AddonChoice(
-                          id: c.id,
-                          groupId: c.groupId,
-                          name: c.name,
-                          price: c.price,
-                        ))
-                    .toList(),
-              ))
-          .toList(),
-      optionGroups: si.optionGroups
-          .map((g) => MenuOptionGroup(
-                id: g.id,
-                itemId: g.itemId,
-                name: g.name,
-                isRequired: g.isRequired,
-                minSelect: g.minSelect,
-                maxSelect: g.maxSelect,
-                options: g.options
-                    .map((o) => MenuOption(
-                          id: o.id,
-                          groupId: o.groupId,
-                          name: o.name,
-                          priceModifier: o.priceModifier,
-                        ))
-                    .toList(),
-              ))
-          .toList(),
-      variations: si.variations
-          .map((v) => MenuItemVariation(
-                id: v.id,
-                name: v.name,
-                price: v.price,
-              ))
-          .toList(),
-    );
-  }
-
-  Map<String, List<ServerMenuOptionGroup>> _parseOptionGroupsByItem(
-    Map<String, dynamic> data,
-  ) {
-    final rawGroups = data['item_option_groups'] ?? data['option_groups'];
-    final rawOptions = data['item_options'] ?? data['options'];
-    final optionsByGroup = <String, List<ServerMenuOption>>{};
-
-    if (rawOptions is List) {
-      for (final raw in rawOptions) {
-        if (raw is! Map) continue;
-        final option = ServerMenuOption.fromMap(Map<String, dynamic>.from(raw));
-        if (option.groupId.isEmpty) continue;
-        optionsByGroup.putIfAbsent(option.groupId, () => []).add(option);
-      }
-    }
-
-    final groupsByItem = <String, List<ServerMenuOptionGroup>>{};
-    if (rawGroups is List) {
-      for (final raw in rawGroups) {
-        if (raw is! Map) continue;
-        final group = ServerMenuOptionGroup.fromMap(
-          Map<String, dynamic>.from(raw),
-        );
-        if (group.itemId.isEmpty) continue;
-        groupsByItem.putIfAbsent(group.itemId, () => []).add(
-              group.copyWith(options: optionsByGroup[group.id] ?? const []),
-            );
-      }
-    }
-    return groupsByItem;
-  }
-
   void _applyFastAddData(Map<String, dynamic> data) {
     final pinned = data['pinned'];
     final auto = data['auto'];
     if (pinned is List) {
       _ref.read(fastAddPinnedProvider.notifier).state = pinned
           .whereType<Map>()
-          .map((m) => _serverMenuItemToLocal(
+          .map((m) => serverMenuItemToLocal(
               ServerMenuItem.fromMap(Map<String, dynamic>.from(m))))
           .toList();
     }
     if (auto is List) {
       _ref.read(fastAddAutoProvider.notifier).state = auto
           .whereType<Map>()
-          .map((m) => _serverMenuItemToLocal(
+          .map((m) => serverMenuItemToLocal(
               ServerMenuItem.fromMap(Map<String, dynamic>.from(m))))
           .toList();
     }

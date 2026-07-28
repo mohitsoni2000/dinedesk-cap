@@ -65,15 +65,18 @@ class DynamicToast {
 
   static void success(BuildContext context, String message,
           {Duration duration = const Duration(seconds: 3)}) =>
-      show(context, message: message, kind: ToastKind.success, duration: duration);
+      show(context,
+          message: message, kind: ToastKind.success, duration: duration);
 
   static void error(BuildContext context, String message,
           {Duration duration = const Duration(seconds: 4)}) =>
-      show(context, message: message, kind: ToastKind.error, duration: duration);
+      show(context,
+          message: message, kind: ToastKind.error, duration: duration);
 
   static void warning(BuildContext context, String message,
           {Duration duration = const Duration(seconds: 3)}) =>
-      show(context, message: message, kind: ToastKind.warning, duration: duration);
+      show(context,
+          message: message, kind: ToastKind.warning, duration: duration);
 }
 
 class _DynamicIslandToastView extends StatefulWidget {
@@ -115,10 +118,19 @@ class _DynamicIslandToastState extends State<_DynamicIslandToastView>
       duration: const Duration(milliseconds: 420),
       reverseDuration: const Duration(milliseconds: 220),
     );
-    _scale = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack, reverseCurve: Curves.easeIn)
+    _scale = CurvedAnimation(
+            parent: _controller,
+            curve: Curves.easeOutBack,
+            reverseCurve: Curves.easeIn)
         .drive(Tween(begin: 0.4, end: 1.0));
-    _opacity = CurvedAnimation(parent: _controller, curve: const Interval(0, 0.5), reverseCurve: Curves.easeOut);
-    _slide = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack, reverseCurve: Curves.easeIn)
+    _opacity = CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0, 0.5),
+        reverseCurve: Curves.easeOut);
+    _slide = CurvedAnimation(
+            parent: _controller,
+            curve: Curves.easeOutBack,
+            reverseCurve: Curves.easeIn)
         .drive(Tween(begin: const Offset(0, -0.5), end: Offset.zero));
 
     _controller.forward();
@@ -148,10 +160,14 @@ class _DynamicIslandToastState extends State<_DynamicIslandToastView>
   }
 
   _ToastVisuals get _visuals => switch (widget.kind) {
-        ToastKind.success => const _ToastVisuals(Icons.check_circle_rounded, AppColors.success),
-        ToastKind.error => const _ToastVisuals(Icons.error_rounded, AppColors.danger),
-        ToastKind.warning => const _ToastVisuals(Icons.warning_rounded, AppColors.warn),
-        ToastKind.info => const _ToastVisuals(Icons.circle_notifications_rounded, AppColors.terra400),
+        ToastKind.success =>
+          const _ToastVisuals(Icons.check_circle_rounded, AppColors.success),
+        ToastKind.error =>
+          const _ToastVisuals(Icons.error_rounded, AppColors.danger),
+        ToastKind.warning =>
+          const _ToastVisuals(Icons.warning_rounded, AppColors.warn),
+        ToastKind.info => const _ToastVisuals(
+            Icons.circle_notifications_rounded, AppColors.terra400),
       };
 
   @override
@@ -163,65 +179,75 @@ class _DynamicIslandToastState extends State<_DynamicIslandToastView>
       top: topInset + 10,
       left: 0,
       right: 0,
-      child: Center(
-        child: SlideTransition(
-          position: _slide,
-          child: ScaleTransition(
-            scale: _scale,
-            alignment: Alignment.topCenter,
-            child: FadeTransition(
-              opacity: _opacity,
-              child: GestureDetector(
-                onTap: _dismiss,
-                behavior: HitTestBehavior.opaque,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.9,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppColors.night,
-                      borderRadius: const BorderRadius.all(AppRadii.pill),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.35),
-                          blurRadius: 24,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
+      // Material has to sit *inside* the Positioned — the Positioned itself
+      // must stay a direct child of the Overlay's Stack. Without it the
+      // message renders in Flutter's yellow-underline no-Material style.
+      child: Material(
+        type: MaterialType.transparency,
+        child: Center(
+          child: SlideTransition(
+            position: _slide,
+            child: ScaleTransition(
+              scale: _scale,
+              alignment: Alignment.topCenter,
+              child: FadeTransition(
+                opacity: _opacity,
+                child: GestureDetector(
+                  onTap: _dismiss,
+                  behavior: HitTestBehavior.opaque,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.9,
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(visuals.icon, color: visuals.accent, size: 18),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            widget.message,
-                            style: AppTypography.bodyMd.copyWith(color: Colors.white),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (widget.actionLabel != null && widget.onAction != null) ...[
-                          const SizedBox(width: 12),
-                          GestureDetector(
-                            onTap: () {
-                              widget.onAction!();
-                              _dismiss();
-                            },
-                            child: Text(
-                              widget.actionLabel!.toUpperCase(),
-                              style: AppTypography.bodyMd.copyWith(
-                                color: AppColors.terra400,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.night,
+                        borderRadius: const BorderRadius.all(AppRadii.pill),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.35),
+                            blurRadius: 24,
+                            offset: const Offset(0, 10),
                           ),
                         ],
-                      ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(visuals.icon, color: visuals.accent, size: 18),
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Text(
+                              widget.message,
+                              style: AppTypography.bodyMd
+                                  .copyWith(color: Colors.white),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (widget.actionLabel != null &&
+                              widget.onAction != null) ...[
+                            const SizedBox(width: 12),
+                            GestureDetector(
+                              onTap: () {
+                                widget.onAction!();
+                                _dismiss();
+                              },
+                              child: Text(
+                                widget.actionLabel!.toUpperCase(),
+                                style: AppTypography.bodyMd.copyWith(
+                                  color: AppColors.terra400,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

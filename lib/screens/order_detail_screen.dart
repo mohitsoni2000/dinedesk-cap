@@ -21,7 +21,21 @@ import '../widgets/offers_sheet.dart';
 
 class OrderDetailScreen extends ConsumerStatefulWidget {
   final String orderId;
-  const OrderDetailScreen({super.key, required this.orderId});
+
+  /// True when shown inside the history screen's tablet detail pane rather
+  /// than pushed as its own route. Only changes how back/dismiss behave —
+  /// the bill, discount and payment flows are identical either way.
+  final bool embedded;
+
+  /// Called instead of popping the route when [embedded].
+  final VoidCallback? onClose;
+
+  const OrderDetailScreen({
+    super.key,
+    required this.orderId,
+    this.embedded = false,
+    this.onClose,
+  });
 
   @override
   ConsumerState<OrderDetailScreen> createState() => _OrderDetailScreenState();
@@ -189,7 +203,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       if (mounted) {
         DynamicToast.show(context,
             message: 'Order ${order.id} cancelled', kind: ToastKind.warning);
-        context.pop();
+        // _close(), not context.pop() — when embedded in the history detail
+        // pane, popping would take the whole History tab with it.
+        _close();
       }
     });
   }
@@ -374,6 +390,16 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     }
   }
 
+  /// Leaves the screen — pops the route normally, or hands back to the host
+  /// pane when embedded.
+  void _close() {
+    if (widget.onClose != null) {
+      widget.onClose!();
+    } else if (context.canPop()) {
+      context.pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final orders = ref.watch(historyProvider);
@@ -402,7 +428,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           body: SafeArea(
             child: Column(
               children: [
-                _DetailHeader(title: 'Order', onBack: () => context.pop()),
+                _DetailHeader(title: 'Order', onBack: _close),
                 const Spacer(),
                 Icon(Icons.error_outline,
                     color: context.palette.ink30, size: 48),
@@ -429,9 +455,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         order.status == OrderStatus.modified;
 
     return DragToDismiss.overscroll(
-      onDismiss: () {
-        if (context.canPop()) context.pop();
-      },
+      onDismiss: _close,
       child: ColoredBox(
       color: context.palette.paper,
       child: Scaffold(
@@ -441,7 +465,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             children: [
               _DetailHeader(
                 title: order.id,
-                onBack: () => context.pop(),
+                onBack: _close,
                 trailing: _StatusBadge(status: order.status),
               ),
               Expanded(

@@ -6,8 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/providers.dart';
 import '../services/biometric_service.dart';
+import '../theme/perf_mode.dart';
 import '../theme/theme_mode_provider.dart';
 import '../theme/tokens.dart';
+import '../widgets/page_content_clamp.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_surface.dart';
 import '../widgets/dynamic_toast.dart';
@@ -78,7 +80,8 @@ class SettingsScreen extends ConsumerWidget {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
-          child: Column(
+          child: PageContentClamp(
+            child: Column(
             children: [
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -143,6 +146,20 @@ class SettingsScreen extends ConsumerWidget {
                         ),
                         Divider(height: 1, color: context.palette.hairline),
                         const _BiometricRow(),
+                        Divider(height: 1, color: context.palette.hairline),
+                        _SettingsRow(
+                          icon: Icons.speed_outlined,
+                          title: 'Performance mode',
+                          subtitle: switch (ref.watch(
+                              perfStateProvider.select((p) => p.mode))) {
+                            PerfMode.auto => AppPerf.reduceEffects(context)
+                                ? 'Auto · effects reduced for this device'
+                                : 'Auto · full effects',
+                            PerfMode.performance => 'Performance · effects off',
+                            PerfMode.full => 'Full effects · always on',
+                          },
+                          onTap: () => _showPerformanceSheet(context),
+                        ),
                         Divider(height: 1, color: context.palette.hairline),
                         _SettingsRow(
                           icon: Icons.info_outline,
@@ -213,7 +230,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ],
           ),
-        ),
+        )),
       ),
     );
   }
@@ -311,7 +328,99 @@ class SettingsScreen extends ConsumerWidget {
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
-            SizedBox(height: MediaQuery.of(context).viewPadding.bottom + 8),
+            SizedBox(height: context.sheetBottomInset + 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPerformanceSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: context.palette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: AppRadii.lg),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Performance mode', style: AppTypography.headline),
+            const SizedBox(height: 4),
+            const Text(
+                'Turn off ambient animations and blur to keep older devices '
+                'responsive.',
+                style: AppTypography.caption),
+            const SizedBox(height: 24),
+            Consumer(builder: (context, ref, _) {
+              final perf = ref.watch(perfStateProvider);
+              Widget option({
+                required PerfMode value,
+                required IconData icon,
+                required String label,
+                required String subtitle,
+              }) {
+                final selected = perf.mode == value;
+                return ListTile(
+                  leading: Icon(icon,
+                      color: selected
+                          ? AppColors.terra500
+                          : context.palette.ink70),
+                  title: Text(label, style: AppTypography.bodyMd),
+                  subtitle: Text(subtitle, style: AppTypography.caption),
+                  trailing: selected
+                      ? const Icon(Icons.check_circle,
+                          color: AppColors.terra500, size: 20)
+                      : null,
+                  onTap: () {
+                    ref.read(perfStateProvider.notifier).set(value);
+                    Navigator.of(context).pop();
+                  },
+                );
+              }
+
+              return AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    option(
+                      value: PerfMode.auto,
+                      icon: Icons.auto_awesome_outlined,
+                      label: 'Auto',
+                      subtitle: perf.tier == PerfTier.low
+                          ? 'This device was detected as low-powered'
+                          : 'Match this device’s capability',
+                    ),
+                    Divider(height: 1, color: context.palette.ink10),
+                    option(
+                      value: PerfMode.performance,
+                      icon: Icons.bolt_outlined,
+                      label: 'Performance',
+                      subtitle: 'Fastest · no ambient animation or blur',
+                    ),
+                    Divider(height: 1, color: context.palette.ink10),
+                    option(
+                      value: PerfMode.full,
+                      icon: Icons.auto_fix_high_outlined,
+                      label: 'Full effects',
+                      subtitle: 'Every animation on, whatever the device',
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: LiquidSecondaryButton(
+                label: 'Done',
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+            SizedBox(height: context.sheetBottomInset + 8),
           ],
         ),
       ),
@@ -384,7 +493,7 @@ class SettingsScreen extends ConsumerWidget {
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
-            SizedBox(height: MediaQuery.of(context).viewPadding.bottom + 8),
+            SizedBox(height: context.sheetBottomInset + 8),
           ],
         ),
       ),
@@ -509,7 +618,7 @@ class _NotificationsSheetState extends State<_NotificationsSheet> {
               onPressed: () => Navigator.of(context).pop(),
             ),
           ),
-          SizedBox(height: MediaQuery.of(context).viewPadding.bottom + 8),
+          SizedBox(height: context.sheetBottomInset + 8),
         ],
       ),
     );

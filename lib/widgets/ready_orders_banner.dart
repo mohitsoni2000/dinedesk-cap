@@ -62,7 +62,17 @@ class _ReadyCardState extends State<_ReadyCard>
   late final AnimationController _wiggle = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
-  )..repeat();
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (AppPerf.reduceEffects(context)) {
+      _wiggle.stop();
+    } else if (!_wiggle.isAnimating) {
+      _wiggle.repeat();
+    }
+  }
 
   @override
   void dispose() {

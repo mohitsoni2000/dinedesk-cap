@@ -7,6 +7,7 @@ import '../data/currency.dart';
 import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
+import '../widgets/page_content_clamp.dart';
 import '../widgets/dynamic_toast.dart';
 import '../widgets/liquid_chrome.dart';
 
@@ -108,138 +109,141 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text('Rooms', style: AppTypography.displayMd),
-                  ),
-                  IconButton(
-                    icon: Icon(_searchOpen ? Icons.close : Icons.search,
-                        color: context.palette.ink70),
-                    onPressed: () => setState(() {
-                      _searchOpen = !_searchOpen;
-                      if (!_searchOpen) _query = '';
-                    }),
-                  ),
-                  LiquidPill(
-                    tint: connOnline
-                        ? null
-                        : AppColors.warn.withValues(alpha: 0.32),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: connOnline
-                                ? AppColors.success
-                                : AppColors.warn,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(connOnline ? 'ONLINE' : 'OFFLINE'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (_searchOpen)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: context.palette.surface,
-                    borderRadius: const BorderRadius.all(AppRadii.sm),
-                    border: Border.all(color: context.palette.hairline, width: 1.5),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: TextField(
-                    autofocus: true,
-                    cursorColor: AppColors.terra,
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      hintText: 'Search room number or guest…',
-                      icon: Icon(Icons.search,
-                          color: context.palette.ink50, size: 18),
-                    ),
-                    onChanged: (v) => setState(() => _query = v),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: rooms.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
+          bottom: false,
+          child: PageContentClamp(
+            maxWidth: PageContentClamp.grid,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text('Rooms', style: AppTypography.displayMd),
+                      ),
+                      IconButton(
+                        icon: Icon(_searchOpen ? Icons.close : Icons.search,
+                            color: context.palette.ink70),
+                        onPressed: () => setState(() {
+                          _searchOpen = !_searchOpen;
+                          if (!_searchOpen) _query = '';
+                        }),
+                      ),
+                      LiquidPill(
+                        tint: connOnline
+                            ? null
+                            : AppColors.warn.withValues(alpha: 0.32),
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.hotel_outlined,
-                                color: context.palette.ink30, size: 48),
-                            const SizedBox(height: 12),
-                            const Text('No rooms configured',
-                                style: AppTypography.title),
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: connOnline
+                                    ? AppColors.success
+                                    : AppColors.warn,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(connOnline ? 'ONLINE' : 'OFFLINE'),
                           ],
                         ),
                       ),
-                    )
-                  : filtered.isEmpty
+                    ],
+                  ),
+                ),
+                if (_searchOpen)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: context.palette.surface,
+                        borderRadius: const BorderRadius.all(AppRadii.sm),
+                        border: Border.all(
+                            color: context.palette.hairline, width: 1.5),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: TextField(
+                        autofocus: true,
+                        cursorColor: AppColors.terra,
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+                          hintText: 'Search room number or guest…',
+                          icon: Icon(Icons.search,
+                              color: context.palette.ink50, size: 18),
+                        ),
+                        onChanged: (v) => setState(() => _query = v),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: rooms.isEmpty
                       ? Center(
                           child: Padding(
                             padding: const EdgeInsets.all(32),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.search_off,
+                                Icon(Icons.hotel_outlined,
                                     color: context.palette.ink30, size: 48),
                                 const SizedBox(height: 12),
-                                const Text('No rooms match',
+                                const Text('No rooms configured',
                                     style: AppTypography.title),
-                                const SizedBox(height: 4),
-                                const Text('Try a different search',
-                                    style: AppTypography.caption),
                               ],
                             ),
                           ),
                         )
-                      : GridView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                          gridDelegate:
-                              const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 200,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 1.05,
-                          ),
-                          itemCount: filtered.length,
-                          itemBuilder: (_, i) {
-                            final r = filtered[i];
-                            return Entrance(
-                              delay: Duration(
-                                  milliseconds: 35 * (i < 12 ? i : 12)),
-                              offsetY: 10,
-                              child: _RoomCard(
-                                room: r,
-                                isLoading: _openingRoom &&
-                                    _openingRoomId == r.serverId,
-                                onTap: () => _onRoomTap(r),
+                      : filtered.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(32),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.search_off,
+                                        color: context.palette.ink30, size: 48),
+                                    const SizedBox(height: 12),
+                                    const Text('No rooms match',
+                                        style: AppTypography.title),
+                                    const SizedBox(height: 4),
+                                    const Text('Try a different search',
+                                        style: AppTypography.caption),
+                                  ],
+                                ),
                               ),
-                            );
-                          },
-                        ),
+                            )
+                          : GridView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                              gridDelegate:
+                                  SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent: context.tableTileExtent,
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 12,
+                                childAspectRatio: 1.05,
+                              ),
+                              itemCount: filtered.length,
+                              itemBuilder: (_, i) {
+                                final r = filtered[i];
+                                return Entrance(
+                                  delay: Duration(
+                                      milliseconds: 35 * (i < 12 ? i : 12)),
+                                  offsetY: 10,
+                                  child: _RoomCard(
+                                    room: r,
+                                    isLoading: _openingRoom &&
+                                        _openingRoomId == r.serverId,
+                                    onTap: () => _onRoomTap(r),
+                                  ),
+                                );
+                              },
+                            ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          )),
     );
   }
 }
@@ -302,9 +306,11 @@ class _RoomCard extends StatelessWidget {
               color: _bg(context),
               borderRadius: const BorderRadius.all(AppRadii.lg),
               border: Border.all(color: _border(), width: 1),
-              boxShadow: room.state == RoomState.mine
-                  ? AppShadows.terraGlow
-                  : context.palette.cardShadow,
+              boxShadow: AppPerf.reduceEffects(context)
+                  ? AppShadows.flat
+                  : room.state == RoomState.mine
+                      ? AppShadows.terraGlow
+                      : context.palette.cardShadow,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -314,8 +320,7 @@ class _RoomCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         room.id,
-                        style:
-                            AppTypography.displayMd.copyWith(fontSize: 24),
+                        style: AppTypography.displayMd.copyWith(fontSize: 24),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

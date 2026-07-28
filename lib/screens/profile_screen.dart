@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../data/providers.dart';
 import '../services/session_service.dart';
 import '../theme/tokens.dart';
+import '../widgets/page_content_clamp.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_surface.dart';
 import '../widgets/liquid_chrome.dart';
@@ -32,7 +33,8 @@ class ProfileScreen extends ConsumerWidget {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
-          child: Column(
+          child: PageContentClamp(
+            child: Column(
             children: [
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -235,7 +237,7 @@ class ProfileScreen extends ConsumerWidget {
             ),
           ],
         ),
-      ),
+      )),
       ),
     );
   }

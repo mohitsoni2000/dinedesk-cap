@@ -109,7 +109,7 @@ class _HelpSheet extends StatelessWidget {
             ),
             Padding(
               padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + MediaQuery.of(context).viewPadding.bottom),
+                  16, 8, 16, 16 + context.sheetBottomInset),
               child: LiquidPrimaryButton(
                 label: 'Got it',
                 fullWidth: true,

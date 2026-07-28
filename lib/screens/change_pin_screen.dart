@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -83,7 +81,6 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
             _step = _Step.fresh;
           });
         } else {
-
           setState(() => _verifying = true);
           final socketService = ref.read(socketServiceProvider);
 
@@ -167,50 +164,64 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
           child: Column(
             children: [
               _ChangePinHeader(onBack: () => context.pop()),
+              // The keypad below is a fixed-size sibling, so on a short
+              // viewport this region gets squeezed toward zero — scrolling
+              // lets it give way instead of overflowing, while minHeight
+              // keeps the content centred whenever there is room.
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_heading, style: AppTypography.sheetTitle),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(4, (i) {
-                          final filled = i < _input.length;
-                          return Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 6),
-                            width: 18,
-                            height: 18,
-                            decoration: BoxDecoration(
-                              color: filled
-                                  ? AppColors.terra
-                                  : Colors.transparent,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: filled
-                                      ? AppColors.terra
-                                      : context.palette.ink30,
-                                  width: 1.5),
+                child: LayoutBuilder(
+                  builder: (context, constraints) => SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints:
+                          BoxConstraints(minHeight: constraints.maxHeight),
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(_heading, style: AppTypography.sheetTitle),
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: List.generate(4, (i) {
+                                final filled = i < _input.length;
+                                return Container(
+                                  margin:
+                                      const EdgeInsets.symmetric(horizontal: 6),
+                                  width: 18,
+                                  height: 18,
+                                  decoration: BoxDecoration(
+                                    color: filled
+                                        ? AppColors.terra
+                                        : Colors.transparent,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: filled
+                                            ? AppColors.terra
+                                            : context.palette.ink30,
+                                        width: 1.5),
+                                  ),
+                                );
+                              }),
                             ),
-                          );
-                        }),
-                      ),
-                      if (_verifying) ...[
-                        const SizedBox(height: 12),
-                        const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                            if (_verifying) ...[
+                              const SizedBox(height: 12),
+                              const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ] else if (_error != null) ...[
+                              const SizedBox(height: 12),
+                              Text(_error!,
+                                  style: AppTypography.caption
+                                      .copyWith(color: AppColors.danger)),
+                            ],
+                          ],
                         ),
-                      ] else if (_error != null) ...[
-                        const SizedBox(height: 12),
-                        Text(_error!,
-                            style: AppTypography.caption
-                                .copyWith(color: AppColors.danger)),
-                      ],
-                    ],
+                      ),
+                    ),
                   ),
                 ),
               ),

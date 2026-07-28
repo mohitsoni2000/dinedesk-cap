@@ -218,7 +218,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                 AppSpacing.lg,
                 AppSpacing.lg,
                 AppSpacing.lg,
-                AppSpacing.lg + MediaQuery.of(context).viewPadding.bottom,
+                AppSpacing.lg + context.sheetBottomInset,
               ),
               child: Row(
                 children: [

@@ -148,7 +148,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       builder: (_, scrollCtrl) => AppSurface(
         borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
         padding: EdgeInsets.fromLTRB(
-            20, 12, 20, 28 + MediaQuery.of(context).viewPadding.bottom),
+            20, 12, 20, 28 + context.sheetBottomInset),
         child: ListView(
           controller: scrollCtrl,
           children: [

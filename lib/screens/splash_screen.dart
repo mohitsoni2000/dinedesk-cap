@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -24,9 +23,17 @@ class _SplashScreenState extends State<SplashScreen>
   late final AnimationController _pulseCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1800),
-  )..repeat(reverse: true);
+  );
 
-  Timer? _redirectTimer;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (AppPerf.reduceEffects(context)) {
+      _pulseCtrl.stop();
+    } else if (!_pulseCtrl.isAnimating) {
+      _pulseCtrl.repeat(reverse: true);
+    }
+  }
 
   @override
   void initState() {
@@ -45,213 +52,213 @@ class _SplashScreenState extends State<SplashScreen>
       });
     });
 
-    _redirectTimer = Timer(const Duration(milliseconds: 1800), () async {
-      if (!mounted) return;
-      final pairing = await SessionService().getSavedPairing();
-      if (!mounted) return;
-      if (pairing != null) {
-        context.go('/connecting');
-      } else {
-        context.go('/scan');
-      }
-    });
+    // The pairing read starts immediately and we navigate the moment it
+    // resolves — the cosmetic stagger above runs independently rather than
+    // gating it behind a fixed wait.
+    _resolveAndNavigate();
+  }
+
+  Future<void> _resolveAndNavigate() async {
+    final pairing = await SessionService().getSavedPairing();
+    if (!mounted) return;
+    // Handed to ConnectingScreen so it doesn't repeat the Keystore-backed
+    // read we just did.
+    if (pairing != null) {
+      context.go('/connecting', extra: pairing);
+    } else {
+      context.go('/scan');
+    }
   }
 
   @override
   void dispose() {
     _pulseCtrl.dispose();
-    _redirectTimer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return LiquidMeshBackground(
-      dark: true,
-      child: Stack(
-        children: [
-
-          const Positioned.fill(
-            child: IgnorePointer(child: _GrainOverlay()),
-          ),
-
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: Alignment.center,
-                    radius: 1.0,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.45),
-                    ],
-                    stops: const [0.55, 1.0],
-                  ),
-                ),
-              ),
+    // The only screen with no Scaffold of its own — its text needs a Material
+    // ancestor like everything else.
+    return Material(
+      type: MaterialType.transparency,
+      child: LiquidMeshBackground(
+        dark: true,
+        child: Stack(
+          children: [
+            const Positioned.fill(
+              child: IgnorePointer(child: _GrainOverlay()),
             ),
-          ),
-
-          DepthParallaxStack(
-            maxOffset: 8,
-            layers: [
-              const DepthLayer(depth: 0.0, child: SizedBox.expand()),
-              DepthLayer(
-                depth: 0.6,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-
-                      AnimatedBuilder(
-                        animation: _pulseCtrl,
-                        builder: (_, child) {
-                          final glow = 0.3 + 0.7 * _pulseCtrl.value;
-                          return Stack(
-                            alignment: Alignment.center,
-                            children: [
-
-                              Container(
-                                width: 110,
-                                height: 110,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.terra400
-                                          .withValues(alpha: 0.18 * glow),
-                                      blurRadius: 40 * glow,
-                                      spreadRadius: 8 * glow,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              child!,
-                            ],
-                          );
-                        },
-                        child: SpringBuilder(
-                          from: 0.0,
-                          to: _showLogo ? 1.0 : 0.0,
-                          spring: RestroSprings.bouncy,
-                          builder: (_, t, child) => Opacity(
-                            opacity: t.clamp(0.0, 1.0),
-                            child: Transform.scale(
-                              scale: 0.75 + 0.25 * t,
-                              child: child,
-                            ),
-                          ),
-                          child: Hero(
-                            tag: HeroTags.appLogo,
-                            child: Container(
-                              width: 88,
-                              height: 88,
-                              decoration: const BoxDecoration(
-                                color: AppColors.logoBg,
-                                borderRadius: BorderRadius.all(AppRadii.lg),
-                                boxShadow: AppShadows.logoGlow,
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: Padding(
-                                padding: const EdgeInsets.all(10),
-                                child: Image.asset(
-                                  'assets/images/appicon_cream.png',
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 28),
-
-                      SpringBuilder(
-                        from: 0.0,
-                        to: _showWordmark ? 1.0 : 0.0,
-                        spring: RestroSprings.soft,
-                        builder: (_, t, child) => Opacity(
-                          opacity: t.clamp(0.0, 1.0),
-                          child: Transform.translate(
-                            offset: Offset(0, 12 * (1 - t)),
-                            child: child,
-                          ),
-                        ),
-                        child: Image.asset(
-                          'assets/images/lockup_ink_cream.png',
-                          height: 26,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-
-                      const SizedBox(height: 14),
-
-                      SpringBuilder(
-                        from: 0.0,
-                        to: _showOperator ? 1.0 : 0.0,
-                        spring: RestroSprings.soft,
-                        builder: (_, t, child) => Opacity(
-                          opacity: t.clamp(0.0, 1.0),
-                          child: child,
-                        ),
-                        child: Column(
-                          children: [
-                            Container(
-                              width: 120,
-                              height: 0.5,
-                              color: Colors.white.withValues(alpha: 0.15),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'O P E R A T O R',
-                              style: TextStyle(
-                                fontFamily: AppTypography.inter,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 10,
-                                letterSpacing: 6,
-                                color: Colors.white.withValues(alpha: 0.45),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Container(
-                              width: 120,
-                              height: 0.5,
-                              color: Colors.white.withValues(alpha: 0.15),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          Positioned(
-            right: 20,
-            bottom: 20,
-            child: SafeArea(
-              child: SpringBuilder(
-                from: 0.0,
-                to: _showVersion ? 1.0 : 0.0,
-                spring: RestroSprings.soft,
-                builder: (_, t, __) => Opacity(
-                  opacity: t.clamp(0.0, 1.0),
-                  child: Text(
-                    'v2.0',
-                    style: AppTypography.micro.copyWith(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      fontSize: 9,
-                      letterSpacing: 1.2,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: Alignment.center,
+                      radius: 1.0,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.45),
+                      ],
+                      stops: const [0.55, 1.0],
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+            DepthParallaxStack(
+              maxOffset: 8,
+              layers: [
+                const DepthLayer(depth: 0.0, child: SizedBox.expand()),
+                DepthLayer(
+                  depth: 0.6,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedBuilder(
+                          animation: _pulseCtrl,
+                          builder: (_, child) {
+                            final glow = 0.3 + 0.7 * _pulseCtrl.value;
+                            return Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Container(
+                                  width: 110,
+                                  height: 110,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppColors.terra400
+                                            .withValues(alpha: 0.18 * glow),
+                                        blurRadius: 40 * glow,
+                                        spreadRadius: 8 * glow,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                child!,
+                              ],
+                            );
+                          },
+                          child: SpringBuilder(
+                            from: 0.0,
+                            to: _showLogo ? 1.0 : 0.0,
+                            spring: RestroSprings.bouncy,
+                            builder: (_, t, child) => Opacity(
+                              opacity: t.clamp(0.0, 1.0),
+                              child: Transform.scale(
+                                scale: 0.75 + 0.25 * t,
+                                child: child,
+                              ),
+                            ),
+                            child: Hero(
+                              tag: HeroTags.appLogo,
+                              child: Container(
+                                width: 88,
+                                height: 88,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.logoBg,
+                                  borderRadius: BorderRadius.all(AppRadii.lg),
+                                  boxShadow: AppShadows.logoGlow,
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Image.asset(
+                                    'assets/images/appicon_cream.png',
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        SpringBuilder(
+                          from: 0.0,
+                          to: _showWordmark ? 1.0 : 0.0,
+                          spring: RestroSprings.soft,
+                          builder: (_, t, child) => Opacity(
+                            opacity: t.clamp(0.0, 1.0),
+                            child: Transform.translate(
+                              offset: Offset(0, 12 * (1 - t)),
+                              child: child,
+                            ),
+                          ),
+                          child: Image.asset(
+                            'assets/images/lockup_ink_cream.png',
+                            height: 26,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        SpringBuilder(
+                          from: 0.0,
+                          to: _showOperator ? 1.0 : 0.0,
+                          spring: RestroSprings.soft,
+                          builder: (_, t, child) => Opacity(
+                            opacity: t.clamp(0.0, 1.0),
+                            child: child,
+                          ),
+                          child: Column(
+                            children: [
+                              Container(
+                                width: 120,
+                                height: 0.5,
+                                color: Colors.white.withValues(alpha: 0.15),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'O P E R A T O R',
+                                style: TextStyle(
+                                  fontFamily: AppTypography.inter,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 10,
+                                  letterSpacing: 6,
+                                  color: Colors.white.withValues(alpha: 0.45),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                width: 120,
+                                height: 0.5,
+                                color: Colors.white.withValues(alpha: 0.15),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Positioned(
+              right: 20,
+              bottom: 20,
+              child: SafeArea(
+                child: SpringBuilder(
+                  from: 0.0,
+                  to: _showVersion ? 1.0 : 0.0,
+                  spring: RestroSprings.soft,
+                  builder: (_, t, __) => Opacity(
+                    opacity: t.clamp(0.0, 1.0),
+                    child: Text(
+                      'v2.0',
+                      style: AppTypography.micro.copyWith(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        fontSize: 9,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -268,7 +275,20 @@ class _GrainOverlayState extends State<_GrainOverlay>
   late final AnimationController _ctrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 80),
-  )..repeat();
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 800 drawRect calls every 80ms — the single most expensive thing on
+    // screen during launch, and it lands exactly when the app is trying to
+    // feel fast. Stop the ticker *and* skip the paint entirely.
+    if (AppPerf.reduceEffects(context)) {
+      _ctrl.stop();
+    } else if (!_ctrl.isAnimating) {
+      _ctrl.repeat();
+    }
+  }
 
   @override
   void dispose() {
@@ -278,6 +298,7 @@ class _GrainOverlayState extends State<_GrainOverlay>
 
   @override
   Widget build(BuildContext context) {
+    if (AppPerf.reduceEffects(context)) return const SizedBox.shrink();
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (_, __) => CustomPaint(

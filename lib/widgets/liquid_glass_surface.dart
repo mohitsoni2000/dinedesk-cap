@@ -62,7 +62,7 @@ class LiquidGlassSurface extends StatelessWidget {
 
     final sheenTop = Colors.white.withValues(alpha: isDark ? 0.06 : 0.22);
 
-    final effectiveShadow = shadow ?? AppShadows.glass;
+    final effectiveShadow = shadow ?? AppShadows.glassFor(context);
 
     final sigma = (blur / 3.2).clamp(6.0, 16.0);
 

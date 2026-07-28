@@ -68,8 +68,15 @@ class LiquidBottomNav extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 3),
+                            // Without this a long label like SETTINGS wraps at
+                            // large font scales, and since only some tabs wrap
+                            // the bar's tabs end up different heights. The
+                            // icon above still identifies the tab.
                             Text(
                               items[i].label,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
                               style: AppTypography.navLabel.copyWith(
                                 color: Color.lerp(
                                     palette.ink50, AppColors.terraDeep, t),

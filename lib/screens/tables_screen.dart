@@ -6,12 +6,14 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../data/table_selectors.dart';
 import '../data/recent_tables.dart';
 import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
 import '../services/socket_service.dart' show SocketState;
 import '../theme/tokens.dart';
 import '../widgets/app_surface.dart';
+import '../widgets/page_content_clamp.dart';
 import '../widgets/dynamic_toast.dart';
 import '../widgets/table_merge_sheet.dart';
 
@@ -73,8 +75,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.search_off,
-                  color: context.palette.ink30, size: 48),
+              Icon(Icons.search_off, color: context.palette.ink30, size: 48),
               const SizedBox(height: 12),
               const Text('No tables match', style: AppTypography.title),
               const SizedBox(height: 4),
@@ -105,7 +106,15 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
           maxCrossAxisExtent: context.tableTileExtent,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.05,
+          // A tile's contents (27pt name, badges, footer) grow with the system
+          // font scale, but childAspectRatio alone would keep the tile height
+          // pinned to its width and overflow. Same height as the old 1.05
+          // ratio at default scale; taller only when the text demands it, plus
+          // headroom for the badge row wrapping to a second line.
+          mainAxisExtent: context.tableTileExtent /
+                  1.05 *
+                  context.effectiveTextScale.clamp(1.0, 1.55) +
+              16,
         ),
         itemCount: list.length,
         itemBuilder: (_, i) {
@@ -121,8 +130,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
               showFloorTag: showFloorTags,
               onLongPress: ((t.state == TableState.mine ||
                           t.state == TableState.other) &&
-                      ref.watch(
-                          flagsProvider.select((f) => f.tableMerge)))
+                      ref.watch(flagsProvider.select((f) => f.tableMerge)))
                   ? () => TableMergeSheet.show(context, t)
                   : null,
               occupiedSince: t.occupiedSince,
@@ -235,7 +243,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
 
   @override
   Widget build(BuildContext context) {
-    final tables = ref.watch(tablesProvider);
     final connOnline = ref.watch(connectionProvider.select((c) => c.online));
     final op = ref.watch(operatorProvider);
     final opName = op?.name ?? 'there';
@@ -243,19 +250,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     final restaurantName = restaurant?.name ?? 'Restaurant';
     final activeOps = ref.watch(activeOperatorsProvider);
 
-    // Tab order follows the admin's configured floor display_order, not
-    // whichever floor a table happens to appear under first — falls back to
-    // table-occurrence order for any floor absent from the floor sync
-    // (older payload shape).
-    final presentFloors = tables.map((t) => t.floor).toSet();
-    final orderedFloorNames = ref
-        .watch(floorNamesProvider)
-        .where(presentFloors.contains)
-        .toList();
-    final leftoverFloors =
-        presentFloors.difference(orderedFloorNames.toSet()).toList()..sort();
-    final allFloors = [...orderedFloorNames, ...leftoverFloors];
-    final floors = allFloors.isNotEmpty ? allFloors : ['Ground'];
+    final floors = ref.watch(orderedFloorNamesProvider);
     final activeFloor = _floor ?? floors.first;
 
     if (!floors.contains(activeFloor) && floors.isNotEmpty) {
@@ -266,174 +261,165 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
 
     final query = _query.trim().toLowerCase();
     final isSearching = query.isNotEmpty;
-    final filtered = tables.where((t) {
-      if (!isSearching && t.floor != activeFloor) return false;
-      if (!isSearching) return true;
-      return t.id.toLowerCase().contains(query) ||
-          t.joinedOperatorNames
-              .any((n) => n.toLowerCase().contains(query));
-    }).toList();
-
-    final floorCounts = {
-      for (final f in floors) f: tables.where((t) => t.floor == f).length,
-    };
+    final floorCounts = ref.watch(floorCountsProvider);
 
     return Scaffold(
       backgroundColor: context.palette.paper,
       body: SafeArea(
         bottom: false,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: context.contentMaxWidth),
-            child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Tables', style: AppTypography.displayLg),
-                        const SizedBox(height: 2),
-                        Row(children: [
-                          Flexible(
-                            child: Text(
-                              'Hi ${opName.split(' ').first} · ',
-                              style: AppTypography.caption,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Flexible(
-                            child: Text(
-                              restaurantName,
-                              style: AppTypography.caption
-                                  .copyWith(fontWeight: FontWeight.w600),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ]),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _HeaderIconTile(
-                    onTap: _refresh,
-                    child: RotationTransition(
-                      turns: _refreshController,
-                      child: Icon(Icons.refresh,
-                          size: 18, color: context.palette.ink70),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _HeaderIconTile(
-                    icon: _searchOpen ? Icons.close : Icons.search,
-                    onTap: () {
-                      ref
-                          .read(feedbackServiceProvider)
-                          .fire(const FeedbackSelection());
-                      setState(() {
-                        _searchOpen = !_searchOpen;
-                        if (!_searchOpen) _query = '';
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: _ConnectionRail(
-                  online: connOnline,
-                  restaurantName: restaurantName,
-                ),
-              ),
-            ),
-            if (_searchOpen)
+        child: PageContentClamp(
+          maxWidth: PageContentClamp.grid,
+          child: Column(
+            children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                child: AppSurface(
-                  borderRadius: const BorderRadius.all(AppRadii.sm),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  shadow: const [],
-                  child: TextField(
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      hintText: 'Search table number or waiter…',
-                      icon: Icon(Icons.search,
-                          color: context.palette.ink50, size: 18),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Tables', style: AppTypography.displayLg),
+                          const SizedBox(height: 2),
+                          Row(children: [
+                            Flexible(
+                              child: Text(
+                                'Hi ${opName.split(' ').first} · ',
+                                style: AppTypography.caption,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Flexible(
+                              child: Text(
+                                restaurantName,
+                                style: AppTypography.caption
+                                    .copyWith(fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ]),
+                        ],
+                      ),
                     ),
-                    onChanged: (v) => setState(() => _query = v),
-                  ),
-                ),
-              ),
-            _RecentTablesRow(onOpen: _onTableTap),
-            _CollapseSection(
-              hidden: _searchOpen,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                    child: _OnlineStrip(operators: activeOps),
-                  ),
-                  const SizedBox(height: 10),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _LegendStrip(
-                      active: _spotlight,
-                      onChange: (s) => setState(() => _spotlight = s),
+                    const SizedBox(width: 8),
+                    _HeaderIconTile(
+                      onTap: _refresh,
+                      child: RotationTransition(
+                        turns: _refreshController,
+                        child: Icon(Icons.refresh,
+                            size: 18, color: context.palette.ink70),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _StatsStrip(),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _FloorTabs(
-                value: activeFloor,
-                floors: floors,
-                counts: floorCounts,
-                enabled: !isSearching,
-                onChange: (v) => _goFloor(v, floors),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: isSearching
-                  ? _buildTablesGrid(filtered, showFloorTags: true)
-                  : _FloorCoast(
-                      controller: _floorPager,
-                      floors: floors,
-                      activeFloor: activeFloor,
-                      onPageChanged: (i) {
-                        if (_floor == floors[i]) return;
+                    const SizedBox(width: 8),
+                    _HeaderIconTile(
+                      icon: _searchOpen ? Icons.close : Icons.search,
+                      onTap: () {
                         ref
                             .read(feedbackServiceProvider)
                             .fire(const FeedbackSelection());
-                        setState(() => _floor = floors[i]);
+                        setState(() {
+                          _searchOpen = !_searchOpen;
+                          if (!_searchOpen) _query = '';
+                        });
                       },
-                      pageBuilder: (context, floor) => _buildTablesGrid(
-                        tables
-                            .where((t) => t.floor == floor)
-                            .toList(growable: false),
-                        showFloorTags: false,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _ConnectionRail(
+                    online: connOnline,
+                    restaurantName: restaurantName,
+                  ),
+                ),
+              ),
+              if (_searchOpen)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                  child: AppSurface(
+                    borderRadius: const BorderRadius.all(AppRadii.sm),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shadow: const [],
+                    child: TextField(
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Search table number or waiter…',
+                        icon: Icon(Icons.search,
+                            color: context.palette.ink50, size: 18),
+                      ),
+                      onChanged: (v) => setState(() => _query = v),
+                    ),
+                  ),
+                ),
+              _RecentTablesRow(onOpen: _onTableTap),
+              _CollapseSection(
+                hidden: _searchOpen,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                      child: _OnlineStrip(operators: activeOps),
+                    ),
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _LegendStrip(
+                        active: _spotlight,
+                        onChange: (s) => setState(() => _spotlight = s),
                       ),
                     ),
-            ),
-          ],
-            ),
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _StatsStrip(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _FloorTabs(
+                  value: activeFloor,
+                  floors: floors,
+                  counts: floorCounts,
+                  enabled: !isSearching,
+                  onChange: (v) => _goFloor(v, floors),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: isSearching
+                    ? _TablesGridSlot(
+                        query: query,
+                        showFloorTags: true,
+                        builder: _buildTablesGrid,
+                      )
+                    : _FloorCoast(
+                        controller: _floorPager,
+                        floors: floors,
+                        activeFloor: activeFloor,
+                        onPageChanged: (i) {
+                          if (_floor == floors[i]) return;
+                          ref
+                              .read(feedbackServiceProvider)
+                              .fire(const FeedbackSelection());
+                          setState(() => _floor = floors[i]);
+                        },
+                        pageBuilder: (context, floor) => _TablesGridSlot(
+                          floor: floor,
+                          showFloorTags: false,
+                          builder: _buildTablesGrid,
+                        ),
+                      ),
+              ),
+            ],
           ),
         ),
       ),
@@ -460,8 +446,7 @@ class _HeaderIconTile extends StatelessWidget {
           border: Border.all(color: context.palette.hairline),
         ),
         alignment: Alignment.center,
-        child: child ??
-            Icon(icon, size: 18, color: context.palette.ink70),
+        child: child ?? Icon(icon, size: 18, color: context.palette.ink70),
       ),
     );
   }
@@ -521,8 +506,6 @@ class _BlinkingDotState extends State<_BlinkingDot>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c;
 
-  bool _started = false;
-
   @override
   void initState() {
     super.initState();
@@ -533,8 +516,9 @@ class _BlinkingDotState extends State<_BlinkingDot>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_started && !MediaQuery.of(context).disableAnimations) {
-      _started = true;
+    if (AppPerf.reduceEffects(context)) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
       _c.repeat(reverse: true);
     }
   }
@@ -583,8 +567,8 @@ class _LegendStrip extends StatelessWidget {
               child: GestureDetector(
                 onTap: () => onChange(active == e.$1 ? null : e.$1),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                   decoration: BoxDecoration(
                     color: active == e.$1
                         ? _ringColor(context, e.$1).withValues(alpha: 0.12)
@@ -826,24 +810,24 @@ class _FloorTabs extends StatelessWidget {
                         return Transform.scale(
                           scale: 1 + 0.03 * t,
                           child: Container(
-                          constraints: const BoxConstraints(minWidth: 96),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 9,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Color.lerp(context.palette.surface,
-                                context.palette.selectedPill, t),
-                            borderRadius:
-                                const BorderRadius.all(AppRadii.pill),
-                            border: Border.all(
-                              color: t > 0.5
-                                  ? Colors.transparent
-                                  : context.palette.hairline,
+                            constraints: const BoxConstraints(minWidth: 96),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 9,
                             ),
-                          ),
-                          alignment: Alignment.center,
-                          child: child,
+                            decoration: BoxDecoration(
+                              color: Color.lerp(context.palette.surface,
+                                  context.palette.selectedPill, t),
+                              borderRadius:
+                                  const BorderRadius.all(AppRadii.pill),
+                              border: Border.all(
+                                color: t > 0.5
+                                    ? Colors.transparent
+                                    : context.palette.hairline,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: child,
                           ),
                         );
                       },
@@ -942,8 +926,8 @@ String? _pillTooltip(TableState state, List<String> operatorNames) {
   return '${operatorNames.join(', ')} are working here';
 }
 
-Widget _applySpotlight(
-    BuildContext context, Widget card, TableState state, TableState? spotlight) {
+Widget _applySpotlight(BuildContext context, Widget card, TableState state,
+    TableState? spotlight) {
   if (spotlight == null) return card;
   if (state == spotlight) {
     return Container(
@@ -1013,8 +997,7 @@ class _BillTag extends StatelessWidget {
       tween: Tween(begin: 0.6, end: 1.0),
       duration: const Duration(milliseconds: 320),
       curve: Curves.elasticOut,
-      builder: (_, scale, child) =>
-          Transform.scale(scale: scale, child: child),
+      builder: (_, scale, child) => Transform.scale(scale: scale, child: child),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
         decoration: BoxDecoration(
@@ -1095,7 +1078,14 @@ class _ReadyChipState extends State<_ReadyChip>
       vsync: this,
       duration: const Duration(milliseconds: 1600),
     );
-    if (!MediaQuery.of(context).disableAnimations) {
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (AppPerf.reduceEffects(context)) {
+      _glow.stop();
+    } else if (!_glow.isAnimating) {
       _glow.repeat(reverse: true);
     }
   }
@@ -1306,9 +1296,11 @@ class _TableCard extends ConsumerWidget {
                         ? context.palette.tableMineWashEnd
                         : flightContext.palette.surface,
                     borderRadius: const BorderRadius.all(AppRadii.lg),
-                    border: Border.all(color: context.palette.hairline, width: 1),
-                    boxShadow:
-                        isMine ? context.palette.mineShadow : context.palette.cardShadow,
+                    border:
+                        Border.all(color: context.palette.hairline, width: 1),
+                    boxShadow: isMine
+                        ? AppShadows.mineFor(context)
+                        : AppShadows.cardFor(context),
                   ),
                 ),
               ),
@@ -1317,104 +1309,110 @@ class _TableCard extends ConsumerWidget {
           child: TiltOnTouch(
             maxTilt: 0.045,
             child: Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              gradient: isMine
-                  ? LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        context.palette.tableMineWashStart,
-                        context.palette.tableMineWashEnd,
-                      ],
-                    )
-                  : null,
-              color: isMine ? null : context.palette.surface,
-              borderRadius: const BorderRadius.all(AppRadii.lg),
-              border: Border.all(
-                color:
-                    isMine ? context.palette.tableMineBorder : context.palette.hairline,
-                width: 1,
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                gradient: isMine
+                    ? LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          context.palette.tableMineWashStart,
+                          context.palette.tableMineWashEnd,
+                        ],
+                      )
+                    : null,
+                color: isMine ? null : context.palette.surface,
+                borderRadius: const BorderRadius.all(AppRadii.lg),
+                border: Border.all(
+                  color: isMine
+                      ? context.palette.tableMineBorder
+                      : context.palette.hairline,
+                  width: 1,
+                ),
+                boxShadow: isMine
+                    ? AppShadows.mineFor(context)
+                    : AppShadows.cardFor(context),
               ),
-              boxShadow: isMine ? context.palette.mineShadow : context.palette.cardShadow,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Opacity(
-                        opacity: table.state == TableState.dirty ? 0.55 : 1,
-                        child: Text(
-                          table.id,
-                          style: AppTypography.tableName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Opacity(
+                          opacity: table.state == TableState.dirty ? 0.55 : 1,
+                          child: Text(
+                            table.id,
+                            style: AppTypography.tableName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        if (isReady)
-                          const AttentionPulse(
-                              scale: 1.06, child: _ReadyChip()),
-                        if (isMine && occupiedSince != null) ...[
-                          if (isReady) const SizedBox(height: 4),
-                          _TimerChip(since: occupiedSince!),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (isReady)
+                            const AttentionPulse(
+                                scale: 1.06, child: _ReadyChip()),
+                          if (isMine && occupiedSince != null) ...[
+                            if (isReady) const SizedBox(height: 4),
+                            _TimerChip(since: occupiedSince!),
+                          ],
                         ],
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _StatePill(
-                        state: table.state,
-                        operatorNames: table.joinedOperatorNames),
-                    if (table.activeBillCount > 0) ...[
-                      const SizedBox(width: 6),
-                      const _BillTag(),
+                      ),
                     ],
-                    if (customerName != null && customerName.isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      _CustomerTag(name: customerName),
+                  ),
+                  const SizedBox(height: 8),
+                  // Wrap, not Row: a tile is only ~90-134px wide on a small
+                  // phone, and a table that is somebody else's *and* has a bill
+                  // *and* a named customer *and* is linked runs past that. Wrap
+                  // keeps each badge its natural size and pushes the overflow
+                  // onto a second line instead of clipping — Flexible would
+                  // shrink every badge, including ones that fit fine, and
+                  // _CustomerTag already ellipsizes its own name.
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _StatePill(
+                          state: table.state,
+                          operatorNames: table.joinedOperatorNames),
+                      if (table.activeBillCount > 0) const _BillTag(),
+                      if (customerName != null && customerName.isNotEmpty)
+                        _CustomerTag(name: customerName),
+                      if (isLinked)
+                        const Icon(Icons.link, size: 12, color: AppColors.info),
                     ],
-                    if (isLinked) ...[
-                      const SizedBox(width: 6),
-                      const Icon(Icons.link, size: 12, color: AppColors.info),
-                    ],
-                  ],
-                ),
-                const Spacer(),
-                _buildBody(context),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(Icons.event_seat_outlined,
-                        size: 12, color: context.palette.ink50),
-                    const SizedBox(width: 3),
-                    Text('${table.seats}',
-                        style: AppTypography.caption
-                            .copyWith(color: context.palette.ink50)),
-                    if (table.coverCount != null) ...[
-                      const SizedBox(width: 8),
-                      Icon(Icons.people_outline,
+                  ),
+                  const Spacer(),
+                  _buildBody(context),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.event_seat_outlined,
                           size: 12, color: context.palette.ink50),
                       const SizedBox(width: 3),
-                      Text('${table.coverCount}',
+                      Text('${table.seats}',
                           style: AppTypography.caption
                               .copyWith(color: context.palette.ink50)),
+                      if (table.coverCount != null) ...[
+                        const SizedBox(width: 8),
+                        Icon(Icons.people_outline,
+                            size: 12, color: context.palette.ink50),
+                        const SizedBox(width: 3),
+                        Text('${table.coverCount}',
+                            style: AppTypography.caption
+                                .copyWith(color: context.palette.ink50)),
+                      ],
+                      const Spacer(),
+                      if (showFloorTag) _FloorTag(floor: table.floor),
                     ],
-                    const Spacer(),
-                    if (showFloorTag) _FloorTag(floor: table.floor),
-                  ],
-                ),
-              ],
-            ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1489,13 +1487,11 @@ class _RecentTablesRow extends ConsumerWidget {
               padding: const EdgeInsets.only(right: 8),
               child: Row(
                 children: [
-                  Icon(Icons.history,
-                      size: 13, color: context.palette.ink50),
+                  Icon(Icons.history, size: 13, color: context.palette.ink50),
                   const SizedBox(width: 4),
                   Text('RECENT',
                       style: AppTypography.micro.copyWith(
-                          color: context.palette.ink50,
-                          letterSpacing: 1.0)),
+                          color: context.palette.ink50, letterSpacing: 1.0)),
                 ],
               ),
             ),
@@ -1505,8 +1501,8 @@ class _RecentTablesRow extends ConsumerWidget {
                 child: Pressable(
                   onTap: () => onOpen(t),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 11, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
                     decoration: BoxDecoration(
                       color: t.state == TableState.mine
                           ? context.palette.terraSoft
@@ -1580,6 +1576,42 @@ class _CollapseSection extends StatelessWidget {
   }
 }
 
+/// Owns the `tablesProvider` subscription on behalf of the grid.
+///
+/// The screen's own `build()` deliberately does *not* watch the table list —
+/// if it did, every `table:updated` push would rebuild the header, connection
+/// rail, online strip, legend, stats and floor tabs alongside the grid. Here
+/// the watch is scoped to the only subtree that actually reflects it.
+class _TablesGridSlot extends ConsumerWidget {
+  const _TablesGridSlot({
+    this.floor,
+    this.query = '',
+    required this.showFloorTags,
+    required this.builder,
+  });
+
+  /// A single floor's beach. Null while searching — the query spans all floors.
+  final String? floor;
+  final String query;
+  final bool showFloorTags;
+  final Widget Function(List<RestaurantTable> list,
+      {required bool showFloorTags}) builder;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tables = ref.watch(tablesProvider);
+    final list = floor == null
+        ? tables
+            .where((t) =>
+                t.id.toLowerCase().contains(query) ||
+                t.joinedOperatorNames
+                    .any((n) => n.toLowerCase().contains(query)))
+            .toList(growable: false)
+        : tables.where((t) => t.floor == floor).toList(growable: false);
+    return builder(list, showFloorTags: showFloorTags);
+  }
+}
+
 /// ============================================================
 /// FLOOR COAST — coast-package style swipeable floor "beaches".
 /// Swipe horizontally between floors; content parallax-lags and
@@ -1616,8 +1648,8 @@ class _FloorCoastState extends State<_FloorCoast> {
       if (!mounted || !widget.controller.hasClients) return;
       final int want = widget.floors.indexOf(widget.activeFloor);
       if (want < 0) return;
-      final double at = widget.controller.page ??
-          widget.controller.initialPage.toDouble();
+      final double at =
+          widget.controller.page ?? widget.controller.initialPage.toDouble();
       if ((at - want).abs() > 0.5) widget.controller.jumpToPage(want);
     });
   }

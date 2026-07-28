@@ -292,8 +292,10 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                               if (_qty > 1) setState(() => _qty--);
                             }),
                         const SizedBox(width: 16),
-                        SizedBox(
-                            width: 32,
+                        // minWidth so a two-digit quantity at a large font
+                        // scale grows the box instead of being clipped.
+                        ConstrainedBox(
+                            constraints: const BoxConstraints(minWidth: 32),
                             child: Center(
                               child: Text('$_qty',
                                   style: AppTypography.headline),
@@ -425,7 +427,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
 
             Padding(
               padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + MediaQuery.of(context).viewPadding.bottom),
+                  16, 8, 16, 16 + context.sheetBottomInset),
               child: Row(
                 children: [
                   Column(

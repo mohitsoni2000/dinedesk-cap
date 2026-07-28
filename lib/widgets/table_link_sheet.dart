@@ -347,7 +347,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                 AppSpacing.lg,
                 AppSpacing.lg,
                 AppSpacing.lg,
-                AppSpacing.lg + MediaQuery.of(context).viewPadding.bottom,
+                AppSpacing.lg + context.sheetBottomInset,
               ),
               child: isLinked
                   ? Row(

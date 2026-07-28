@@ -25,11 +25,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
+import '../theme/tokens.dart';
 import 'springs.dart';
 
-/// True when the OS asks for reduced motion — every widget here honours it.
-bool reduceMotion(BuildContext context) =>
-    MediaQuery.of(context).disableAnimations;
+/// True when heavy motion should be skipped — performance mode, a detected
+/// low-tier device, or OS reduce-motion. Every widget here honours it.
+bool reduceMotion(BuildContext context) => AppPerf.reduceEffects(context);
 
 /// Drive any [AnimationController] with a real spring.
 extension SpringRun on AnimationController {
@@ -647,7 +648,11 @@ class SpringPageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    if (reduceMotion(context)) return child;
+    // A plain fade still reads as a transition but costs one opacity layer
+    // instead of a spring-driven transform stack.
+    if (reduceMotion(context)) {
+      return FadeTransition(opacity: animation, child: child);
+    }
 
     final spring = CurvedAnimation(
       parent: animation,

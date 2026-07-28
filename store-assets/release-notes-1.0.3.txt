@@ -1,0 +1,13 @@
+What's new in 1.0.3
+
+- Much smoother on older and budget phones — the app now detects a low-powered device and automatically turns off the heavy background animations that were slowing it down.
+- Added a Performance mode setting (Settings → Device) if you'd rather choose for yourself: Auto, Performance, or Full effects.
+- The app opens noticeably faster — the splash screen no longer waits before taking you to your tables.
+- Adding and removing items no longer makes the menu stutter, even on a long menu.
+- The tables screen stays responsive during a busy shift instead of slowing down as orders come in.
+- Fixed the keyboard covering the box you were typing in, and the button below it, on the payment, customer, discount and coupon screens.
+- Fixed the PIN screen and the guest-count screen running off the bottom of smaller phones.
+- Tablets now use the extra width properly — the PIN pad no longer stretches across the whole screen, and History shows the order details beside the list.
+- Phones now stay in portrait so the screen no longer flips while you're taking an order.
+- Screens no longer break if you use a large font size on your phone.
+- Fixed odd underlines appearing beneath some text.

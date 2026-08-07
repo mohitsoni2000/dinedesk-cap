@@ -41,6 +41,7 @@ class FeatureFlags {
   final bool multiTerminal;
   final bool takeaway;
   final bool billPrinting;
+  final bool autoPrintBillOnGenerate;
   final bool generateBill;
   final bool printSummary;
   final bool tableReservationAlerts;
@@ -119,6 +120,7 @@ class FeatureFlags {
     this.multiTerminal = false,
     this.takeaway = false,
     this.billPrinting = false,
+    this.autoPrintBillOnGenerate = false,
     this.generateBill = false,
     this.printSummary = false,
     this.tableReservationAlerts = false,
@@ -209,6 +211,7 @@ class FeatureFlags {
       multiTerminal: flag('flag_multi_terminal'),
       takeaway: flag('flag_takeaway', true),
       billPrinting: flag('flag_bill_printing', true),
+      autoPrintBillOnGenerate: flag('flag_auto_print_bill_on_generate'),
       generateBill: flag('flag_generate_bill'),
       printSummary: flag('flag_print_summary'),
       tableReservationAlerts: flag('flag_table_reservation_alerts'),

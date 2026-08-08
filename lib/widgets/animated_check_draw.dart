@@ -67,24 +67,10 @@ class _CheckPainter extends CustomPainter {
     final r = size.width / 2;
     final c = Offset(r, r);
 
-    final glow = Paint()
-      ..color = color.withValues(alpha: 0.32)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
-    canvas.drawCircle(c, r * 0.95, glow);
-
+    // One solid disc. There used to be three: an 18-sigma MaskFilter.blur
+    // halo behind it and a diagonal white sheen shader over it.
     final fill = Paint()..color = color;
     canvas.drawCircle(c, r * 0.88, fill);
-
-    final sheen = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Colors.white.withValues(alpha: 0.45),
-          Colors.white.withValues(alpha: 0),
-        ],
-      ).createShader(Rect.fromCircle(center: c, radius: r));
-    canvas.drawCircle(c, r * 0.88, sheen);
 
     final path = Path()
       ..moveTo(r * 0.55, r * 1.05)

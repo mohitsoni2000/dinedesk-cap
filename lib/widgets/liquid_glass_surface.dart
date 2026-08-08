@@ -1,11 +1,19 @@
-
-
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 
+/// A plain, opaque panel.
+///
+/// This was a frosted-glass surface: a [BackdropFilter] blur, a translucent
+/// white tint, a diagonal sheen gradient and a bright rim, stacked under a
+/// four-layer drop shadow. All of that is gone. It is now a solid fill and a
+/// hairline border, which is the whole of the visual language the app uses
+/// now.
+///
+/// The class and its parameters survive so the call sites keep reading the
+/// way they did. [blur] and [skipBlur] are retained and ignored — there is no
+/// blur left to skip.
 enum LiquidGlassVariant { regular, strong, dark, terra }
 
 class LiquidGlassSurface extends StatelessWidget {
@@ -16,12 +24,18 @@ class LiquidGlassSurface extends StatelessWidget {
 
   final double thickness;
 
+  /// Retained for source compatibility. Ignored.
   final double blur;
   final List<BoxShadow>? shadow;
   final Color? tint;
   final VoidCallback? onTap;
 
+  /// Retained for source compatibility. Ignored.
   final bool skipBlur;
+
+  /// Screen-reader label, forwarded to [Pressable]. Only meaningful when
+  /// [onTap] is set and the child is an icon rather than text.
+  final String? semanticLabel;
 
   const LiquidGlassSurface({
     super.key,
@@ -35,83 +49,46 @@ class LiquidGlassSurface extends StatelessWidget {
     this.tint,
     this.onTap,
     this.skipBlur = false,
+    this.semanticLabel,
   });
 
-  Color _tint(bool darkTheme) {
+  /// An opaque fill per variant. The old tints were low-alpha whites that only
+  /// read as anything because there was a blurred, gradient-washed backdrop
+  /// behind them; over a flat background they were invisible.
+  Color _fill(BuildContext context) {
     if (tint != null) return tint!;
+    final palette = context.palette;
     switch (variant) {
       case LiquidGlassVariant.regular:
-        return Colors.white.withValues(alpha: darkTheme ? 0.08 : 0.14);
+        return palette.surface;
       case LiquidGlassVariant.strong:
-        return Colors.white.withValues(alpha: darkTheme ? 0.14 : 0.24);
+        return palette.surfaceWarm;
       case LiquidGlassVariant.dark:
-        return Colors.black.withValues(alpha: 0.20);
+        return palette.isDark ? AppColors.night : palette.surfaceWarm;
       case LiquidGlassVariant.terra:
-        return AppColors.terra400.withValues(alpha: 0.22);
+        return AppColors.terra400;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-
-    final darkTheme = context.palette.isDark;
-    final tintColor = _tint(darkTheme);
-    final isDark = variant == LiquidGlassVariant.dark || darkTheme;
-
-    final rimColor = Colors.white.withValues(alpha: isDark ? 0.14 : 0.55);
-
-    final sheenTop = Colors.white.withValues(alpha: isDark ? 0.06 : 0.22);
-
-    final effectiveShadow = shadow ?? AppShadows.glassFor(context);
-
-    final sigma = (blur / 3.2).clamp(6.0, 16.0);
-
-    final fillColor = skipBlur
-        ? tintColor.withValues(alpha: (tintColor.a + 0.18).clamp(0.0, 1.0))
-        : tintColor;
-
-    Widget body = DecoratedBox(
-
+    final Widget wrapped = Container(
+      padding: padding,
       decoration: BoxDecoration(
+        color: _fill(context),
         borderRadius: borderRadius,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [sheenTop, Colors.transparent],
-          stops: const [0.0, 0.55],
-        ),
+        border: Border.all(color: context.palette.hairline),
+        boxShadow: shadow,
       ),
-      child: Container(
-        padding: padding,
-        decoration: BoxDecoration(
-          color: fillColor,
-          borderRadius: borderRadius,
-          border: Border.all(color: rimColor, width: 0.8),
-        ),
-        child: child,
-      ),
-    );
-
-    final surface = skipBlur
-        ? body
-        : BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-            child: body,
-          );
-
-    final wrapped = DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: borderRadius,
-        boxShadow: effectiveShadow,
-      ),
-      child: ClipRRect(borderRadius: borderRadius, child: surface),
+      child: child,
     );
 
     if (onTap == null) return wrapped;
 
     return Pressable(
       onTap: onTap,
-      pressedScale: 0.95,
+      pressedScale: 0.97,
+      semanticLabel: semanticLabel,
       child: wrapped,
     );
   }

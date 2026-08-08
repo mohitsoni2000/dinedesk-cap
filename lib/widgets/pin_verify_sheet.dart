@@ -39,6 +39,7 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
     'generate_bill': 'Generate Bill',
     'payment': 'Accept Payment',
     'kot_edit': 'Edit KOT',
+    'kot_shift': 'Shift KOT Round',
     'quick_settle': 'Quick Settle',
     'hold': 'Hold Order',
     'table_shift': 'Shift Table',

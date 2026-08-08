@@ -49,6 +49,7 @@ class FeatureFlags {
   final bool companyBill;
   final bool tableMerge;
   final bool tableShift;
+  final bool kotShift;
   final bool tableLink;
   final bool collectPayment;
   final bool shiftManagement;
@@ -128,6 +129,7 @@ class FeatureFlags {
     this.companyBill = false,
     this.tableMerge = false,
     this.tableShift = false,
+    this.kotShift = false,
     this.tableLink = false,
     this.collectPayment = false,
     this.shiftManagement = false,
@@ -219,6 +221,10 @@ class FeatureFlags {
       companyBill: flag('flag_company_bill'),
       tableMerge: flag('flag_table_merge', true),
       tableShift: flag('flag_table_shift', true),
+      // No `true` fallback: the desk column defaults to 0, so an older desk
+      // that never sends the key must leave the action hidden rather than
+      // offering a shift its gateway will refuse.
+      kotShift: flag('flag_kot_shift'),
       tableLink: flag('flag_table_link', true),
       collectPayment: flag('flag_collect_payment', true),
       shiftManagement: flag('flag_shift_management'),

@@ -1,13 +1,15 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:home_widget/home_widget.dart';
 
+import '../data/currency.dart';
+import '../data/money.dart';
 import '../data/providers.dart';
+import 'log.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────
 /// Platform surfaces: home-screen widgets (iOS WidgetKit + Android),
@@ -49,7 +51,7 @@ class ReadyAlertsService {
           ?.requestNotificationsPermission();
       _ready = true;
     } catch (e) {
-      debugPrint('$_tag init failed (ok in tests): $e');
+      logD(_tag, 'init failed (ok in tests): $e');
     }
   }
 
@@ -80,7 +82,7 @@ class ReadyAlertsService {
         ),
       );
     } catch (e) {
-      debugPrint('$_tag show failed: $e');
+      logD(_tag, 'show failed: $e');
     }
   }
 }
@@ -96,7 +98,7 @@ class LiveActivityService {
     try {
       await _ch.invokeMethod(method, args);
     } catch (e) {
-      debugPrint('$_tag $method skipped: $e');
+      logD(_tag, '$method skipped: $e');
     }
   }
 
@@ -131,7 +133,7 @@ class WidgetSyncService {
     try {
       if (Platform.isIOS) await HomeWidget.setAppGroupId(kAppGroupId);
     } catch (e) {
-      debugPrint('$_tag init: $e');
+      logD(_tag, 'init: $e');
     }
   }
 
@@ -148,12 +150,14 @@ class WidgetSyncService {
           tables.where((t) => t.state == TableState.mine).length;
       final free =
           tables.where((t) => t.state == TableState.free).length;
-      final revenue = tables.fold<num>(0, (a, t) => a + (t.bill ?? 0));
+      // Summed in paise so the widget total can't drift from the floor.
+      final revenue =
+          tables.map((t) => t.bill ?? Money.zero).sumMoney();
       await HomeWidget.saveWidgetData<int>('w_mine', mine);
       await HomeWidget.saveWidgetData<int>('w_free', free);
       await HomeWidget.saveWidgetData<int>('w_ready', ready.length);
       await HomeWidget.saveWidgetData<String>(
-          'w_revenue', '₹${revenue.toStringAsFixed(0)}');
+          'w_revenue', formatRupeesCompact(revenue));
       final now = DateTime.now();
       await HomeWidget.saveWidgetData<String>('w_updated',
           '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}');
@@ -162,7 +166,7 @@ class WidgetSyncService {
         iOSName: 'CrewTablesWidget',
       );
     } catch (e) {
-      debugPrint('$_tag push skipped: $e');
+      logD(_tag, 'push skipped: $e');
     }
   }
 }

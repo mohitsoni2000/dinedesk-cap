@@ -1,6 +1,7 @@
 
 
 import 'package:flutter/material.dart';
+import '../data/money.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -84,10 +85,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
     super.dispose();
   }
 
-  double get _serverOptionExtra => _selectedServerOptions.fold(
-        0,
-        (total, option) => total + option.priceModifier,
-      );
+  Money get _serverOptionExtra =>
+      _selectedServerOptions.map((o) => o.priceModifier).sumMoney();
 
   List<SelectedOption> get _selectedServerOptions {
     final selected = <SelectedOption>[];
@@ -106,10 +105,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
     return selected;
   }
 
-  double get _addonExtra => _selectedAddonGroups.fold(
-        0,
-        (total, group) => total + group.extraPrice,
-      );
+  Money get _addonExtra =>
+      _selectedAddonGroups.map((g) => g.extraPrice).sumMoney();
 
   List<SelectedAddonGroup> get _selectedAddonGroups {
     final result = <SelectedAddonGroup>[];
@@ -138,7 +135,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
   Widget build(BuildContext context) {
     final basePrice = _selectedVariation?.price ?? widget.item.price;
     final unit = basePrice + _serverOptionExtra + _addonExtra;
-    final total = _isWeighed ? unit * (_weight ?? 0) : unit * _qty;
+    final total =
+        _isWeighed ? unit.timesWeight(_weight ?? 0) : unit.times(_qty);
     final canAdd = !_isWeighed || (_weight != null && _weight! > 0);
 
     return DraggableScrollableSheet(
@@ -503,7 +501,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
 
 class _OptionTile extends StatelessWidget {
   final String label;
-  final double priceModifier;
+  final Money priceModifier;
   final bool selected;
   final bool multiSelect;
   final VoidCallback onTap;
@@ -517,11 +515,11 @@ class _OptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showPrice = priceModifier != 0;
-    final priceLabel = priceModifier > 0
-        ? '+${formatRupeesCompact(priceModifier)}'
-        : priceModifier < 0
-            ? '−${formatRupeesCompact(priceModifier.abs())}'
+    final showPrice = !priceModifier.isZero;
+    final priceLabel = priceModifier.isPositive
+        ? formatRupeesSigned(priceModifier)
+        : priceModifier.isNegative
+            ? formatRupeesSigned(priceModifier)
             : '';
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -570,7 +568,7 @@ class _OptionTile extends StatelessWidget {
               if (showPrice)
                 Text(priceLabel,
                     style: AppTypography.caption.copyWith(
-                      color: priceModifier > 0
+                      color: priceModifier.isPositive
                           ? AppColors.terraDeep
                           : AppColors.success,
                       fontWeight: FontWeight.w600,

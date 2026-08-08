@@ -1,5 +1,7 @@
+import '../data/money.dart';
 import '../data/providers.dart';
 import '../models/server_models.dart';
+import '../models/wire.dart';
 
 /// Menu parsing, extracted from `SyncService` so it can run off the UI thread.
 ///
@@ -15,6 +17,17 @@ class MenuParseResult {
   final List<MenuItem> items;
   final List<MenuCategory> categories;
   const MenuParseResult(this.items, this.categories);
+}
+
+ServerMenuItem? _tryParseItem(Map<String, dynamic> m) {
+  try {
+    return ServerMenuItem.fromMap(m);
+  } on WireFormatException {
+    // One bad row must not blank the menu. It is dropped rather than
+    // rendered with guessed values — an item with an unknown veg flag
+    // would paint the wrong FSSAI dot.
+    return null;
+  }
 }
 
 /// Entry point for `compute()`.
@@ -44,7 +57,8 @@ MenuParseResult parseMenu(Map<String, dynamic> data) {
           m['category_name'] = category.name;
           m['category_type'] ??= category.type;
         }
-        items.add(serverMenuItemToLocal(attach(ServerMenuItem.fromMap(m))));
+        final parsed = _tryParseItem(m);
+        if (parsed != null) items.add(serverMenuItemToLocal(attach(parsed)));
       }
     }
   } else if (rawCategories is List) {
@@ -61,8 +75,10 @@ MenuParseResult parseMenu(Map<String, dynamic> data) {
               final m = Map<String, dynamic>.from(entry);
               m['category_name'] = catName;
               m['category_type'] = catType;
-              items.add(
-                  serverMenuItemToLocal(attach(ServerMenuItem.fromMap(m))));
+              final parsed = _tryParseItem(m);
+              if (parsed != null) {
+                items.add(serverMenuItemToLocal(attach(parsed)));
+              }
             }
           }
         }
@@ -71,13 +87,6 @@ MenuParseResult parseMenu(Map<String, dynamic> data) {
   }
 
   return MenuParseResult(items, parseCategoryOrder(rawCategories));
-}
-
-int toIntOr(dynamic v, int fallback) {
-  if (v is int) return v;
-  if (v is double) return v.toInt();
-  if (v is String) return int.tryParse(v) ?? fallback;
-  return fallback;
 }
 
 Map<String, List<ServerAddonGroup>> parseAddonGroupsByItem(
@@ -127,8 +136,8 @@ Map<String, List<ServerAddonGroup>> parseAddonGroupsByItem(
             itemId: itemId,
             name: def.name,
             selectionType: def.selectionType,
-            minSelect: toIntOr(link['min_select'], 0),
-            maxSelect: toIntOr(link['max_select'], 1),
+            minSelect: intOr(link, 'min_select', 0),
+            maxSelect: intOr(link, 'max_select', 1),
             choices: choicesByGroup[groupId] ?? const [],
           ));
     }
@@ -216,11 +225,45 @@ Map<String, ({String name, String type})> categoryMap(dynamic rawCategories) {
   return map;
 }
 
-double effectivePrice(ServerMenuItem si) {
-  if (si.basePrice > 0) return si.basePrice;
-  final prices = si.variations.map((v) => v.price).where((p) => p > 0).toList();
-  if (prices.isEmpty) return si.basePrice;
-  return prices.reduce((a, b) => a < b ? a : b);
+/// The price shown on a menu tile.
+///
+/// A zero base price with variations means "priced by variation" — show the
+/// cheapest, and the detail sheet forces a choice before the line is added.
+/// A zero base price with *no* variations is a real zero and stays zero.
+Money effectivePrice(ServerMenuItem si) {
+  if (si.basePrice.isPositive) return si.basePrice;
+  final priced =
+      si.variations.map((v) => v.price).where((p) => p.isPositive).toList();
+  if (priced.isEmpty) return si.basePrice;
+  return priced.reduce((a, b) => a < b ? a : b);
+}
+
+/// Resolves fast-add ids against the already-parsed catalogue.
+///
+/// Fast-add tiles used to be rebuilt straight from `ServerMenuItem.fromMap`,
+/// which hardcodes empty option/variation/addon lists — those are joined
+/// later, in `parseMenu`. So a Quick Add chip for a Half/Full item reported
+/// no variations, skipped the detail sheet, and was added at the base price
+/// with no portion for the kitchen. If the base price was zero (priced by
+/// variation) it went in at 0 rupees.
+///
+/// Ids the catalogue doesn't know are dropped: a tile we cannot price
+/// correctly must not be tappable.
+List<MenuItem> resolveFastAddItems(
+  List<Map<String, dynamic>> rows,
+  List<MenuItem> catalogue,
+) {
+  final byId = <String, MenuItem>{
+    for (final item in catalogue) item.id: item,
+  };
+  final out = <MenuItem>[];
+  for (final row in rows) {
+    final id = optionalStringAny(row, <String>['id', 'item_id']);
+    if (id == null) continue;
+    final resolved = byId[id];
+    if (resolved != null) out.add(resolved);
+  }
+  return out;
 }
 
 MenuItem serverMenuItemToLocal(ServerMenuItem si) {

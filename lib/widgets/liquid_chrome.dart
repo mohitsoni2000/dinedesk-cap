@@ -21,16 +21,9 @@ class LiquidBottomNav extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.navBar,
+        // The hairline separates the bar from the content. It used to also
+        // cast a 20px upward shadow over whatever was scrolling beneath it.
         border: Border(top: BorderSide(color: palette.navHairline)),
-        boxShadow: [
-          BoxShadow(
-            color: palette.isDark
-                ? const Color(0x59000000)
-                : const Color(0x14000000),
-            blurRadius: 20,
-            offset: const Offset(0, -6),
-          ),
-        ],
       ),
       child: SafeArea(
         top: false,
@@ -164,16 +157,10 @@ class _LiquidPrimaryButtonState extends State<LiquidPrimaryButton> {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           decoration: BoxDecoration(
-            gradient: enabled
-                ? const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [AppColors.terra400, AppColors.terra600],
-                  )
-                : null,
-            color: enabled ? null : context.palette.ink10,
+            // A flat brand fill, not a vertical terra400→terra600 ramp under
+            // a two-layer terra glow.
+            color: enabled ? AppColors.terra500 : context.palette.ink10,
             borderRadius: const BorderRadius.all(AppRadii.md),
-            boxShadow: enabled ? AppShadows.terraGlow : null,
           ),
           child: Row(
             mainAxisSize:

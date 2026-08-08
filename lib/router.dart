@@ -20,10 +20,11 @@ import 'screens/settings_screen.dart';
 import 'screens/change_pin_screen.dart';
 import 'screens/disconnected_screen.dart';
 import 'screens/force_disconnected_screen.dart';
+import 'theme/tokens.dart';
 import 'widgets/connection_banner.dart';
-import 'widgets/liquid_mesh_background.dart';
 import 'widgets/page_transitions.dart';
 import 'widgets/ready_orders_banner.dart';
+import 'widgets/rejected_kots_banner.dart';
 import 'widgets/root_shell.dart';
 
 /// Lets code with no BuildContext of its own (background services like
@@ -86,13 +87,24 @@ final routerProvider = Provider<GoRouter>((ref) {
         // outside every branch's Scaffold, so without a Material ancestor its
         // text renders in Flutter's "you forgot Material" style (yellow double
         // underline). `transparency` supplies the ancestor without painting
-        // over the mesh background behind it.
+        // over the background colour behind it.
         builder: (context, state, navigationShell) => Material(
           type: MaterialType.transparency,
-          child: LiquidMeshBackground(
-            child: ConnectionBanner(
-              child: ReadyOrdersBanner(
-                child: RootShell(navigationShell: navigationShell),
+          // The app background: one colour. `SizedBox.expand` is load-bearing
+          // — a bare ColoredBox passes its constraints through loosely and the
+          // shell would shrink-wrap instead of filling the screen.
+          child: ColoredBox(
+            color: context.palette.paper,
+            child: SizedBox.expand(
+              child: ConnectionBanner(
+                child: ReadyOrdersBanner(
+                  // Outermost of the three so it is never covered: a KOT the
+                  // kitchen never received outranks both the connection state
+                  // and a ready-to-serve nudge.
+                  child: RejectedKotsBanner(
+                    child: RootShell(navigationShell: navigationShell),
+                  ),
+                ),
               ),
             ),
           ),
@@ -131,7 +143,8 @@ final routerProvider = Provider<GoRouter>((ref) {
               key: s.pageKey,
               child: ConnectionBanner(
                   child: OrderReviewScreen(
-                      tableId: s.pathParameters['tableId']!)))),
+                      tableId: s.pathParameters['tableId']!,
+                      autoSend: s.extra == true)))),
       GoRoute(
           path: '/order/:tableId/success',
           pageBuilder: (_, s) => liquidPage(
@@ -153,7 +166,9 @@ final routerProvider = Provider<GoRouter>((ref) {
               key: s.pageKey,
               child: ConnectionBanner(
                   child: OrderReviewScreen(
-                      tableId: s.pathParameters['roomId']!, isRoom: true)))),
+                      tableId: s.pathParameters['roomId']!,
+                      isRoom: true,
+                      autoSend: s.extra == true)))),
       GoRoute(
           path: '/order/room/:roomId/success',
           pageBuilder: (_, s) => liquidPage(

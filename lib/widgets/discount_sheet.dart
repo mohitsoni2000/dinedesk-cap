@@ -1,6 +1,7 @@
 
 
 import 'package:flutter/material.dart';
+import '../data/money.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -18,7 +19,7 @@ class DiscountSheet {
   static Future<Map<String, dynamic>?> show(
     BuildContext context, {
     required String orderId,
-    required double orderTotal,
+    required Money orderTotal,
   }) {
     return showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -34,7 +35,7 @@ enum _DiscountType { percent, flat }
 
 class _DiscountSheet extends ConsumerStatefulWidget {
   final String orderId;
-  final double orderTotal;
+  final Money orderTotal;
   const _DiscountSheet({required this.orderId, required this.orderTotal});
   @override
   ConsumerState<_DiscountSheet> createState() => _DiscountSheetState();
@@ -52,15 +53,22 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
 
   bool _showCustom = false;
 
+  /// The typed value. For a percentage this is a plain number; for a flat
+  /// discount it is rupees, converted to paise at the boundary below.
   double? get _customValue => double.tryParse(_valueController.text.trim());
 
-  double get _customDiscountAmount {
+  Money get _customDiscountAmount {
     final v = _customValue;
-    if (v == null || v <= 0) return 0;
+    if (v == null || v <= 0) return Money.zero;
     if (_customType == _DiscountType.percent) {
-      return (widget.orderTotal * v / 100).clamp(0, widget.orderTotal);
+      // Percentage of an integer amount, rounded once to the nearest paisa.
+      final computed = Money((widget.orderTotal.paise * v / 100).round());
+      if (computed.isNegative) return Money.zero;
+      return computed > widget.orderTotal ? widget.orderTotal : computed;
     }
-    return v.clamp(0, widget.orderTotal);
+    final flat = Money.fromWire(v) ?? Money.zero;
+    if (flat.isNegative) return Money.zero;
+    return flat > widget.orderTotal ? widget.orderTotal : flat;
   }
 
   bool get _canApply {
@@ -69,7 +77,8 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       final v = _customValue;
       if (v == null || v <= 0) return false;
       if (_customType == _DiscountType.percent && v > 100) return false;
-      if (_customType == _DiscountType.flat && v > widget.orderTotal) {
+      if (_customType == _DiscountType.flat &&
+          (Money.fromWire(v) ?? Money.zero) > widget.orderTotal) {
         return false;
       }
       return true;
@@ -318,7 +327,8 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
 
               if (_customType == _DiscountType.flat &&
                   _customValue != null &&
-                  _customValue! > widget.orderTotal) ...[
+                  (Money.fromWire(_customValue!) ?? Money.zero) >
+                      widget.orderTotal) ...[
                 const SizedBox(height: 4),
                 Text(
                   'Amount exceeds order total',
@@ -385,9 +395,12 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
 
   String _formatPresetValue(Map<String, dynamic> preset) {
     final type = preset['type']?.toString();
-    final value = (preset['value'] as num?)?.toDouble() ?? 0;
-    if (type == 'percent') return '${value.toStringAsFixed(0)}%';
-    return formatRupeesCompact(value);
+    final rawValue = preset['value'];
+    if (type == 'percent') {
+      final percent = (rawValue is num) ? rawValue.toDouble() : 0.0;
+      return '${percent.toStringAsFixed(0)}%';
+    }
+    return formatRupeesCompact(Money.fromWire(rawValue) ?? Money.zero);
   }
 }
 

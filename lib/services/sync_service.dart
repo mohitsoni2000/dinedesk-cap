@@ -5,13 +5,17 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../data/money.dart';
 import '../data/providers.dart';
+import '../data/rejected_kots.dart';
 import '../models/feature_flags.dart';
 import '../models/server_models.dart';
+import '../models/wire.dart';
 import '../motion/feedback_kind.dart';
 import '../motion/feedback_service.dart';
 import 'app_messenger.dart';
 import 'kot_queue_service.dart';
+import 'log.dart';
 import 'menu_parser.dart';
 import 'platform_surfaces.dart';
 import 'socket_service.dart';
@@ -31,12 +35,16 @@ TableState mapTableStatus(
     case 'reserved':
       return TableState.reserved;
     case 'occupied':
-      if (currentOperatorId != null &&
-          tableOperatorIds.isNotEmpty &&
-          !tableOperatorIds.contains(currentOperatorId)) {
+      // An occupied table with nobody attached belongs to somebody else
+      // until the desk says otherwise. The old code fell through to `mine`
+      // when the operator list was empty, so waiters saw other people's
+      // tables as their own.
+      if (currentOperatorId == null || tableOperatorIds.isEmpty) {
         return TableState.other;
       }
-      return TableState.mine;
+      return tableOperatorIds.contains(currentOperatorId)
+          ? TableState.mine
+          : TableState.other;
     default:
       return TableState.free;
   }
@@ -46,6 +54,7 @@ class SyncService {
   final SocketService _socket;
   final Ref _ref;
   StreamSubscription<SocketState>? _stateSubscription;
+  StreamSubscription<RejectedKot>? _kotRejectionSubscription;
   Map<String, String> _floorMap = {};
   Map<String, DateTime> _tableTimerCache = {};
   Map<String, dynamic>? _lastFlagsMap;
@@ -83,7 +92,7 @@ class SyncService {
     try {
       return await compute(parseMenu, raw);
     } catch (e) {
-      debugPrint('$_tag   Isolate parse unavailable ($e) — parsing inline');
+      logD(_tag, '  Isolate parse unavailable ($e) — parsing inline');
       return parseMenu(raw);
     }
   }
@@ -95,12 +104,57 @@ class SyncService {
     _ref.read(menuProvider.notifier).state = parsed.items;
     _ref.read(rawMenuDataProvider.notifier).state = raw;
     _lastSectionRaw['menu'] = raw;
+    _applyPendingFastAdd();
   }
 
   SyncService(this._socket, this._ref);
 
+  /// Every broadcast this service subscribes to.
+  ///
+  /// `registerListeners` and `unregisterListeners` both walk this one list.
+  /// They used to keep separate hand-maintained lists and the unregister side
+  /// was missing five events — `room:updated`, `offer:applied`,
+  /// `menu:access:updated`, `error:validation` and `error:permission`. Since
+  /// both auth and reconnect do `unregister(); register();` on the same
+  /// socket, those five accumulated a handler per pass, and one
+  /// `menu:access:updated` broadcast then triggered N full resyncs across
+  /// every paired device.
+  static const List<String> broadcastEvents = <String>[
+    'table:updated',
+    'room:updated',
+    'order:created',
+    'order:updated',
+    'order:cancelled',
+    'kot:sent',
+    'bill:generated',
+    'bill:paid',
+    'order:ready',
+    'discount:applied',
+    'offer:applied',
+    'flags:updated',
+    'menu:access:updated',
+    'menu:updated',
+    'fast-add:updated',
+    'table:shifted',
+    'table:merged',
+    'table:links:updated',
+    'table:presence:updated',
+    'operator:online',
+    'operator:offline',
+    'force:disconnect',
+    'kot:print:failed',
+    'error:validation',
+    'error:permission',
+  ];
+
+  bool _listenersRegistered = false;
+
   void registerListeners() {
-    debugPrint('$_tag Registering real-time listeners');
+    // Re-entrancy guard: a second call without an intervening unregister used
+    // to leak the previous state subscription and double every handler.
+    if (_listenersRegistered) unregisterListeners();
+    _listenersRegistered = true;
+    logD(_tag, 'Registering real-time listeners');
 
     _stateSubscription = _socket.stateStream.listen((state) {
       if (state == SocketState.connected || state == SocketState.verified) {
@@ -112,19 +166,51 @@ class SyncService {
 
         if (state == SocketState.connected &&
             _ref.read(isAuthenticatedProvider)) {
-          _requestResync();
+          unawaited(_requestResync());
         }
       } else if (state == SocketState.disconnected) {
-        _ref.read(connectionProvider.notifier).state = const ConnectionStatus(
+        // Mid-shift the pairing can lapse under the operator's feet — the
+        // token reaches its expiry, or an admin revokes the device. socket.io
+        // then retries every 2s forever and this banner said "Reconnecting…"
+        // indefinitely, which reads as a Wi-Fi problem nobody can find.
+        final rejected =
+            _socket.lastConnectFailure == ConnectFailure.authRejected;
+        _ref.read(connectionProvider.notifier).state = ConnectionStatus(
           online: false,
-          label: 'Reconnecting...',
+          label: rejected
+              ? 'Pairing expired — ask the admin for a new QR'
+              : 'Reconnecting...',
         );
       }
     });
 
+    // A KOT the desk refused must never be invisible.
+    //
+    // The toast that used to be the whole of this is still raised, because it
+    // is the thing that catches the eye in the moment. But it is no longer
+    // the *record*: `rejectedKotsProvider` owns that, it is restored from the
+    // durable dead-letter list on launch, and it drives a banner that stays
+    // up until the operator acknowledges it. A three-second toast was the
+    // only notice for a round the kitchen never received — miss it and the
+    // failure was gone.
+    //
+    // Reading the provider here also constructs the notifier, so the restore
+    // happens even if no banner has been built yet.
+    _ref.read(rejectedKotsProvider);
+    _kotRejectionSubscription =
+        _ref.read(kotQueueProvider).rejections.listen((rejected) {
+      showAppToast('A KOT could not be sent: ${rejected.reason}');
+    });
+
     _socket.on('table:updated', (data) {
-      final map = _toMap(data);
-      final st = ServerTable.fromMap(map);
+      final map = asMap(data);
+      final ServerTable st;
+      try {
+        st = ServerTable.fromMap(map);
+      } on WireFormatException catch (e) {
+        logE(_tag, 'dropped a malformed table', e);
+        return;
+      }
       final tables = [..._ref.read(tablesProvider)];
       // A deactivated table (e.g. a temp table from a table-rename split, freed
       // once its order settles) drops out of every future full-list push — the
@@ -146,8 +232,14 @@ class SyncService {
     });
 
     _socket.on('room:updated', (data) {
-      final map = _toMap(data);
-      final sr = ServerRoom.fromMap(map);
+      final map = asMap(data);
+      final ServerRoom sr;
+      try {
+        sr = ServerRoom.fromMap(map);
+      } on WireFormatException catch (e) {
+        logE(_tag, 'dropped a malformed room', e);
+        return;
+      }
       final updated = _serverRoomToLocal(sr);
       final rooms = [..._ref.read(roomsProvider)];
       final idx = rooms.indexWhere((r) => r.serverId == updated.serverId);
@@ -160,7 +252,7 @@ class SyncService {
     });
 
     _socket.on('order:created', (data) {
-      final env = BroadcastEnvelope(_toMap(data));
+      final env = BroadcastEnvelope(asMap(data));
       final orderMap = env.orderMap;
       if (orderMap != null) {
 
@@ -171,26 +263,24 @@ class SyncService {
     });
 
     _socket.on('order:updated', (data) {
-      final env = BroadcastEnvelope(_toMap(data));
+      final env = BroadcastEnvelope(asMap(data));
       final orderMap = env.orderMap;
       if (orderMap != null) {
-        _replaceActiveOrder(orderMap);
-
-        final order = ServerOrder.fromMap(orderMap);
-        if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+        final order = _parseOrder(orderMap);
+        if (order != null) {
+          _replaceActiveOrder(order);
+          if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+        }
       }
       _applyTablesFromEnvelope(env);
       _applyRoomsFromEnvelope(env);
     });
 
     _socket.on('order:cancelled', (data) {
-      final env = BroadcastEnvelope(_toMap(data));
+      final env = BroadcastEnvelope(asMap(data));
       final id = env.orderId;
       if (id != null) {
-        _ref.read(activeOrdersProvider.notifier).state = _ref
-            .read(activeOrdersProvider)
-            .where((o) => o['id']?.toString() != id)
-            .toList();
+        _removeActiveOrder(id);
 
         _ref.read(historyProvider.notifier).state = [
           for (final h in _ref.read(historyProvider))
@@ -205,18 +295,20 @@ class SyncService {
     });
 
     _socket.on('kot:sent', (data) {
-      final env = BroadcastEnvelope(_toMap(data));
+      final env = BroadcastEnvelope(asMap(data));
       final orderMap = env.orderMap;
       if (orderMap != null) {
-        _replaceActiveOrder(orderMap);
-        final order = ServerOrder.fromMap(orderMap);
-        if (order.itemCount > 0) {
-          final kotType = env.kotMap?['kot_type']?.toString();
-          var entry = _serverOrderToHistory(order);
-          if (kotType == 'modified') {
-            entry = entry.copyWith(status: OrderStatus.modified);
+        final order = _parseOrder(orderMap);
+        if (order != null) {
+          _replaceActiveOrder(order);
+          if (order.itemCount > 0) {
+            final kotType = env.kotMap?['kot_type']?.toString();
+            var entry = _serverOrderToHistory(order);
+            if (kotType == 'modified') {
+              entry = entry.copyWith(status: OrderStatus.modified);
+            }
+            _upsertHistory(entry);
           }
-          _upsertHistory(entry);
         }
       }
       _applyTablesFromEnvelope(env);
@@ -224,7 +316,7 @@ class SyncService {
     });
 
     _socket.on('bill:generated', (data) {
-      final env = BroadcastEnvelope(_toMap(data));
+      final env = BroadcastEnvelope(asMap(data));
       final orderMap = env.orderMap;
       if (orderMap != null) {
         applyOrderAck({'order': orderMap},
@@ -233,7 +325,7 @@ class SyncService {
     });
 
     _socket.on('bill:paid', (data) {
-      final env = BroadcastEnvelope(_toMap(data));
+      final env = BroadcastEnvelope(asMap(data));
       final id = env.orderId;
       // An order can carry more than one bill (liquor/beverages billed
       // separately), and a single bill can itself be paid in partial
@@ -241,12 +333,9 @@ class SyncService {
       // one that finally settles the order. Only treat the order as
       // settled when the server says every bill is paid/credit; otherwise
       // just let the amounts refresh via the normal order/table sync.
-      final orderSettled = env.raw['order_settled'] == true;
+      final orderSettled = env.orderSettled;
       if (id != null && orderSettled) {
-        _ref.read(activeOrdersProvider.notifier).state = _ref
-            .read(activeOrdersProvider)
-            .where((o) => o['id']?.toString() != id)
-            .toList();
+        _removeActiveOrder(id);
 
         _ref.read(historyProvider.notifier).state = [
           for (final h in _ref.read(historyProvider))
@@ -269,7 +358,7 @@ class SyncService {
     _socket.on('order:ready', (data) {
 
       if (!_ref.read(flagsProvider).readyToServe) return;
-      final m = _toMap(data);
+      final m = asMap(data);
       final orderId = m['order_id']?.toString();
       if (orderId == null) return;
       final tableName = (m['table_name']?.toString().isNotEmpty ?? false)
@@ -308,29 +397,31 @@ class SyncService {
     });
 
     _socket.on('discount:applied', (data) {
-      final env = BroadcastEnvelope(_toMap(data));
+      final env = BroadcastEnvelope(asMap(data));
       final orderMap = env.orderMap;
       if (orderMap != null) {
-        _replaceActiveOrder(orderMap);
-
-        final order = ServerOrder.fromMap(orderMap);
-        if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+        final order = _parseOrder(orderMap);
+        if (order != null) {
+          _replaceActiveOrder(order);
+          if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+        }
       }
     });
 
     _socket.on('offer:applied', (data) {
-      final env = BroadcastEnvelope(_toMap(data));
+      final env = BroadcastEnvelope(asMap(data));
       final orderMap = env.orderMap;
       if (orderMap != null) {
-        _replaceActiveOrder(orderMap);
-
-        final order = ServerOrder.fromMap(orderMap);
-        if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+        final order = _parseOrder(orderMap);
+        if (order != null) {
+          _replaceActiveOrder(order);
+          if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+        }
       }
     });
 
     _socket.on('flags:updated', (data) {
-      final envelope = _toMap(data);
+      final envelope = asMap(data);
       final flagsRaw = envelope['flags'];
       final flagsMap =
           (flagsRaw is Map) ? Map<String, dynamic>.from(flagsRaw) : envelope;
@@ -346,7 +437,7 @@ class SyncService {
       final unchanged = _lastFlagsMap != null &&
           flagsEquality.equals(_lastFlagsMap, flagsMap);
       _lastFlagsMap = flagsMap;
-      if (!unchanged) _requestResync();
+      if (!unchanged) unawaited(_requestResync());
     });
 
     // Fires when an admin edits a menu-access group's contents (not just
@@ -355,23 +446,23 @@ class SyncService {
     // showing items the operator can no longer sell (or missing newly
     // granted ones) until then.
     _socket.on('menu:access:updated', (_) {
-      _requestResync();
+      unawaited(_requestResync());
     });
 
     // Fire-and-forget emits (e.g. quick-settle's print:bill loop) have no
     // onAck — a server-side rejection previously vanished into these two
     // events with nothing listening. Surface it instead of failing silently.
     _socket.on('error:validation', (data) {
-      final message = _toMap(data)['message']?.toString();
+      final message = asMap(data)['message']?.toString();
       if (message != null && message.isNotEmpty) showAppToast(message);
     });
     _socket.on('error:permission', (data) {
-      final message = _toMap(data)['message']?.toString();
+      final message = asMap(data)['message']?.toString();
       if (message != null && message.isNotEmpty) showAppToast(message);
     });
 
     _socket.on('menu:updated', (data) async {
-      final map = _toMap(data);
+      final map = asMap(data);
       final seq = ++_menuParseSeq;
       _ref.read(menuLoadingProvider.notifier).state = true;
       try {
@@ -381,7 +472,7 @@ class SyncService {
         if (seq != _menuParseSeq) return;
         _applyParsedMenu(parsed, map);
       } catch (e, st) {
-        debugPrint('$_tag menu:updated parse error: $e $st');
+        logD(_tag, 'menu:updated parse error: $e $st');
       } finally {
         if (seq == _menuParseSeq) {
           _ref.read(menuLoadingProvider.notifier).state = false;
@@ -390,28 +481,30 @@ class SyncService {
     });
 
     _socket.on('fast-add:updated', (data) {
-      final map = _toMap(data);
+      final map = asMap(data);
       _applyFastAddData(map);
     });
 
     _socket.on('table:shifted', (data) {
-      _applyTablesFromEnvelope(BroadcastEnvelope(_toMap(data)));
+      _applyTablesFromEnvelope(BroadcastEnvelope(asMap(data)));
     });
 
     _socket.on('table:merged', (data) {
-      final env = BroadcastEnvelope(_toMap(data));
+      final env = BroadcastEnvelope(asMap(data));
       final orderMap = env.orderMap;
       if (orderMap != null) {
-        _replaceActiveOrder(orderMap);
-        final order = ServerOrder.fromMap(orderMap);
-        if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+        final order = _parseOrder(orderMap);
+        if (order != null) {
+          _replaceActiveOrder(order);
+          if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+        }
       }
       _applyTablesFromEnvelope(env);
       _applyRoomsFromEnvelope(env);
     });
 
     _socket.on('table:links:updated', (data) {
-      final map = _toMap(data);
+      final map = asMap(data);
       final groupsRaw = map['groups'];
       final newGroups = <String, List<String>>{};
       if (groupsRaw is Map) {
@@ -427,7 +520,7 @@ class SyncService {
     });
 
     _socket.on('table:presence:updated', (data) {
-      final map = _toMap(data);
+      final map = asMap(data);
       final raw = map['presences'];
       final next = <String, String>{};
       if (raw is List) {
@@ -445,7 +538,7 @@ class SyncService {
     });
 
     _socket.on('operator:online', (data) {
-      final op = ServerOperatorPresence.fromMap(_toMap(data));
+      final op = ServerOperatorPresence.fromMap(asMap(data));
       if (op.operatorName.isEmpty) return;
       final current = _ref.read(activeOperatorsProvider);
       if (current.any((o) => o.name == op.operatorName)) return;
@@ -456,7 +549,7 @@ class SyncService {
     });
 
     _socket.on('operator:offline', (data) {
-      final op = ServerOperatorPresence.fromMap(_toMap(data));
+      final op = ServerOperatorPresence.fromMap(asMap(data));
       _ref.read(activeOperatorsProvider.notifier).state = _ref
           .read(activeOperatorsProvider)
           .where((o) => o.name != op.operatorName)
@@ -473,7 +566,7 @@ class SyncService {
     });
 
     _socket.on('kot:print:failed', (data) {
-      final map = _toMap(data);
+      final map = asMap(data);
       final orderId = map['order_id']?.toString();
       final kotNumber = map['kot_number']?.toString();
       showKotPrintFailedAlert(
@@ -491,10 +584,10 @@ class SyncService {
     if (orderId == null) return 'an order';
     final order = _ref
         .read(activeOrdersProvider)
-        .where((o) => o['id']?.toString() == orderId)
+        .where((o) => o.id == orderId)
         .firstOrNull;
-    final tableId = order?['table_id']?.toString();
-    if (tableId == null) return 'order $orderId';
+    final tableId = order?.tableId;
+    if (tableId == null || tableId.isEmpty) return 'order $orderId';
     final table = _ref
         .read(tablesProvider)
         .where((t) => t.serverId == tableId)
@@ -503,8 +596,8 @@ class SyncService {
   }
 
   Future<void> applyInitialSync(Map<String, dynamic> data) async {
-    debugPrint('$_tag ── Applying initial sync ──');
-    debugPrint('$_tag   Keys: ${data.keys.toList()}');
+    logD(_tag, '── Applying initial sync ──');
+    logD(_tag, '  Keys: ${data.keys.toList()}');
 
     final restaurantRaw = data['restaurant_info'] ?? data['restaurant'];
     if (restaurantRaw is Map) {
@@ -516,70 +609,66 @@ class SyncService {
         adminDeviceLabel: '',
         adminIp: '',
       );
-      debugPrint('$_tag   Restaurant: ${info.name}');
+      logD(_tag, '  Restaurant: ${info.name}');
     }
 
     final flagsRaw = data['feature_flags'] ?? data['flags'];
     if (flagsRaw is Map) {
       _ref.read(flagsProvider.notifier).state =
           FeatureFlags.fromMap(Map<String, dynamic>.from(flagsRaw));
-      debugPrint('$_tag   Flags: loaded');
+      logD(_tag, '  Flags: loaded');
     }
 
     final floorsList = data['floors'];
     _floorMap = {};
     if (floorsList is List) {
-      for (final raw in floorsList) {
-        if (raw is Map) {
-          final f = ServerFloor.fromMap(Map<String, dynamic>.from(raw));
-          if (f.id.isNotEmpty) _floorMap[f.id] = f.name;
-        }
+      for (final f in parseEach(
+        mapList(floorsList),
+        ServerFloor.fromMap,
+        'ServerFloor',
+      )) {
+        _floorMap[f.id] = f.name;
       }
     }
     // _floorMap is a LinkedHashMap built by iterating floorsList in the
     // order the server sent it (ORDER BY display_order ASC) — its values
     // are already in the right order, just never exposed to the UI before.
     _ref.read(floorNamesProvider.notifier).state = _floorMap.values.toList();
-    debugPrint(
-        '$_tag   Floors: ${_floorMap.length} → ${_floorMap.values.toList()}');
+    logD(_tag, '  Floors: ${_floorMap.length} → ${_floorMap.values.toList()}');
 
     await _loadTimerCache();
     final tablesList = data['tables'];
     if (tablesList is List) {
       if (tablesList.isNotEmpty && tablesList.first is Map) {
         final sample = Map<String, dynamic>.from(tablesList.first);
-        debugPrint('$_tag   Table[0] keys: ${sample.keys.toList()}');
-        debugPrint('$_tag   Table[0] name=${sample['name']}, '
+        logD(_tag, '  Table[0] keys: ${sample.keys.toList()}');
+        logD(_tag, '  Table[0] name=${sample['name']}, '
             'order_total=${sample['order_total']}, status=${sample['status']}');
       }
 
-      final tables = <RestaurantTable>[];
-      for (final raw in tablesList) {
-        if (raw is Map) {
-          final st = ServerTable.fromMap(Map<String, dynamic>.from(raw));
-          tables.add(_serverTableToLocal(st));
-        }
-      }
+      final tables = parseEach(
+        mapList(tablesList),
+        ServerTable.fromMap,
+        'ServerTable',
+      ).map(_serverTableToLocal).toList();
       _ref.read(tablesProvider.notifier).state = tables;
 
       for (final t in tables.take(3)) {
-        debugPrint('$_tag   Parsed → ${t.id} (${t.serverId}), '
+        logD(_tag, '  Parsed → ${t.id} (${t.serverId}), '
             'floor=${t.floor}, bill=${t.bill}, state=${t.state}');
       }
-      debugPrint('$_tag   Tables: ${tables.length} loaded');
+      logD(_tag, '  Tables: ${tables.length} loaded');
     }
 
     final roomsList = data['rooms'];
     if (roomsList is List) {
-      final rooms = <RestaurantRoom>[];
-      for (final raw in roomsList) {
-        if (raw is Map) {
-          final sr = ServerRoom.fromMap(Map<String, dynamic>.from(raw));
-          rooms.add(_serverRoomToLocal(sr));
-        }
-      }
+      final rooms = parseEach(
+        mapList(roomsList),
+        ServerRoom.fromMap,
+        'ServerRoom',
+      ).map(_serverRoomToLocal).toList();
       _ref.read(roomsProvider.notifier).state = rooms;
-      debugPrint('$_tag   Rooms: ${rooms.length} loaded');
+      logD(_tag, '  Rooms: ${rooms.length} loaded');
     }
 
     final offersList = data['offers'];
@@ -588,22 +677,24 @@ class SyncService {
       for (final raw in offersList) {
         if (raw is! Map) continue;
         final m = Map<String, dynamic>.from(raw);
+        final offerId = optionalString(m, 'id');
+        if (offerId == null) continue;
         offers.add(Offer(
-          id: m['id']?.toString() ?? '',
-          name: m['name']?.toString() ?? 'Offer',
-          ruleType: m['rule_type']?.toString() ?? '',
-          couponCode: m['coupon_code']?.toString(),
-          autoApply: toIntOr(m['auto_apply'], 0) == 1,
+          id: offerId,
+          name: stringOr(m, 'name', 'Offer'),
+          ruleType: stringOr(m, 'rule_type', ''),
+          couponCode: optionalString(m, 'coupon_code'),
+          autoApply: boolOr(m, 'auto_apply', false),
         ));
       }
       _ref.read(offersProvider.notifier).state = offers;
-      debugPrint('$_tag   Offers: ${offers.length} loaded');
+      logD(_tag, '  Offers: ${offers.length} loaded');
     }
 
     final menuRaw = data['menu'];
     if (menuRaw is Map) {
       if (_sectionUnchanged('menu', menuRaw)) {
-        debugPrint('$_tag   Menu: unchanged — skipping re-parse');
+        logD(_tag, '  Menu: unchanged — skipping re-parse');
       } else {
         final menuMap = Map<String, dynamic>.from(menuRaw);
         final seq = ++_menuParseSeq;
@@ -614,12 +705,12 @@ class SyncService {
           final parsed = await _parseMenuOffThread(menuMap);
           if (seq == _menuParseSeq) {
             _applyParsedMenu(parsed, menuMap);
-            debugPrint('$_tag   Menu items: ${parsed.items.length}');
+            logD(_tag, '  Menu items: ${parsed.items.length}');
           }
         } catch (e, st) {
           // Never let a menu problem abort the rest of the sync — fast-add,
           // active orders and the connected status all still need to apply.
-          debugPrint('$_tag   Menu parse failed: $e $st');
+          logD(_tag, '  Menu parse failed: $e $st');
         } finally {
           if (seq == _menuParseSeq) {
             _ref.read(menuLoadingProvider.notifier).state = false;
@@ -635,27 +726,24 @@ class SyncService {
 
     final ordersList = data['active_orders'] ?? data['orders'];
     if (ordersList is List) {
-      final rawOrders = <Map<String, dynamic>>[];
-      final historyEntries = <HistoryOrder>[];
-      for (final raw in ordersList) {
-        if (raw is Map) {
-          final m = Map<String, dynamic>.from(raw);
-          rawOrders.add(m);
-          final so = ServerOrder.fromMap(m);
-          if (so.itemCount > 0) {
-            historyEntries.add(_serverOrderToHistory(so));
-          }
-        }
-      }
-      _ref.read(activeOrdersProvider.notifier).state = rawOrders;
+      final orders = parseEach(
+        mapList(ordersList),
+        ServerOrder.fromMap,
+        'ServerOrder',
+      );
+      final historyEntries = <HistoryOrder>[
+        for (final so in orders)
+          if (so.itemCount > 0) _serverOrderToHistory(so),
+      ];
+      _ref.read(activeOrdersProvider.notifier).state = orders;
 
       final freshIds = historyEntries.map((h) => h.orderId).toSet();
       final settledEntries = _ref
           .read(historyProvider)
           .where((h) => !freshIds.contains(h.orderId))
           .toList();
-      _ref.read(historyProvider.notifier).state = [...historyEntries, ...settledEntries];
-      debugPrint('$_tag   Active orders: ${rawOrders.length}');
+      _setHistory(<HistoryOrder>[...historyEntries, ...settledEntries]);
+      logD(_tag, '  Active orders: ${orders.length}');
     }
 
     final discountsRaw = data['discounts'];
@@ -665,7 +753,7 @@ class SyncService {
         if (d is Map) discounts.add(Map<String, dynamic>.from(d));
       }
       _ref.read(discountsProvider.notifier).state = discounts;
-      debugPrint('$_tag   Discounts: ${discounts.length}');
+      logD(_tag, '  Discounts: ${discounts.length}');
     }
 
     final name = _ref.read(restaurantProvider)?.name ?? 'POS';
@@ -674,7 +762,7 @@ class SyncService {
 
     _ref.read(widgetSyncProvider).schedule(_ref);
 
-    debugPrint('$_tag ── Initial sync complete ──');
+    logD(_tag, '── Initial sync complete ──');
   }
 
   void applyOrderAck(
@@ -682,13 +770,10 @@ class SyncService {
     bool includeHistory = false,
     bool markTableBilled = false,
   }) {
-    final orderRaw = response['order'];
-    if (orderRaw is! Map) return;
-    final orderMap = Map<String, dynamic>.from(orderRaw);
-    final order = ServerOrder.fromMap(orderMap);
-    if (order.id.isEmpty) return;
+    final order = _parseOrder(optionalMap(response, 'order'));
+    if (order == null) return;
 
-    _replaceActiveOrder(orderMap);
+    _replaceActiveOrder(order);
     _updateTableForOrder(order, markBilled: markTableBilled);
 
     if (includeHistory && order.itemCount > 0) {
@@ -696,10 +781,25 @@ class SyncService {
     }
   }
 
+  /// Re-publishes an order the client already holds (e.g. the Tables screen
+  /// re-opening a running table). Takes a parsed [ServerOrder] rather than
+  /// round-tripping a raw map back through the parser.
+  void adoptOrder(ServerOrder order) {
+    _replaceActiveOrder(order);
+    _updateTableForOrder(order);
+    if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+  }
+
   void applyTableAck(Map<String, dynamic> response) {
-    final raw = response['table'];
-    if (raw is! Map) return;
-    final st = ServerTable.fromMap(Map<String, dynamic>.from(raw));
+    final raw = optionalMap(response, 'table');
+    if (raw == null) return;
+    final ServerTable st;
+    try {
+      st = ServerTable.fromMap(raw);
+    } on WireFormatException catch (e) {
+      logE(_tag, 'dropped a malformed table ack', e);
+      return;
+    }
     final updated = _serverTableToLocal(st);
     final tables = [..._ref.read(tablesProvider)];
     final idx = tables.indexWhere((t) => t.serverId == updated.serverId);
@@ -734,7 +834,7 @@ class SyncService {
             name: om['name']?.toString() ?? 'Operator',
             role: om['role']?.toString() ?? 'Waiter',
             shift: om['shift']?.toString() ?? 'Day',
-            username: om['id']?.toString() ?? om['username']?.toString() ?? '',
+            id: optionalStringAny(om, <String>['id', 'username']) ?? '',
           );
         }
         // The server only reports success here if our session is still
@@ -743,7 +843,7 @@ class SyncService {
         // (unblocks a silent resume right after a cold start).
         _socket.markVerified();
         _ref.read(isAuthenticatedProvider.notifier).state = true;
-        _ref.read(kotQueueProvider).flush(_socket);
+        unawaited(_ref.read(kotQueueProvider).flush(_socket));
         return true;
       } else if (res['code'] == 'reauth_required') {
         // The desktop's PIN-verified flag has genuinely lapsed (grace window
@@ -762,7 +862,7 @@ class SyncService {
         return false;
       }
     }).catchError((_) {
-      debugPrint('$_tag Resync failed — data may be stale');
+      logD(_tag, 'Resync failed — data may be stale');
       final restaurant = _ref.read(restaurantProvider);
       _ref.read(connectionProvider.notifier).state = ConnectionStatus(
         online: true,
@@ -774,37 +874,24 @@ class SyncService {
   }
 
   void unregisterListeners() {
+    _listenersRegistered = false;
     _stateSubscription?.cancel();
     _stateSubscription = null;
+    _kotRejectionSubscription?.cancel();
+    _kotRejectionSubscription = null;
     // Don't let a debounced table-timer write get dropped on the way out.
     if (_timerFlush?.isActive ?? false) {
       _timerFlush!.cancel();
       unawaited(_flushTimerCache());
     }
-    for (final event in [
-      'table:updated',
-      'order:created',
-      'order:updated',
-      'order:cancelled',
-      'kot:sent',
-      'bill:generated',
-      'bill:paid',
-      'discount:applied',
-      'flags:updated',
-      'menu:updated',
-      'force:disconnect',
-      'operator:online',
-      'operator:offline',
-      'fast-add:updated',
-      'table:shifted',
-      'table:merged',
-      'table:links:updated',
-      'table:presence:updated',
-      'order:ready',
-      'kot:print:failed',
-    ]) {
+    for (final event in broadcastEvents) {
       _socket.off(event);
     }
+  }
+
+  /// Called when the provider is torn down.
+  void dispose() {
+    unregisterListeners();
   }
 
   /// Legacy per-table keys. Read once at startup for migration, then removed.
@@ -880,7 +967,7 @@ class SyncService {
 
   RestaurantTable _serverTableToLocal(ServerTable st) {
     final floorName = _floorMap[st.floorId] ?? st.floorId;
-    final currentOperatorId = _ref.read(operatorProvider)?.username;
+    final currentOperatorId = _ref.read(operatorProvider)?.id;
     final tableState =
         mapTableStatus(st.status, currentOperatorId, st.operatorIds);
 
@@ -890,8 +977,13 @@ class SyncService {
           .read(tablesProvider)
           .where((t) => t.serverId == st.id)
           .firstOrNull;
-      occupiedSince =
-          existing?.occupiedSince ?? _tableTimerCache[st.id] ?? DateTime.now();
+      // The desk's timestamp wins. Falling back to this phone's clock meant
+      // two devices showed two different "occupied for" durations on the
+      // same table.
+      occupiedSince = st.occupiedSince ??
+          existing?.occupiedSince ??
+          _tableTimerCache[st.id] ??
+          DateTime.now();
       // Stage in memory and let the debounced flush persist it. Storing the
       // actual start time rather than "now" also means the clock survives an
       // app restart instead of restarting on the next table event.
@@ -911,7 +1003,11 @@ class SyncService {
       state: tableState,
       joinedOperatorIds: st.operatorIds,
       joinedOperatorNames: st.operatorNames,
-      bill: st.orderTotal > 0 ? st.orderTotal : null,
+      // A bill exists only when an order does. Tying it to `activeOrderId`
+      // rather than to "is the number greater than zero" keeps both truths:
+      // a free table shows nothing, and a fully comped table still shows the
+      // real amount it is running — which is zero.
+      bill: st.activeOrderId == null ? null : (st.orderTotal ?? Money.zero),
       note: st.reservationCustomer,
       activeOrderId: st.activeOrderId,
       activeBillCount: st.activeBillCount,
@@ -934,17 +1030,16 @@ class SyncService {
       activeOrderId: sr.activeOrderId,
       activeBillCount: sr.activeBillCount,
       orderItemCount: sr.orderItemCount,
-      bill: sr.orderTotal > 0 ? sr.orderTotal : null,
+      bill: sr.activeOrderId == null ? null : (sr.orderTotal ?? Money.zero),
     );
   }
 
   void _applyRoomsFromEnvelope(BroadcastEnvelope env) {
     final roomMaps = env.roomsList;
     if (roomMaps.isEmpty) return;
-    final rooms = roomMaps.map((m) {
-      final sr = ServerRoom.fromMap(m);
-      return _serverRoomToLocal(sr);
-    }).toList();
+    final rooms = parseEach(roomMaps, ServerRoom.fromMap, 'ServerRoom')
+        .map(_serverRoomToLocal)
+        .toList();
     _ref.read(roomsProvider.notifier).state = rooms;
   }
 
@@ -974,15 +1069,20 @@ class SyncService {
       displayId = so.orderNumber;
     }
 
-    debugPrint('$_tag   Order $displayId: total=${so.total}, '
-        'items=${so.itemCount}, status=${so.status}');
+    // Amounts deliberately not logged — this ran on every broadcast and put
+    // every order total into device logs.
+    logD(_tag, '  Order $displayId: items=${so.itemCount}, status=${so.status}');
 
     return HistoryOrder(
       id: displayId,
       orderId: so.id,
       tableId: tableDisplay,
       time: _formatTime(so.createdAt),
-      date: _formatDate(so.createdAt),
+      // The desk's business date, never a calendar date derived here. When
+      // the desk hasn't sent one the field stays empty rather than guessing:
+      // an empty date filters to nothing, which is visibly wrong, whereas a
+      // wrong date silently disagrees with the day-end report.
+      date: so.businessDate ?? '',
       itemCount: so.itemCount,
       total: so.total,
       status: _mapOrderStatus(so.status),
@@ -1006,11 +1106,15 @@ class SyncService {
       itemId: item.itemId,
       name: item.itemName,
       qty: item.quantity,
-      price: item.unitPrice > 0 ? item.unitPrice : item.totalPrice,
+      // Unit price only. The old fallback to `totalPrice` meant a
+      // legitimately free line (comp, package component) rendered as
+      // "total x qty" — the amount multiplied by the quantity twice.
+      price: item.unitPrice,
       kitchenSection: item.itemType,
       mods: mods,
       variationId: item.variationId,
       variationName: item.variationName,
+      kotNumber: item.kotNumber,
     );
   }
 
@@ -1031,36 +1135,62 @@ class SyncService {
     return const [];
   }
 
-  void _replaceActiveOrder(Map<String, dynamic> orderMap) {
-    final orderId = orderMap['id']?.toString();
-    if (orderId == null) return;
+  void _replaceActiveOrder(ServerOrder order) {
     final current = _ref.read(activeOrdersProvider);
-    var replaced = false;
-    final next = [
-      for (final o in current)
-        if (o['id']?.toString() == orderId) ...[
-          orderMap,
-        ] else ...[
-          o,
-        ],
-    ];
-    replaced = current.any((o) => o['id']?.toString() == orderId);
-    _ref.read(activeOrdersProvider.notifier).state = [
-      if (!replaced) orderMap,
-      ...next,
-    ];
+    final index = current.indexWhere((o) => o.id == order.id);
+    if (index < 0) {
+      _ref.read(activeOrdersProvider.notifier).state = <ServerOrder>[
+        order,
+        ...current,
+      ];
+      return;
+    }
+    final next = <ServerOrder>[...current];
+    next[index] = order;
+    _ref.read(activeOrdersProvider.notifier).state = next;
+  }
+
+  void _removeActiveOrder(String orderId) {
+    _ref.read(activeOrdersProvider.notifier).state = _ref
+        .read(activeOrdersProvider)
+        .where((o) => o.id != orderId)
+        .toList(growable: false);
+  }
+
+  /// Parses one order off a broadcast, or null if it fails validation.
+  /// A single malformed order must not take down a whole sync.
+  ServerOrder? _parseOrder(Map<String, dynamic>? map) {
+    if (map == null) return null;
+    try {
+      return ServerOrder.fromMap(map);
+    } on WireFormatException catch (e) {
+      logE(_tag, 'dropped a malformed order', e);
+      return null;
+    }
+  }
+
+  /// History is capped. It used to grow without bound across a shift — every
+  /// broadcast prepended an entry and nothing ever trimmed — while each
+  /// upsert did an O(n) scan of the whole list.
+  static const int _maxHistoryEntries = 400;
+
+  void _setHistory(List<HistoryOrder> entries) {
+    _ref.read(historyProvider.notifier).state = entries.length >
+            _maxHistoryEntries
+        ? entries.sublist(0, _maxHistoryEntries)
+        : entries;
   }
 
   void _upsertHistory(HistoryOrder entry) {
     final current = _ref.read(historyProvider);
     final existingIndex = current.indexWhere((h) => h.orderId == entry.orderId);
     if (existingIndex < 0) {
-      _ref.read(historyProvider.notifier).state = [entry, ...current];
+      _setHistory(<HistoryOrder>[entry, ...current]);
       return;
     }
-    final next = [...current];
+    final next = <HistoryOrder>[...current];
     next[existingIndex] = entry;
-    _ref.read(historyProvider.notifier).state = next;
+    _setHistory(next);
   }
 
   void _updateTableForOrder(ServerOrder order, {bool markBilled = false}) {
@@ -1069,15 +1199,17 @@ class SyncService {
     final idx = tables.indexWhere((t) => t.serverId == order.tableId);
     if (idx < 0) return;
     final current = tables[idx];
+    // Zero is a real amount. The old guards ("total > 0 ? total : current")
+    // treated it as "no data", so voiding every line or discounting to zero
+    // left the table tile displaying its previous total indefinitely.
     tables[idx] = current.copyWith(
       state: current.state == TableState.free ? TableState.mine : current.state,
       activeOrderId: order.id,
       activeBillCount: markBilled
           ? (current.activeBillCount > 0 ? current.activeBillCount : 1)
           : current.activeBillCount,
-      orderItemCount:
-          order.itemCount > 0 ? order.itemCount : current.orderItemCount,
-      bill: order.total > 0 ? order.total : current.bill,
+      orderItemCount: order.itemCount,
+      bill: order.total,
     );
     _ref.read(tablesProvider.notifier).state = tables;
   }
@@ -1090,7 +1222,7 @@ class SyncService {
   void _applyTablesFromEnvelope(BroadcastEnvelope env) {
     final tableMaps = env.tablesList;
     if (tableMaps.isEmpty) return;
-    final parsed = tableMaps.map((m) => ServerTable.fromMap(m)).toList();
+    final parsed = parseEach(tableMaps, ServerTable.fromMap, 'ServerTable');
     final tables = [..._ref.read(tablesProvider)];
     for (final st in parsed) {
       if (!st.isActive) {
@@ -1134,39 +1266,28 @@ class SyncService {
     }
   }
 
-  String _formatDate(String isoDate) {
-    if (isoDate.isEmpty) return '';
-    try {
-      final dt = DateTime.parse(isoDate).toLocal();
-      return '${dt.year}-'
-          '${dt.month.toString().padLeft(2, '0')}-'
-          '${dt.day.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return '';
-    }
-  }
-
+  /// Fast-add tiles are resolved against the parsed catalogue, never
+  /// re-parsed from raw maps — see [resolveFastAddItems].
   void _applyFastAddData(Map<String, dynamic> data) {
-    final pinned = data['pinned'];
-    final auto = data['auto'];
-    if (pinned is List) {
-      _ref.read(fastAddPinnedProvider.notifier).state = pinned
-          .whereType<Map>()
-          .map((m) => serverMenuItemToLocal(
-              ServerMenuItem.fromMap(Map<String, dynamic>.from(m))))
-          .toList();
+    final catalogue = _ref.read(menuProvider);
+    if (catalogue.isEmpty) {
+      // Menu hasn't landed yet. Stash and apply once it has, rather than
+      // publishing tiles we cannot price.
+      _pendingFastAdd = data;
+      return;
     }
-    if (auto is List) {
-      _ref.read(fastAddAutoProvider.notifier).state = auto
-          .whereType<Map>()
-          .map((m) => serverMenuItemToLocal(
-              ServerMenuItem.fromMap(Map<String, dynamic>.from(m))))
-          .toList();
-    }
+    _pendingFastAdd = null;
+    _ref.read(fastAddPinnedProvider.notifier).state =
+        resolveFastAddItems(mapList(data['pinned']), catalogue);
+    _ref.read(fastAddAutoProvider.notifier).state =
+        resolveFastAddItems(mapList(data['auto']), catalogue);
   }
 
-  static Map<String, dynamic> _toMap(dynamic data) {
-    if (data is Map) return Map<String, dynamic>.from(data);
-    return const {};
+  Map<String, dynamic>? _pendingFastAdd;
+
+  void _applyPendingFastAdd() {
+    final pending = _pendingFastAdd;
+    if (pending != null) _applyFastAddData(pending);
   }
+
 }

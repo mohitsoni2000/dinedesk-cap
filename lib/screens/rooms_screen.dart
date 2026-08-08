@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+// ScrollCacheExtent lives in the rendering layer; widgets.dart doesn't
+// re-export it.
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,6 +24,9 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
   String _query = '';
   bool _searchOpen = false;
   bool _openingRoom = false;
+
+  /// Set by the first real scroll; gates the entrance stagger.
+  bool _hasScrolled = false;
   String? _openingRoomId;
 
   void _onRoomTap(RestaurantRoom r) async {
@@ -69,17 +75,12 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
     if (intent.action == TableOpenAction.openOrder) {
       final activeOrders = ref.read(activeOrdersProvider);
       final activeOrderId = r.activeOrderId;
-      final orderMap = activeOrders.where((o) {
-        final id = o['id']?.toString();
-        final roomId = o['room_id']?.toString();
-        return (activeOrderId != null && id == activeOrderId) ||
-            roomId == r.serverId;
+      final active = activeOrders.where((o) {
+        return (activeOrderId != null && o.id == activeOrderId) ||
+            o.roomId == r.serverId;
       }).firstOrNull;
-      if (orderMap != null) {
-        ref.read(syncServiceProvider).applyOrderAck(
-          {'order': orderMap},
-          includeHistory: true,
-        );
+      if (active != null) {
+        ref.read(syncServiceProvider).adoptOrder(active);
       }
     }
 
@@ -215,8 +216,18 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
                                 ),
                               ),
                             )
-                          : GridView.builder(
+                          : NotificationListener<ScrollUpdateNotification>(
+                              onNotification: (n) {
+                                if (!_hasScrolled &&
+                                    (n.scrollDelta?.abs() ?? 0) > 2) {
+                                  _hasScrolled = true;
+                                }
+                                return false;
+                              },
+                              child: GridView.builder(
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                              scrollCacheExtent: ScrollCacheExtent.pixels(
+                                  AppPerf.gridCacheExtentFor(context)),
                               gridDelegate:
                                   SliverGridDelegateWithMaxCrossAxisExtent(
                                 maxCrossAxisExtent: context.tableTileExtent,
@@ -225,20 +236,35 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
                                 childAspectRatio: 1.05,
                               ),
                               itemCount: filtered.length,
-                              itemBuilder: (_, i) {
+                              itemBuilder: (context, i) {
                                 final r = filtered[i];
-                                return Entrance(
-                                  delay: Duration(
-                                      milliseconds: 35 * (i < 12 ? i : 12)),
-                                  offsetY: 10,
-                                  child: _RoomCard(
-                                    room: r,
-                                    isLoading: _openingRoom &&
-                                        _openingRoomId == r.serverId,
-                                    onTap: () => _onRoomTap(r),
+                                final card = _RoomCard(
+                                  room: r,
+                                  isLoading: _openingRoom &&
+                                      _openingRoomId == r.serverId,
+                                  onTap: () => _onRoomTap(r),
+                                );
+                                // Same as the tables grid: itemBuilder runs
+                                // again for every tile recycled during a
+                                // scroll, so wrapping all of them replayed
+                                // the fade and allocated a fresh controller
+                                // each time.
+                                if (i >= 12 ||
+                                    _hasScrolled ||
+                                    AppPerf.reduceEffects(context)) {
+                                  return KeyedSubtree(
+                                      key: ValueKey(r.serverId), child: card);
+                                }
+                                return KeyedSubtree(
+                                  key: ValueKey(r.serverId),
+                                  child: Entrance(
+                                    delay: Duration(milliseconds: 35 * i),
+                                    offsetY: 10,
+                                    child: card,
                                   ),
                                 );
                               },
+                            ),
                             ),
                 ),
               ],
@@ -306,11 +332,9 @@ class _RoomCard extends StatelessWidget {
               color: _bg(context),
               borderRadius: const BorderRadius.all(AppRadii.lg),
               border: Border.all(color: _border(), width: 1),
-              boxShadow: AppPerf.reduceEffects(context)
-                  ? AppShadows.flat
-                  : room.state == RoomState.mine
-                      ? AppShadows.terraGlow
-                      : context.palette.cardShadow,
+              // The room you're serving is marked by [_bg] and [_border], not
+              // by a terra glow behind the tile.
+              boxShadow: AppShadows.none,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

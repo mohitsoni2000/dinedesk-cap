@@ -1,6 +1,7 @@
 
 
 import 'package:flutter/material.dart';
+import '../data/money.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
@@ -135,7 +136,7 @@ class PackageSheet extends ConsumerWidget {
             item: menuItem,
             qty: qty,
             mods: const [],
-            modsExtra: 0,
+            modsExtra: Money.zero,
             itemNote: 'Package: ${pkg['name']}',
           );
     }
@@ -150,8 +151,7 @@ class _PackageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = pkg['name']?.toString() ?? 'Package';
-    final price =
-        (pkg['price'] is num) ? (pkg['price'] as num).toDouble() : 0.0;
+    final price = Money.fromWire(pkg['price']) ?? Money.zero;
     final desc = pkg['description']?.toString();
     final items = pkg['items'];
     final itemCount = (items is List) ? items.length : 0;

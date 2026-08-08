@@ -207,13 +207,9 @@ class _DynamicIslandToastState extends State<_DynamicIslandToastView>
                         borderRadius: const BorderRadius.all(AppRadii.pill),
                         border: Border.all(
                             color: Colors.white.withValues(alpha: 0.08)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.35),
-                            blurRadius: 24,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
+                        // A toast genuinely floats over the page, so it keeps
+                        // a shadow — but the single flat one, not a 24px drop.
+                        boxShadow: AppShadows.flat,
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,

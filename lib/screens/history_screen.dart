@@ -27,17 +27,30 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   /// detail route instead, exactly as before.
   String? _selectedOrderId;
 
+  /// Set by the first real scroll; gates the entrance stagger.
+  bool _hasScrolled = false;
+
+  /// Scopes by the desk's **business day**, not this phone's calendar date.
+  ///
+  /// The old version built `targetDate` from `DateTime.now()` and compared it
+  /// against a date the client had itself derived from `created_at`. In a
+  /// kitchen that closes at 2am, a 1am order is booked to the previous
+  /// business day on the desk but read as "today" here — so a waiter's
+  /// history and their KPI card could never reconcile with the day-end
+  /// report. Business dates now come from the desk on each order; "today" is
+  /// simply the newest one it has sent, and "yesterday" the one before it.
   List<HistoryOrder> _dateScoped(List<HistoryOrder> orders) {
-    final now = DateTime.now();
-    final String targetDate;
-    if (_dateScope == _DateScope.yesterday) {
-      final yesterday = now.subtract(const Duration(days: 1));
-      targetDate =
-          '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
-    } else {
-      targetDate =
-          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    }
+    final businessDates = orders
+        .map((o) => o.date)
+        .where((d) => d.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+    if (businessDates.isEmpty) return const <HistoryOrder>[];
+
+    final index = _dateScope == _DateScope.yesterday ? 1 : 0;
+    if (index >= businessDates.length) return const <HistoryOrder>[];
+    final targetDate = businessDates[index];
     return orders.where((o) => o.date == targetDate).toList();
   }
 
@@ -94,12 +107,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Widget build(BuildContext context) {
     final orders = ref.watch(historyProvider);
 
-    final myId = ref.watch(operatorProvider)?.username ?? '';
+    // Same rule as operatorStatsProvider: an order whose creator the desk
+    // didn't name is *not* assumed to be this waiter's. The old
+    // `createdBy == null || createdBy == myId` swept everyone else's unnamed
+    // orders into this list.
+    final myId = ref.watch(operatorProvider)?.id ?? '';
     final myOrders = myId.isEmpty
         ? orders
-        : orders
-            .where((o) => o.createdBy == null || o.createdBy == myId)
-            .toList();
+        : orders.where((o) => o.createdBy == myId).toList();
 
     final filtered = _dateScoped(myOrders).where((o) {
       if (_statusFilter != null && o.status != _statusFilter) return false;
@@ -198,17 +213,29 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                               ),
                             ),
                           )
-                        : ListView.separated(
+                        : NotificationListener<ScrollUpdateNotification>(
+                            onNotification: (n) {
+                              if (!_hasScrolled &&
+                                  (n.scrollDelta?.abs() ?? 0) > 2) {
+                                _hasScrolled = true;
+                              }
+                              return false;
+                            },
+                            child: ListView.separated(
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                             itemCount: filtered.length,
                             separatorBuilder: (_, __) =>
                                 const SizedBox(height: 10),
-                            itemBuilder: (_, i) {
+                            itemBuilder: (context, i) {
                               final o = filtered[i];
-                              return Entrance(
-                                delay: Duration(
-                                    milliseconds: 45 * (i < 10 ? i : 10)),
-                                child: _OrderTile(
+                              // Stagger the first screenful once. Wrapping
+                              // every row meant a fresh AnimationController
+                              // and a replayed fade for each row recycled
+                              // during a scroll.
+                              if (i >= 10 ||
+                                  _hasScrolled ||
+                                  AppPerf.reduceEffects(context)) {
+                                return _OrderTile(
                                   order: o,
                                   selected: wide && o.id == _selectedOrderId,
                                   onTap: () {
@@ -221,9 +248,25 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                                       context.push('/history/${o.id}');
                                     }
                                   },
+                                );
+                              }
+                              return Entrance(
+                                delay: Duration(milliseconds: 45 * i),
+                                child: _OrderTile(
+                                  order: o,
+                                  selected: wide && o.id == _selectedOrderId,
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    if (wide) {
+                                      setState(() => _selectedOrderId = o.id);
+                                    } else {
+                                      context.push('/history/${o.id}');
+                                    }
+                                  },
                                 ),
                               );
                             },
+                          ),
                           ),
                   ),
                 ],

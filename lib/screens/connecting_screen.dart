@@ -2,12 +2,14 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../motion/motion.dart';
+import '../services/log.dart';
 import '../services/session_service.dart';
 import '../services/socket_service.dart';
 import '../theme/tokens.dart';
@@ -33,6 +35,10 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
   ];
   int _stage = 0;
   bool _failed = false;
+
+  /// The desk refused the pairing itself — expired, revoked, or the operator
+  /// was deactivated. Distinct from [_failed] because retrying cannot fix it.
+  bool _pairingRejected = false;
   Timer? _stageTimer;
   Timer? _timeoutTimer;
   StreamSubscription<SocketState>? _socketSub;
@@ -51,21 +57,23 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
   }
 
   Future<void> _connectToServer() async {
-    debugPrint('[Connect] Loading saved pairing...');
+    logD('[Connect]', 'Loading saved pairing...');
     final pairing =
         widget.initialPairing ?? await SessionService().getSavedPairing();
     if (!mounted) return;
 
     if (pairing == null) {
-      debugPrint('[Connect] No pairing found → redirecting to /scan');
+      logD('[Connect]', 'No pairing found → redirecting to /scan');
       context.go('/scan');
       return;
     }
 
+    ref.read(hasSavedPairingProvider.notifier).state = true;
     setState(() {
       _pairing = pairing;
       _stage = 0;
       _failed = false;
+      _pairingRejected = false;
       _errorMsg = null;
     });
 
@@ -74,30 +82,42 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
       if (mounted && !_failed) setState(() => _failed = true);
     });
 
-    if (pairing.token == 'demo-token') {
-      debugPrint('[Connect] Demo pairing — skipping real socket handshake');
+    if (kDebugMode && pairing.token == 'demo-token') {
+      logD('[Connect]', 'Demo pairing — skipping real socket handshake');
       _runDemoStages();
       return;
     }
 
-    debugPrint('[Connect] Pairing loaded: ${pairing.host}:${pairing.port}');
+    logD('[Connect]', 'Pairing loaded: ${pairing.host}:${pairing.port}');
     final socketService = ref.read(socketServiceProvider);
 
     _socketSub = socketService.stateStream.listen((state) {
       if (!mounted) return;
-      debugPrint('[Connect] Socket state changed: $state');
+      logD('[Connect]', 'Socket state changed: $state');
       if (state == SocketState.connected) {
-        debugPrint('[Connect] ✓ Connected → checking for a resumable session');
+        logD('[Connect]', '✓ Connected → checking for a resumable session');
         _timeoutTimer?.cancel();
         setState(() => _stage = 1);
         _attemptSilentResume();
+      } else if (state == SocketState.disconnected &&
+          socketService.lastConnectFailure == ConnectFailure.authRejected) {
+        // No point burning the full 10s timeout, and no point letting
+        // socket.io retry this every 2s forever — the token will be just as
+        // dead next time. Tear it down and say so.
+        logD('[Connect]', '✗ Pairing rejected by the desk');
+        _timeoutTimer?.cancel();
+        socketService.disconnect();
+        setState(() {
+          _failed = true;
+          _pairingRejected = true;
+        });
       } else if (state == SocketState.disconnected && _stage > 0) {
-        debugPrint('[Connect] ✗ Connection lost during handshake');
+        logD('[Connect]', '✗ Connection lost during handshake');
         setState(() => _errorMsg = 'Connection lost — retrying…');
       }
     });
 
-    debugPrint('[Connect] Starting socket connection...');
+    logD('[Connect]', 'Starting socket connection...');
     socketService.connect(pairing.host, pairing.port, pairing.token);
   }
 
@@ -109,18 +129,17 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
     final resumed = await ref.read(syncServiceProvider).requestResync();
     if (!mounted) return;
     if (resumed) {
-      debugPrint('[Connect] ✓ Session resumed silently → /tables');
-      final syncService = ref.read(syncServiceProvider);
-      syncService.unregisterListeners();
-      syncService.registerListeners();
+      logD('[Connect]', '✓ Session resumed silently → /tables');
+      // registerListeners() is idempotent now — it unregisters itself first.
+      ref.read(syncServiceProvider).registerListeners();
       context.go('/tables');
       return;
     }
-    debugPrint('[Connect] Session needs PIN → /auth');
+    logD('[Connect]', 'Session needs PIN → /auth');
     setState(() => _stage = 2);
     _stageTimer = Timer(const Duration(milliseconds: 500), () {
       if (mounted) {
-        debugPrint('[Connect] Navigating to /auth');
+        logD('[Connect]', 'Navigating to /auth');
         context.go('/auth');
       }
     });
@@ -199,24 +218,20 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                                 width: 64,
                                 height: 64,
                                 decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: _failed
-                                        ? const [
-                                            AppColors.terra,
-                                            AppColors.terraDeep,
-                                          ]
-                                        : const [
-                                            AppColors.terra400,
-                                            AppColors.terra600,
-                                          ],
-                                  ),
+                                  color: _failed
+                                      ? AppColors.terraDeep
+                                      : AppColors.terra500,
                                   shape: BoxShape.circle,
-                                  boxShadow: AppShadows.terraGlow,
                                 ),
                                 child: Icon(
-                                  _failed
-                                      ? Icons.wifi_off_rounded
-                                      : Icons.wifi_tethering,
+                                  // A wifi-off glyph beside "Wi-Fi is not the
+                                  // problem" is the same mixed signal this
+                                  // screen is meant to stop sending.
+                                  _pairingRejected
+                                      ? Icons.link_off_rounded
+                                      : _failed
+                                          ? Icons.wifi_off_rounded
+                                          : Icons.wifi_tethering,
                                   color: Colors.white,
                                   size: 28,
                                 ),
@@ -228,7 +243,10 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                     ),
                     const SizedBox(height: 24),
                     if (_failed) ...[
-                      const Text("Can't reach the server",
+                      Text(
+                          _pairingRejected
+                              ? 'This device needs pairing again'
+                              : "Can't reach the server",
                           style: AppTypography.displayMd,
                           textAlign: TextAlign.center),
                       const SizedBox(height: 14),
@@ -236,39 +254,61 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                         alignment: Alignment.centerLeft,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            _ChecklistItem(
-                                text:
-                                    'Is this phone on the same Wi-Fi as the desktop?'),
-                            _ChecklistItem(
-                                text:
-                                    'Is the Restro POS app running on the desktop?'),
-                            _ChecklistItem(
-                                text:
-                                    'QR codes expire — ask the admin for a fresh one.'),
-                          ],
+                          children: _pairingRejected
+                              ? const [
+                                  _ChecklistItem(
+                                      text:
+                                          'The desk turned this device away — the pairing has expired, was revoked, or the account was switched off.'),
+                                  _ChecklistItem(
+                                      text:
+                                          'Wi-Fi is not the problem. Retrying will not help.'),
+                                  _ChecklistItem(
+                                      text:
+                                          'Ask the admin to open Devices on the desktop and show you a fresh QR.'),
+                                ]
+                              : const [
+                                  _ChecklistItem(
+                                      text:
+                                          'Is this phone on the same Wi-Fi as the desktop?'),
+                                  _ChecklistItem(
+                                      text:
+                                          'Is the Restro POS app running on the desktop?'),
+                                  _ChecklistItem(
+                                      text:
+                                          'QR codes expire — ask the admin for a fresh one.'),
+                                ],
                         ),
                       ),
                       const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _CardButton(
-                              label: 'Scan new QR',
-                              filled: false,
-                              onTap: _cancelToScan,
-                            ),
+                      if (_pairingRejected)
+                        SizedBox(
+                          width: double.infinity,
+                          child: _CardButton(
+                            label: 'Scan new QR',
+                            filled: true,
+                            onTap: _cancelToScan,
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _CardButton(
-                              label: 'Try again',
-                              filled: true,
-                              onTap: _retry,
+                        )
+                      else
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _CardButton(
+                                label: 'Scan new QR',
+                                filled: false,
+                                onTap: _cancelToScan,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _CardButton(
+                                label: 'Try again',
+                                filled: true,
+                                onTap: _retry,
+                              ),
+                            ),
+                          ],
+                        ),
                     ] else ...[
                       Text('CONNECTING TO',
                           style: AppTypography.micro
@@ -313,11 +353,21 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                         ],
                       ),
                       const SizedBox(height: 20),
-                      Pressable(
-                        onTap: _cancelToScan,
-                        child: Text('Cancel',
-                            style: AppTypography.caption
-                                .copyWith(color: context.palette.ink50)),
+                      // This was a bare `Pressable(child: Text('Cancel'))` —
+                      // a tap target the size of 12px of text, roughly
+                      // 60x16pt, against this app's own declared minimum of
+                      // 48. It is also the *only* way out while the connect
+                      // is still spinning: the "Scan new QR / Try again" pair
+                      // above only appears once it has given up. A waiter
+                      // whose Wi-Fi died mid-shift is stuck on this screen
+                      // until they hit it, one-handed, in a hurry.
+                      SizedBox(
+                        width: double.infinity,
+                        child: _CardButton(
+                          label: 'Cancel',
+                          filled: false,
+                          onTap: _cancelToScan,
+                        ),
                       ),
                     ],
                   ],
@@ -367,6 +417,11 @@ class _CardButton extends StatelessWidget {
     return Pressable(
       onTap: onTap,
       child: Container(
+        // Padding alone left this at ~46px, and it shrinks further at small
+        // text scales. The floor is explicit now.
+        constraints: const BoxConstraints(
+          minHeight: AppTouchTargets.minimum,
+        ),
         padding: const EdgeInsets.symmetric(vertical: 13),
         alignment: Alignment.center,
         decoration: BoxDecoration(

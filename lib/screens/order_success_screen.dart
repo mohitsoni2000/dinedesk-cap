@@ -143,8 +143,9 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                             const SizedBox(height: 8),
                             KineticKotNumber(
 
-                              number: int.tryParse(ref
-                                      .watch(lastKotIdProvider)
+                              number: int.tryParse((ref
+                                              .watch(lastKotIdProvider) ??
+                                          '')
                                       .replaceAll(RegExp(r'[^0-9]'), '')) ??
                                   0,
                               fontSize: 64,

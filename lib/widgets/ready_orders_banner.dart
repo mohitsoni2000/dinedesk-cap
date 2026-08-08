@@ -85,15 +85,10 @@ class _ReadyCardState extends State<_ReadyCard>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
+        // The banner sits inline in the page, so it needs no shadow at all —
+        // its own fill already separates it.
         color: context.palette.alertDeep,
         borderRadius: BorderRadius.all(AppRadii.md),
-        boxShadow: [
-          BoxShadow(
-            color: context.palette.scrim,
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
       ),
       child: Row(
         children: [

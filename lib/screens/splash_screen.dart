@@ -1,11 +1,8 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../motion/motion.dart';
 import '../services/session_service.dart';
 import '../theme/tokens.dart';
-import '../widgets/liquid_mesh_background.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -13,27 +10,11 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen> {
   bool _showLogo = false;
   bool _showWordmark = false;
   bool _showOperator = false;
   bool _showVersion = false;
-
-  late final AnimationController _pulseCtrl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1800),
-  );
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (AppPerf.reduceEffects(context)) {
-      _pulseCtrl.stop();
-    } else if (!_pulseCtrl.isAnimating) {
-      _pulseCtrl.repeat(reverse: true);
-    }
-  }
 
   @override
   void initState() {
@@ -71,41 +52,23 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   @override
-  void dispose() {
-    _pulseCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     // The only screen with no Scaffold of its own — its text needs a Material
     // ancestor like everything else.
     return Material(
       type: MaterialType.transparency,
-      child: LiquidMeshBackground(
-        dark: true,
-        child: Stack(
+      // Always the dark brand colour, whatever the operator's theme — the
+      // launch screen is the same for everyone. `SizedBox.expand` keeps the
+      // Stack filling the screen; a bare ColoredBox would let it shrink-wrap.
+      child: ColoredBox(
+        color: AppColors.night,
+        child: SizedBox.expand(
+          child: Stack(
           children: [
-            const Positioned.fill(
-              child: IgnorePointer(child: _GrainOverlay()),
-            ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: Alignment.center,
-                      radius: 1.0,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.45),
-                      ],
-                      stops: const [0.55, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            // Two full-screen overlays used to sit here: an animated film
+            // grain (800 drawRects every 80ms) and a radial vignette. Both
+            // are gone — the launch screen is the background colour, the
+            // logo, and the wordmark.
             DepthParallaxStack(
               maxOffset: 8,
               layers: [
@@ -116,60 +79,37 @@ class _SplashScreenState extends State<SplashScreen>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        AnimatedBuilder(
-                          animation: _pulseCtrl,
-                          builder: (_, child) {
-                            final glow = 0.3 + 0.7 * _pulseCtrl.value;
-                            return Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Container(
-                                  width: 110,
-                                  height: 110,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: AppColors.terra400
-                                            .withValues(alpha: 0.18 * glow),
-                                        blurRadius: 40 * glow,
-                                        spreadRadius: 8 * glow,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                child!,
-                              ],
-                            );
-                          },
-                          child: SpringBuilder(
-                            from: 0.0,
-                            to: _showLogo ? 1.0 : 0.0,
-                            spring: RestroSprings.bouncy,
-                            builder: (_, t, child) => Opacity(
-                              opacity: t.clamp(0.0, 1.0),
-                              child: Transform.scale(
-                                scale: 0.75 + 0.25 * t,
-                                child: child,
-                              ),
+                        // The logo used to sit inside a 110px circle breathing
+                        // a terra halo on a 1.8s loop — an animated blur
+                        // radius and spread, so a fresh blurred draw every
+                        // frame of the launch screen. The entry spring below
+                        // is the whole of the animation now.
+                        SpringBuilder(
+                          from: 0.0,
+                          to: _showLogo ? 1.0 : 0.0,
+                          spring: RestroSprings.bouncy,
+                          builder: (_, t, child) => Opacity(
+                            opacity: t.clamp(0.0, 1.0),
+                            child: Transform.scale(
+                              scale: 0.75 + 0.25 * t,
+                              child: child,
                             ),
-                            child: Hero(
-                              tag: HeroTags.appLogo,
-                              child: Container(
-                                width: 88,
-                                height: 88,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.logoBg,
-                                  borderRadius: BorderRadius.all(AppRadii.lg),
-                                  boxShadow: AppShadows.logoGlow,
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(10),
-                                  child: Image.asset(
-                                    'assets/images/appicon_cream.png',
-                                    fit: BoxFit.contain,
-                                  ),
+                          ),
+                          child: Hero(
+                            tag: HeroTags.appLogo,
+                            child: Container(
+                              width: 88,
+                              height: 88,
+                              decoration: const BoxDecoration(
+                                color: AppColors.logoBg,
+                                borderRadius: BorderRadius.all(AppRadii.lg),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: Padding(
+                                padding: const EdgeInsets.all(10),
+                                child: Image.asset(
+                                  'assets/images/appicon_cream.png',
+                                  fit: BoxFit.contain,
                                 ),
                               ),
                             ),
@@ -257,78 +197,10 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
-}
-
-class _GrainOverlay extends StatefulWidget {
-  const _GrainOverlay();
-  @override
-  State<_GrainOverlay> createState() => _GrainOverlayState();
-}
-
-class _GrainOverlayState extends State<_GrainOverlay>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 80),
-  );
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 800 drawRect calls every 80ms — the single most expensive thing on
-    // screen during launch, and it lands exactly when the app is trying to
-    // feel fast. Stop the ticker *and* skip the paint entirely.
-    if (AppPerf.reduceEffects(context)) {
-      _ctrl.stop();
-    } else if (!_ctrl.isAnimating) {
-      _ctrl.repeat();
-    }
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (AppPerf.reduceEffects(context)) return const SizedBox.shrink();
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, __) => CustomPaint(
-        painter: _GrainPainter(seed: _ctrl.value),
-      ),
-    );
-  }
-}
-
-class _GrainPainter extends CustomPainter {
-  final double seed;
-  _GrainPainter({required this.seed});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rng = math.Random((seed * 1000).toInt());
-    final paint = Paint()..style = PaintingStyle.fill;
-    const grainCount = 800;
-    for (int i = 0; i < grainCount; i++) {
-      final x = rng.nextDouble() * size.width;
-      final y = rng.nextDouble() * size.height;
-      final opacity = rng.nextDouble() * 0.045;
-      paint.color = Colors.white.withValues(alpha: opacity);
-      canvas.drawRect(
-        Rect.fromLTWH(x, y, 1.2, 1.2),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _GrainPainter old) => old.seed != seed;
 }

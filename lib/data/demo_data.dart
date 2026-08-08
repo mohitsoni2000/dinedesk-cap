@@ -1,6 +1,10 @@
 
 
 Map<String, dynamic> buildDemoSyncPayload() {
+  final today = DateTime.now();
+  final businessDate = '${today.year}-'
+      '${today.month.toString().padLeft(2, '0')}-'
+      '${today.day.toString().padLeft(2, '0')}';
   final now = DateTime.now();
   String isoMinutesAgo(int minutes) =>
       now.subtract(Duration(minutes: minutes)).toIso8601String();
@@ -32,8 +36,9 @@ Map<String, dynamic> buildDemoSyncPayload() {
         'floor_id': 'floor_1',
         'order_total': 800,
         'active_order_id': 'order_1',
-        'operator_id': 'op_demo',
-        'waiter_name': 'Demo Waiter',
+        'operators': [
+          {'operator_id': 'op_demo', 'operator_name': 'Demo Waiter'},
+        ],
         'order_item_count': 4,
         'kot_count': 1,
         'oldest_kot_minutes': 6,
@@ -358,6 +363,7 @@ Map<String, dynamic> buildDemoSyncPayload() {
         'status': 'open',
         'total': 800,
         'created_at': isoMinutesAgo(6),
+        'business_date': businessDate,
         'created_by': 'op_demo',
         'items': [
           {
@@ -409,6 +415,7 @@ Map<String, dynamic> buildDemoSyncPayload() {
         'status': 'open',
         'total': 1200,
         'created_at': isoMinutesAgo(14),
+        'business_date': businessDate,
         'created_by': 'op_other',
         'items': [
           {

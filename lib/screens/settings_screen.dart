@@ -350,9 +350,12 @@ class SettingsScreen extends ConsumerWidget {
           children: [
             const Text('Performance mode', style: AppTypography.headline),
             const SizedBox(height: 4),
+            // The blur is gone from the app entirely, so this no longer
+            // offers to turn it off. What's left to govern is motion and how
+            // far ahead long lists prefetch.
             const Text(
-                'Turn off ambient animations and blur to keep older devices '
-                'responsive.',
+                'Turn off animations and shorten list prefetch to keep older '
+                'devices responsive.',
                 style: AppTypography.caption),
             const SizedBox(height: 24),
             Consumer(builder: (context, ref, _) {
@@ -399,7 +402,7 @@ class SettingsScreen extends ConsumerWidget {
                       value: PerfMode.performance,
                       icon: Icons.bolt_outlined,
                       label: 'Performance',
-                      subtitle: 'Fastest · no ambient animation or blur',
+                      subtitle: 'Fastest · no ambient animation',
                     ),
                     Divider(height: 1, color: context.palette.ink10),
                     option(
@@ -443,11 +446,7 @@ class SettingsScreen extends ConsumerWidget {
               width: 64,
               height: 64,
               decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppColors.terra400, AppColors.terra600],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                color: AppColors.terra500,
                 borderRadius: BorderRadius.all(AppRadii.md),
               ),
               child: const Icon(Icons.restaurant_menu,

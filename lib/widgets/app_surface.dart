@@ -28,15 +28,33 @@ class AppSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Same shape as [AppCard]: the fill is a [Material] so that a ListTile
+    // inside finds one *above* the opaque surface colour and its ink splash
+    // is visible. Painting the colour with a plain Container left the nearest
+    // Material behind the card, so settings rows gave no ripple at all and
+    // Flutter asserted on every build.
+    //
+    // The shadow moves to an outer Container — Material would otherwise clip
+    // it — and the border to an inner one, since Material has no border.
     final box = Container(
-      padding: padding,
       decoration: BoxDecoration(
-        color: tint ?? context.palette.surface,
         borderRadius: borderRadius,
-        border: border ?? Border.all(color: context.palette.hairline, width: 1),
         boxShadow: shadow ?? AppShadows.cardFor(context),
       ),
-      child: child,
+      child: Material(
+        color: tint ?? context.palette.surface,
+        borderRadius: borderRadius,
+        clipBehavior: Clip.antiAlias,
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            border:
+                border ?? Border.all(color: context.palette.hairline, width: 1),
+          ),
+          child: child,
+        ),
+      ),
     );
     if (onTap == null) return box;
     return Pressable(onTap: onTap, child: box);

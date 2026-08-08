@@ -14,6 +14,12 @@ class CounterAxisMap {
   });
 
   final double weight;
+
+  /// [soft], [wonk], [opticalSize] and [italicSlant] describe variable-font
+  /// axes that the renderer no longer applies — Cormorant is loaded as static
+  /// weights here, and the slant in particular was making the bill total lean
+  /// once the amount crossed a threshold. Only [weight] reaches the TextStyle.
+  /// The fields stay so the amount→axis table reads as one thing.
   final double soft;
   final double wonk;
   final double opticalSize;
@@ -98,8 +104,19 @@ class KineticRupeeCounter extends StatelessWidget {
             color: resolvedColor,
             height: 1.0,
             letterSpacing: 0,
-            fontStyle:
-                axes.italicSlant > 0.5 ? FontStyle.italic : FontStyle.normal,
+            // Upright, always.
+            //
+            // The slant used to be driven by the amount — cross a threshold
+            // and the bill total leaned over. Italic serif numerals are
+            // markedly harder to read than upright ones, and this renders the
+            // number the operator reads aloud to the customer, sitting
+            // directly under a "Subtotal" in plain upright sans. A decorative
+            // axis is the wrong thing to spend on the one figure that has to
+            // be unambiguous.
+            //
+            // The weight axis stays: heavier for larger amounts reads as
+            // emphasis rather than as a different typeface.
+            fontStyle: FontStyle.normal,
             fontFeatures: const <FontFeature>[
               FontFeature.tabularFigures(),
             ],

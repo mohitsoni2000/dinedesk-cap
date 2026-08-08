@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/money.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
 import '../motion/motion.dart';
@@ -23,8 +24,26 @@ class OrderReviewScreen extends ConsumerStatefulWidget {
   final String tableId;
 
   final bool isRoom;
+
+  /// Skips the interactive cart-review UI and fires the same "Send to
+  /// Kitchen" flow the primary button would, the moment this screen mounts —
+  /// used by tap targets in [OrderBuilderScreen] that are explicitly a
+  /// direct-send action (not a "review my order" action) so the waiter never
+  /// has to look at this screen and tap Send again. Falls back to the normal
+  /// interactive screen if the auto-fired send doesn't succeed (PIN
+  /// cancelled, validation failure, network error, etc.) so nothing is lost
+  /// on failure — the waiter lands somewhere they can see what happened and
+  /// retry or edit.
+  ///
+  /// This does not change the ordinary "Review" entry point, which stays a
+  /// full cart editor and action hub (Hold / Only KOT / KOT + Bill / Quick
+  /// Settle, quantity & note editing, customer link, order type).
+  final bool autoSend;
   const OrderReviewScreen(
-      {super.key, required this.tableId, this.isRoom = false});
+      {super.key,
+      required this.tableId,
+      this.isRoom = false,
+      this.autoSend = false});
   @override
   ConsumerState<OrderReviewScreen> createState() => _OrderReviewScreenState();
 }
@@ -59,7 +78,38 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     super.initState();
     _notes.text = ref.read(orderNotesProvider);
     _notesNotifier = ref.read(orderNotesProvider.notifier);
-    _scheduleTotalsPreview(ref.read(cartProvider));
+    if (widget.autoSend) {
+      // Interactive UI is skipped entirely (see build()) while this is in
+      // flight, so there's no cart to preview totals for yet.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _runAutoSend());
+    } else {
+      _scheduleTotalsPreview(ref.read(cartProvider));
+    }
+  }
+
+  // Guards against the post-frame callback firing twice (e.g. a hot-reload
+  // or a rebuild before the frame callback runs).
+  bool _autoSendKicked = false;
+
+  // Flips once the auto-fired send didn't end in leaving this screen (PIN
+  // cancelled, empty cart, or the flow itself failed) — build() then falls
+  // back to the normal interactive review UI instead of an empty spinner
+  // forever, and the failure toast from _submitWithFlow is already on
+  // screen explaining why.
+  bool _autoSendFailed = false;
+
+  Future<void> _runAutoSend() async {
+    if (_autoSendKicked || !mounted) return;
+    _autoSendKicked = true;
+    if (ref.read(cartProvider).isEmpty) {
+      if (mounted) setState(() => _autoSendFailed = true);
+      return;
+    }
+    await _submit();
+    // _submit() only returns without navigating away when it didn't
+    // succeed — success routes to _successRoute/_builderRoute and unmounts
+    // this screen.
+    if (mounted) setState(() => _autoSendFailed = true);
   }
 
   bool _submitted = false;
@@ -71,6 +121,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   // response instead of creating a second order. Cleared once that attempt
   // actually succeeds (_kotSentOrderId gets set) or the flow resets.
   String? _pendingOrderRequestId;
+
+  // Same contract as [_pendingOrderRequestId], but for the kot:send that
+  // follows it. KotQueueService no longer mints this id itself — a retry tap
+  // after a timeout used to produce a fresh one, which the desk could not
+  // recognise as a duplicate, so the kitchen got the round twice.
+  String? _pendingKotRequestId;
 
   bool _running = false;
 
@@ -175,11 +231,11 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         return room.activeOrderId;
       }
       final active = ref.read(activeOrdersProvider).where((order) {
-        return order['room_id']?.toString() == widget.tableId &&
-            order['status']?.toString() != 'paid' &&
-            order['status']?.toString() != 'cancelled';
+        return order.roomId == widget.tableId &&
+            order.status != 'paid' &&
+            order.status != 'cancelled';
       }).firstOrNull;
-      return active?['id']?.toString();
+      return active?.id;
     }
     if (_orderType != _OrderType.dineIn) return null;
     final table = ref
@@ -190,11 +246,11 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       return table.activeOrderId;
     }
     final active = ref.read(activeOrdersProvider).where((order) {
-      return order['table_id']?.toString() == widget.tableId &&
-          order['status']?.toString() != 'paid' &&
-          order['status']?.toString() != 'cancelled';
+      return order.tableId == widget.tableId &&
+          order.status != 'paid' &&
+          order.status != 'cancelled';
     }).firstOrNull;
-    return active?['id']?.toString();
+    return active?.id;
   }
 
   String? _orderIdFromResponse(
@@ -211,7 +267,10 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final label = order is Map
         ? (order['kot_number']?.toString() ?? order['order_number']?.toString())
         : null;
-    ref.read(lastKotIdProvider.notifier).state = label ?? generateKotId();
+    // No client-side fallback. generateKotId() used to mint "K-1" here, so the
+    // success screen showed the waiter a KOT number that existed nowhere on
+    // the desk. Null renders as "pending" instead.
+    ref.read(lastKotIdProvider.notifier).state = label;
   }
 
   Future<Map<String, dynamic>> _createOrUpdateOrder({
@@ -284,11 +343,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       }
 
       ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.pending);
-      Map<String, dynamic> kotResponse;
+      final kotRequestId = _pendingKotRequestId ??= newRequestId();
+      KotSendResult kotResponse;
       try {
-        kotResponse = await ref
-            .read(kotQueueProvider)
-            .sendKot(socketService, <String, dynamic>{'order_id': orderId});
+        kotResponse = await ref.read(kotQueueProvider).sendKot(
+              socketService,
+              <String, dynamic>{'order_id': orderId},
+              clientRequestId: kotRequestId,
+            );
       } catch (_) {
         // Not sent, not queued — leave _kotSentOrderId unset so a retry tap
         // actually resends the KOT instead of silently treating it as done.
@@ -298,13 +360,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           errorMessage: 'Failed to send KOT to kitchen — please retry',
         );
       }
-      if (kotResponse['kind'] == 'queued') {
+      if (kotResponse.isQueued) {
         // Durably queued on-device for auto-flush on reconnect — mark this
         // order's KOT as handled so a retry tap doesn't queue a duplicate
         // (of either the KOT itself or, via a fresh client_request_id, the
         // order's line items).
         _kotSentOrderId = orderId;
         _pendingOrderRequestId = null;
+        _pendingKotRequestId = null;
         return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.kotSend,
           errorMessage:
@@ -312,22 +375,27 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               'automatically the moment we reconnect.',
         );
       }
-      if (kotResponse['kind'] == 'error') {
-        // Same as the exception case above — nothing was sent or queued.
+      if (kotResponse.isRejected) {
+        // The desk understood us and said no. Nothing was sent or queued, and
+        // the queue has quarantined it rather than dropping it — show the
+        // desk's own reason instead of a generic retry prompt.
         ref.read(cartProvider.notifier).setSyncStatusFailed();
         return _OrderFlowStepResult(
           failedStep: _OrderFlowStep.kotSend,
-          errorMessage: 'Failed to send KOT to kitchen — please retry',
+          errorMessage: kotResponse.message?.isNotEmpty == true
+              ? 'Kitchen refused this KOT: ${kotResponse.message}'
+              : 'Failed to send KOT to kitchen — please retry',
         );
       }
       _kotSentOrderId = orderId;
       _pendingOrderRequestId = null;
+      _pendingKotRequestId = null;
       ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.synced);
       ref
           .read(syncServiceProvider)
-          .applyOrderAck(kotResponse, includeHistory: true);
+          .applyOrderAck(kotResponse.ack, includeHistory: true);
 
-      _rememberKotLabel(kotResponse);
+      _rememberKotLabel(kotResponse.ack);
 
       // Lock-screen / Dynamic Island: "Preparing" card for this order.
       String liveName = widget.tableId;
@@ -473,6 +541,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         _submitted = true;
         _kotSentOrderId = null;
         _pendingOrderRequestId = null;
+        _pendingKotRequestId = null;
         ref.read(cartProvider.notifier).clear();
         ref.read(orderNotesProvider.notifier).state = '';
         if (returnToBuilder) {
@@ -688,7 +757,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           children: [
             Text(line.item.name, style: AppTypography.headline),
             Text(
-              '×${line.qty}  ·  ₹${line.lineTotal.toStringAsFixed(0)}',
+              '×${line.qty}  ·  ${formatRupeesCompact(line.lineTotal)}',
               style: AppTypography.caption,
             ),
             const SizedBox(height: 20),
@@ -772,11 +841,21 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.autoSend && !_autoSendFailed) {
+      // Skip the cart UI entirely — _runAutoSend() (kicked off from
+      // initState) is about to show the same "Sending to kitchen…" overlay
+      // the manual Send button uses. Keeping this frame visually minimal
+      // avoids flashing the full interactive review screen first.
+      return ColoredBox(
+        color: context.palette.paper,
+        child: const Scaffold(backgroundColor: Colors.transparent),
+      );
+    }
     final cart = ref.watch(cartProvider);
     ref.listen<List<CartLine>>(cartProvider, (previous, next) {
       _scheduleTotalsPreview(next);
     });
-    final total = cart.fold(0.0, (s, l) => s + l.lineTotal);
+    final total = cart.map((l) => l.lineTotal).sumMoney();
     final serverTotal = (_serverTotals?['totalAmount'] as num?)?.toDouble();
     final byKitchen = <String, List<CartLine>>{};
     for (final l in cart) {
@@ -808,9 +887,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
             ) ||
             activeOrders.any(
               (o) =>
-                  o['room_id']?.toString() == widget.tableId &&
-                  o['status']?.toString() != 'paid' &&
-                  o['status']?.toString() != 'cancelled',
+                  o.roomId == widget.tableId &&
+                  o.status != 'paid' &&
+                  o.status != 'cancelled',
             )
         : tables.any(
               (t) =>
@@ -820,9 +899,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
             ) ||
             activeOrders.any(
               (o) =>
-                  o['table_id']?.toString() == widget.tableId &&
-                  o['status']?.toString() != 'paid' &&
-                  o['status']?.toString() != 'cancelled',
+                  o.tableId == widget.tableId &&
+                  o.status != 'paid' &&
+                  o.status != 'cancelled',
             );
 
     final activeBillCount = widget.isRoom
@@ -945,23 +1024,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
             ),
             const SizedBox(height: 12),
           ],
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: const BorderRadius.all(AppRadii.md),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.terra400.withValues(alpha: 0.35),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: LiquidPrimaryButton(
-              label: 'Send to Kitchen',
-              fullWidth: true,
-              leadingIcon: Icons.restaurant_menu,
-              onPressed: _submit,
-            ),
+          // The wrapping Container existed only to cast a terra glow under
+          // the button.
+          LiquidPrimaryButton(
+            label: 'Send to Kitchen',
+            fullWidth: true,
+            leadingIcon: Icons.restaurant_menu,
+            onPressed: _submit,
           ),
           const SizedBox(height: 8),
           Row(
@@ -1331,9 +1400,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                             const SizedBox(height: 12),
                             Builder(
                               builder: (_) {
-                                double foodTotal = 0;
-                                double liquorTotal = 0;
-                                double bevTotal = 0;
+                                var foodTotal = Money.zero;
+                                var liquorTotal = Money.zero;
+                                var bevTotal = Money.zero;
                                 for (final l in cart) {
                                   final type =
                                       l.item.kitchenSection.toLowerCase();
@@ -1348,9 +1417,11 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                   }
                                 }
                                 final showLiquor =
-                                    liquorTotal > 0 && flags.liquorBilling;
+                                    liquorTotal.isPositive &&
+                                        flags.liquorBilling;
                                 final showBev =
-                                    bevTotal > 0 && flags.beveragesBilling;
+                                    bevTotal.isPositive &&
+                                        flags.beveragesBilling;
 
                                 return AppCard(
                                   child: Column(
@@ -1444,7 +1515,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                             child: Material(
                                               color: Colors.transparent,
                                               child: KineticRupeeCounter(
-                                                amount: serverTotal ?? total,
+                                                amount: serverTotal ??
+                                                    total.asRupeesForDisplay,
                                                 fontSize: 24,
                                                 color: context.palette.ink,
                                               ),

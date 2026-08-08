@@ -17,7 +17,7 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final op = ref.watch(operatorProvider);
     final opName = op?.name ?? '';
-    final opUsername = op?.username ?? '';
+    final opUsername = op?.id ?? '';
     final opRole = op?.role ?? '';
     final opShift = op?.shift ?? '';
     final stats = ref.watch(operatorStatsProvider);
@@ -54,9 +54,7 @@ class ProfileScreen extends ConsumerWidget {
                             width: 54,
                             height: 54,
                             decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [AppColors.terra, AppColors.terraDeep],
-                              ),
+                              color: AppColors.terra,
                               shape: BoxShape.circle,
                             ),
                             child: Center(

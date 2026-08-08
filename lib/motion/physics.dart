@@ -87,56 +87,82 @@ class JellyTap extends StatefulWidget {
 
 class _JellyTapState extends State<JellyTap>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController.unbounded(
-    vsync: this,
-    value: 0,
-  );
+  /// Created on first press, not on mount.
+  ///
+  /// The tables floor puts one JellyTap per tile. With `late final ... =`
+  /// the controller was constructed the first time `build` touched it, which
+  /// is immediately — so a 60-tile floor allocated 60 controllers and 60
+  /// ticker registrations, and churned them on every scroll recycle. Nothing
+  /// squashes until a finger lands, so nothing needs to exist until then.
+  AnimationController? _c;
+
+  AnimationController _ensure() {
+    final existing = _c;
+    if (existing != null) return existing;
+    final created = AnimationController.unbounded(vsync: this, value: 0);
+    // The rebuild is driven by setState rather than an always-mounted
+    // AnimatedBuilder, so an untouched tile carries no listener and no
+    // extra element in the tree.
+    created.addListener(_onTick);
+    _c = created;
+    return created;
+  }
+
+  void _onTick() {
+    if (mounted) setState(() {});
+  }
 
   void _down(_) {
     if (!widget.enabled) return;
     widget.onPressFeedback?.call();
     if (reduceMotion(context)) return;
-    _c.springTo(1, spring: RestroSprings.soft);
+    _ensure().springTo(1, spring: RestroSprings.soft);
   }
 
   void _release({bool cancelled = false}) {
     if (!widget.enabled) return;
     if (reduceMotion(context)) {
-      _c.value = 0;
+      _c?.value = 0;
     } else {
       // Negative velocity throws the spring past 0 → the jelly wobble.
-      _c.springTo(0, spring: RestroSprings.bouncy, velocity: -9);
+      _ensure().springTo(0, spring: RestroSprings.bouncy, velocity: -9);
     }
     if (!cancelled) widget.onTap?.call();
   }
 
   @override
   void dispose() {
-    _c.dispose();
+    _c?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final controller = _c;
+    // At rest — which is every tile except the one under a thumb — the child
+    // is returned untransformed. No AnimatedBuilder, no Matrix4 allocation,
+    // no extra render object.
+    final Widget body = controller == null || controller.value == 0
+        ? widget.child
+        : Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..scaleByDouble(
+                1 + widget.amount * controller.value.clamp(-1.5, 1.5),
+                1 - widget.amount * controller.value.clamp(-1.5, 1.5),
+                1,
+                1,
+              ),
+            child: widget.child,
+          );
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: _down,
       onTapUp: (_) => _release(),
       onTapCancel: () => _release(cancelled: true),
       onLongPress: widget.onLongPress,
-      child: AnimatedBuilder(
-        animation: _c,
-        child: widget.child,
-        builder: (context, child) {
-          final v = _c.value.clamp(-1.5, 1.5);
-          return Transform(
-            alignment: Alignment.center,
-            transform: Matrix4.identity()
-              ..scale(1 + widget.amount * v, 1 - widget.amount * v),
-            child: child,
-          );
-        },
-      ),
+      child: body,
     );
   }
 }
@@ -482,8 +508,17 @@ class _TiltOnTouchState extends State<TiltOnTouch>
 
 // ──────────────────────────────────────────────────────────────── Shimmer ──
 
-/// Lightweight skeleton shimmer (no packages). Wrap grey placeholder shapes.
-class Shimmer extends StatefulWidget {
+/// Flat skeleton tint. Wrap grey placeholder shapes.
+///
+/// This was a sweeping shimmer: a [ShaderMask] over a three-stop
+/// [LinearGradient] whose transform was driven by a repeating controller, so
+/// a new shader was built and uploaded on every frame for every placeholder
+/// on screen. It already had a flat fallback for reduced motion — that
+/// fallback is now the only path, and the ticker is gone with it.
+///
+/// [highlightColor] and [period] are retained so the call sites keep reading
+/// the way they did; there is no highlight to sweep and nothing to time.
+class Shimmer extends StatelessWidget {
   const Shimmer({
     required this.child,
     this.baseColor,
@@ -498,70 +533,15 @@ class Shimmer extends StatefulWidget {
   final Duration period;
 
   @override
-  State<Shimmer> createState() => _ShimmerState();
-}
-
-class _ShimmerState extends State<Shimmer>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: widget.period);
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (reduceMotion(context)) {
-      _c.stop();
-    } else if (!_c.isAnimating) {
-      _c.repeat();
-    }
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final base = widget.baseColor ??
+    final base = baseColor ??
         (dark ? const Color(0x14F5EEE3) : const Color(0x0D1A130C));
-    final hi = widget.highlightColor ??
-        (dark ? const Color(0x29F5EEE3) : const Color(0x1F1A130C));
-    if (reduceMotion(context)) {
-      return ColorFiltered(
-        colorFilter: ColorFilter.mode(base, BlendMode.srcATop),
-        child: widget.child,
-      );
-    }
-    return AnimatedBuilder(
-      animation: _c,
-      child: widget.child,
-      builder: (context, child) => ShaderMask(
-        blendMode: BlendMode.srcATop,
-        shaderCallback: (rect) {
-          final dx = (_c.value * 2 - 0.5) * rect.width * 2;
-          return LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: [base, hi, base],
-            stops: const [0.35, 0.5, 0.65],
-            transform: _Slide(dx),
-          ).createShader(rect);
-        },
-        child: child,
-      ),
+    return ColorFiltered(
+      colorFilter: ColorFilter.mode(base, BlendMode.srcATop),
+      child: child,
     );
   }
-}
-
-class _Slide extends GradientTransform {
-  const _Slide(this.dx);
-  final double dx;
-  @override
-  Matrix4 transform(Rect bounds, {TextDirection? textDirection}) =>
-      Matrix4.translationValues(dx - bounds.width, 0, 0);
 }
 
 // ───────────────────────────────────────────────────────── AttentionPulse ──
@@ -609,23 +589,19 @@ class _AttentionPulseState extends State<AttentionPulse>
 
   @override
   Widget build(BuildContext context) {
-    final glow = widget.glowColor ?? const Color(0x331FA455);
+    // `glowColor` is retained on the widget for source compatibility with the
+    // call sites that still pass it; there is no glow to colour.
     return AnimatedBuilder(
       animation: _c,
       child: widget.child,
       builder: (context, child) {
         final t = Curves.easeInOut.transform(_c.value);
-        return Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            boxShadow: [
-              BoxShadow(color: glow, blurRadius: 4 + 8 * t, spreadRadius: 4 * t),
-            ],
-          ),
-          child: Transform.scale(
-            scale: 1 + (widget.scale - 1) * t,
-            child: child,
-          ),
+        // The pulse is a scale now. It used to also breathe a coloured glow
+        // (a BoxShadow whose blur and spread both animated, so the shadow was
+        // re-blurred every frame); the scale alone reads as "look here".
+        return Transform.scale(
+          scale: 1 + (widget.scale - 1) * t,
+          child: child,
         );
       },
     );

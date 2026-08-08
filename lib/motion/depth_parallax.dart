@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
+import '../theme/tokens.dart';
+
 @immutable
 class DepthLayer {
   const DepthLayer({
@@ -55,7 +57,11 @@ class _DepthParallaxStackState extends State<DepthParallaxStack>
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    final reducedMotion = MediaQuery.of(context).disableAnimations;
+    // AppPerf, not MediaQuery. Gating on `disableAnimations` alone meant a
+    // detected low-tier device kept the gyroscope stream subscribed and the
+    // ticker running every frame — constant CPU and battery on exactly the
+    // hardware that can least afford it, for an effect nobody can see there.
+    final reducedMotion = AppPerf.reduceEffects(context);
     if (reducedMotion) {
       _sub?.cancel();
       _sub = null;

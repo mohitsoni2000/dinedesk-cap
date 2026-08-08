@@ -1,11 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+// ScrollCacheExtent lives in the rendering layer; widgets.dart doesn't
+// re-export it.
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../data/money.dart';
 import '../data/table_selectors.dart';
 import '../data/recent_tables.dart';
 import '../data/table_open_intent.dart';
@@ -99,9 +103,9 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
       backgroundColor: context.palette.surface,
       displacement: 28,
       child: GridView.builder(
+        scrollCacheExtent: ScrollCacheExtent.pixels(AppPerf.gridCacheExtent),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        cacheExtent: AppPerf.gridCacheExtent,
         gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: context.tableTileExtent,
           mainAxisSpacing: 12,
@@ -192,17 +196,15 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
           .where((tbl) => tbl.serverId == t.serverId)
           .firstOrNull;
       final activeOrderId = tableData?.activeOrderId;
-      final orderMap = activeOrders.where((o) {
-        final id = o['id']?.toString();
-        final tableId = o['table_id']?.toString();
-        return (activeOrderId != null && id == activeOrderId) ||
-            tableId == t.serverId;
+      // activeOrdersProvider holds parsed ServerOrders now, not raw maps —
+      // adoptOrder takes the parsed order directly rather than re-wrapping it
+      // in an ack envelope just to have it re-parsed.
+      final active = activeOrders.where((o) {
+        return (activeOrderId != null && o.id == activeOrderId) ||
+            o.tableId == t.serverId;
       }).firstOrNull;
-      if (orderMap != null) {
-        ref.read(syncServiceProvider).applyOrderAck(
-          {'order': orderMap},
-          includeHistory: true,
-        );
+      if (active != null) {
+        ref.read(syncServiceProvider).adoptOrder(active);
       }
     }
 
@@ -304,6 +306,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                     ),
                     const SizedBox(width: 8),
                     _HeaderIconTile(
+                      label: 'Refresh the floor',
                       onTap: _refresh,
                       child: RotationTransition(
                         turns: _refreshController,
@@ -313,6 +316,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                     ),
                     const SizedBox(width: 8),
                     _HeaderIconTile(
+                      label: _searchOpen ? 'Close search' : 'Search tables',
                       icon: _searchOpen ? Icons.close : Icons.search,
                       onTap: () {
                         ref
@@ -431,22 +435,43 @@ class _HeaderIconTile extends StatelessWidget {
   final IconData? icon;
   final Widget? child;
   final VoidCallback? onTap;
-  const _HeaderIconTile({this.icon, this.child, this.onTap});
+  final String label;
+  const _HeaderIconTile({
+    required this.label,
+    this.icon,
+    this.child,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // The painted tile stays 40x40 — the header would look clumsy at 48 —
+    // but the *touch target* is 48, the app's own declared minimum. These are
+    // refresh and search on the busiest screen in the product, and they were
+    // 40 square, which is what Apple and Material both call too small.
+    //
+    // `label` is required rather than optional: this widget renders nothing
+    // but an icon, so there is no text for a screen reader to fall back on,
+    // and a caller who forgets would ship a silent button.
     return Pressable(
       onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: context.palette.surface,
-          borderRadius: const BorderRadius.all(AppRadii.sm),
-          border: Border.all(color: context.palette.hairline),
+      semanticLabel: label,
+      child: SizedBox(
+        width: AppTouchTargets.minimum,
+        height: AppTouchTargets.minimum,
+        child: Center(
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: context.palette.surface,
+              borderRadius: const BorderRadius.all(AppRadii.sm),
+              border: Border.all(color: context.palette.hairline),
+            ),
+            alignment: Alignment.center,
+            child: child ?? Icon(icon, size: 18, color: context.palette.ink70),
+          ),
         ),
-        alignment: Alignment.center,
-        child: child ?? Icon(icon, size: 18, color: context.palette.ink70),
       ),
     );
   }
@@ -617,8 +642,9 @@ class _StatsStrip extends ConsumerWidget {
     final freeCount = ref.watch(tablesProvider.select(
       (list) => list.where((t) => t.state == TableState.free).length,
     ));
+    // Summed in paise, converted to a double only for the counter animation.
     final billSum = ref.watch(tablesProvider.select(
-      (list) => list.fold<double>(0, (sum, t) => sum + (t.bill ?? 0)),
+      (list) => list.map((t) => t.bill ?? Money.zero).sumMoney(),
     ));
 
     return Row(
@@ -642,8 +668,15 @@ class _StatsStrip extends ConsumerWidget {
         Expanded(
           child: _StatMiniCard(
             label: 'On tables',
-            value: KineticRupeeCounter(
-                amount: billSum, fontSize: 16, color: context.palette.ink),
+            // Matches the two counters beside it: 17px w800 Inter, not 16px
+            // italic Cormorant. Three stats sat in one row and this one used
+            // a different family, a different slant and a different size —
+            // and it was the money, the value that most needs to be read
+            // fastest.
+            value: Text(
+              formatRupeesCompact(billSum),
+              style: AppTypography.title.copyWith(fontWeight: FontWeight.w800),
+            ),
           ),
         ),
       ],
@@ -734,9 +767,7 @@ class _OnlineStrip extends StatelessWidget {
                     width: 26,
                     height: 26,
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppColors.terra300, AppColors.terra],
-                      ),
+                      color: AppColors.terra,
                       shape: BoxShape.circle,
                       border:
                           Border.all(color: context.palette.surface, width: 2),
@@ -1061,63 +1092,22 @@ class _FloorTag extends StatelessWidget {
   }
 }
 
-class _ReadyChip extends StatefulWidget {
+/// A static chip. This was a [StatefulWidget] whose entire reason to exist was
+/// a 1.6s [AnimationController] breathing a green glow behind it — a
+/// [BoxShadow] whose colour, blur and spread all animated, so it re-blurred
+/// every frame, once per ready table, on the tables floor. The green fill says
+/// "ready" on its own.
+class _ReadyChip extends StatelessWidget {
   const _ReadyChip();
-  @override
-  State<_ReadyChip> createState() => _ReadyChipState();
-}
-
-class _ReadyChipState extends State<_ReadyChip>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _glow;
-
-  @override
-  void initState() {
-    super.initState();
-    _glow = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    );
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (AppPerf.reduceEffects(context)) {
-      _glow.stop();
-    } else if (!_glow.isAnimating) {
-      _glow.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _glow.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _glow,
-      builder: (_, child) {
-        final t = _glow.value;
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-          decoration: BoxDecoration(
-            color: AppColors.success,
-            borderRadius: const BorderRadius.all(AppRadii.pill),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.success.withValues(alpha: 0.25 + t * 0.25),
-                blurRadius: 6 + t * 6,
-                spreadRadius: t * 1.5,
-              ),
-            ],
-          ),
-          child: child,
-        );
-      },
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: const BoxDecoration(
+        color: AppColors.success,
+        borderRadius: BorderRadius.all(AppRadii.pill),
+      ),
       child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1311,17 +1301,10 @@ class _TableCard extends ConsumerWidget {
             child: Container(
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
-                gradient: isMine
-                    ? LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          context.palette.tableMineWashStart,
-                          context.palette.tableMineWashEnd,
-                        ],
-                      )
-                    : null,
-                color: isMine ? null : context.palette.surface,
+                // A solid wash, not a diagonal two-stop ramp.
+                color: isMine
+                    ? context.palette.mineWash
+                    : context.palette.surface,
                 borderRadius: const BorderRadius.all(AppRadii.lg),
                 border: Border.all(
                   color: isMine

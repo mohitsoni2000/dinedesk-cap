@@ -8,6 +8,7 @@ import '../data/currency.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
 import 'kot_edit_sheet.dart';
+import 'kot_shift_sheet.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
@@ -103,7 +104,9 @@ class KotHistorySheet extends ConsumerWidget {
                       itemBuilder: (_, i) {
                         final order = tableOrders[i];
                         return _KotCard(
-                            order: order, index: tableOrders.length - i);
+                            order: order,
+                            index: tableOrders.length - i,
+                            tableServerId: tableServerId);
                       },
                     ),
             ),
@@ -126,7 +129,12 @@ class KotHistorySheet extends ConsumerWidget {
 class _KotCard extends ConsumerWidget {
   final HistoryOrder order;
   final int index;
-  const _KotCard({required this.order, required this.index});
+  final String tableServerId;
+  const _KotCard({
+    required this.order,
+    required this.index,
+    required this.tableServerId,
+  });
 
   Color get _statusColor => switch (order.status) {
         OrderStatus.sent => AppColors.success,
@@ -148,8 +156,15 @@ class _KotCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
 
-    final canEdit = ref.watch(flagsProvider).kotEdit && _isEditable;
-    final myId = ref.watch(operatorProvider)?.username;
+    final flags = ref.watch(flagsProvider);
+    final canEdit = flags.kotEdit && _isEditable;
+    // A shift moves fired lines by id. This card covers a whole order, so the
+    // sheet regroups its lines into rounds — with no fired round there is
+    // nothing to move and the action stays hidden.
+    final canShift = flags.kotShift &&
+        _isEditable &&
+        KotShiftSheet.hasShiftableRounds(order);
+    final myId = ref.watch(operatorProvider)?.id;
     final isMine = order.createdBy != null && order.createdBy == myId;
     return Container(
       padding: const EdgeInsets.all(14),
@@ -244,30 +259,68 @@ class _KotCard extends ConsumerWidget {
                             style: AppTypography.caption,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis)),
-                    Text(formatRupeesCompact(line.price * line.qty),
+                    Text(formatRupeesCompact(line.price.times(line.qty)),
                         style: AppTypography.caption),
                   ],
                 ),
               ),
           ],
-          if (canEdit) ...[
+          if (canEdit || canShift) ...[
             const SizedBox(height: 10),
             Divider(height: 1, color: context.palette.ink10),
             const SizedBox(height: 6),
-            GestureDetector(
-              onTap: () => KotEditSheet.show(context, order),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.edit_note, size: 15, color: AppColors.warn),
-                  const SizedBox(width: 4),
-                  Text('Edit KOT',
-                      style: AppTypography.caption
-                          .copyWith(color: AppColors.warn, fontWeight: FontWeight.w600)),
-                ],
-              ),
+            Row(
+              children: [
+                if (canEdit)
+                  _KotCardAction(
+                    icon: Icons.edit_note,
+                    label: 'Edit KOT',
+                    tint: AppColors.warn,
+                    onTap: () => KotEditSheet.show(context, order),
+                  ),
+                if (canEdit && canShift) const SizedBox(width: 16),
+                if (canShift)
+                  _KotCardAction(
+                    icon: Icons.swap_horiz,
+                    label: 'Shift KOT',
+                    tint: AppColors.terra,
+                    onTap: () =>
+                        KotShiftSheet.show(context, order, tableServerId),
+                  ),
+              ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _KotCardAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color tint;
+  final VoidCallback onTap;
+
+  const _KotCardAction({
+    required this.icon,
+    required this.label,
+    required this.tint,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: tint),
+          const SizedBox(width: 4),
+          Text(label,
+              style: AppTypography.caption
+                  .copyWith(color: tint, fontWeight: FontWeight.w600)),
         ],
       ),
     );

@@ -23,10 +23,26 @@ class AppColors {
   static const terraInk = Color(0xFF8A3212);
   static const terraSoft = Color(0xFFFFE3D6);
 
+  // The numbers in these names are tiers, not literal alpha percentages any
+  // more. They are tuned for contrast against `paper` (#F9F5EE) and `card`
+  // (#FFFFFF), measured with the WCAG 2.1 formula:
+  //
+  //   ink    16.92:1 / 18.38:1   AA + AAA
+  //   ink70   6.56:1 /  6.82:1   AA + AAA
+  //   ink50   4.70:1 /  4.82:1   AA        (was 0x80 → 3.40:1, failed)
+  //   ink30   3.40:1 /  3.48:1   AA-large + UI components
+  //                              (was 0x4D → 1.96:1, effectively invisible)
+  //
+  // ink30 is for disabled controls and placeholders only — it does not carry
+  // body text. ink10/ink05 are fills and hairlines, never text.
+  //
+  // This matters more here than in an office app: the operator is reading a
+  // cheap phone at arm's length under restaurant lighting, often with glare,
+  // and may well be over 40 — contrast sensitivity drops with age.
   static const ink = Color(0xFF1A130C);
   static const ink70 = Color(0xB31A130C);
-  static const ink50 = Color(0x801A130C);
-  static const ink30 = Color(0x4D1A130C);
+  static const ink50 = Color(0x991A130C);
+  static const ink30 = Color(0x801A130C);
   static const ink10 = Color(0x1A1A130C);
   static const ink05 = Color(0x0D1A130C);
   static const hairline = Color(0x171A130C);
@@ -198,34 +214,16 @@ class AppPalette {
 
   bool get isDark => brightness == Brightness.dark;
 
-  /// Card shadow tuned per brightness (dark needs deeper, softer shadows).
-  List<BoxShadow> get cardShadow => isDark
-      ? const [
-          BoxShadow(
-              color: Color(0x33000000), blurRadius: 2, offset: Offset(0, 1)),
-          BoxShadow(
-              color: Color(0x59000000),
-              blurRadius: 26,
-              offset: Offset(0, 12),
-              spreadRadius: -16),
-        ]
-      : AppShadows.card;
+  /// Both of these used to be two-layer, per-brightness drops — the dark one
+  /// a 26px spread-inset black, the "mine" one a terra glow. They are the
+  /// single neutral shadow and no shadow respectively now.
+  List<BoxShadow> get cardShadow => AppShadows.flat;
 
-  List<BoxShadow> get mineShadow => isDark
-      ? const [
-          BoxShadow(
-              color: Color(0x4DE05D38),
-              blurRadius: 30,
-              offset: Offset(0, 14),
-              spreadRadius: -18),
-        ]
-      : AppShadows.terraWash;
+  List<BoxShadow> get mineShadow => AppShadows.none;
 
-  LinearGradient get mineWash => LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [tableMineWashStart, tableMineWashEnd],
-      );
+  /// The wash behind a table you're serving is a solid fill, not a diagonal
+  /// two-stop gradient. [tableMineWashStart] is the colour it settles on.
+  Color get mineWash => tableMineWashStart;
 
   TextStyle get caption => AppTypography.caption.copyWith(color: ink70);
   TextStyle get micro => AppTypography.micro.copyWith(color: ink70);
@@ -287,10 +285,13 @@ class AppPalette {
 
   static const dark = AppPalette._(
     brightness: Brightness.dark,
+    // Same tiers as light, same alphas. Against dark `paper` (#17110B) and
+    // `surface` (#281E14): ink70 8.31/7.61, ink50 6.39/5.95, ink30 4.79/4.55
+    // — all AA. Dark mode was already passing at ink50; ink30 was 2.48:1.
     ink: Color(0xFFF5EEE3),
     ink70: Color(0xB3F5EEE3),
-    ink50: Color(0x80F5EEE3),
-    ink30: Color(0x4DF5EEE3),
+    ink50: Color(0x99F5EEE3),
+    ink30: Color(0x80F5EEE3),
     ink10: Color(0x1AF5EEE3),
     ink05: Color(0x0DF5EEE3),
     surface: Color(0xFF281E14),
@@ -451,10 +452,18 @@ class AppTypography {
     letterSpacing: 0.6,
   );
 
+  /// Status badges: FREE / MINE / DIRTY / RESERVED / READY, and the floor
+  /// filter chips.
+  ///
+  /// This was 9.5px, which put the most safety-critical, most-glanced-at
+  /// information in the app at its smallest size — smaller than any body
+  /// text. The waiter already knows the table is called T-01 (27px); what
+  /// they are scanning the floor *for* is the state. 12px with the existing
+  /// w700 and wide tracking still reads as a badge, not as body copy.
   static const TextStyle pill = TextStyle(
     fontFamily: inter,
     fontWeight: FontWeight.w700,
-    fontSize: 9.5,
+    fontSize: 12,
     height: 1.2,
     letterSpacing: 0.4,
   );
@@ -477,72 +486,41 @@ class AppTypography {
 class AppShadows {
   AppShadows._();
 
-  static const List<BoxShadow> card = [
-    BoxShadow(color: Color(0x081A130C), blurRadius: 2, offset: Offset(0, 1)),
-    BoxShadow(
-      color: Color(0x331A130C),
-      blurRadius: 24,
-      offset: Offset(0, 10),
-      spreadRadius: -18,
-    ),
-  ];
+  /// No shadow at all. Surfaces that used to be separated by a coloured glow
+  /// are separated by their fill and their hairline border instead.
+  static const List<BoxShadow> none = <BoxShadow>[];
 
-  static const List<BoxShadow> terraWash = [
-    BoxShadow(
-      color: Color(0x66E05D38),
-      blurRadius: 30,
-      offset: Offset(0, 14),
-      spreadRadius: -18,
-    ),
-  ];
-
-  static const List<BoxShadow> elevated = [
-    BoxShadow(color: Color(0x14140E08), blurRadius: 4, offset: Offset(0, 2)),
-    BoxShadow(color: Color(0x1F140E08), blurRadius: 28, offset: Offset(0, 12)),
-    BoxShadow(color: Color(0x24140E08), blurRadius: 64, offset: Offset(0, 36)),
-  ];
-
-  static const List<BoxShadow> terraGlow = [
-    BoxShadow(color: Color(0x2DE05D38), blurRadius: 6, offset: Offset(0, 2)),
-    BoxShadow(color: Color(0x52E05D38), blurRadius: 20, offset: Offset(0, 8)),
-  ];
-
-  static const List<BoxShadow> logoGlow = [
-    BoxShadow(color: Color(0x4DE05D38), blurRadius: 24, offset: Offset(0, 8)),
-    BoxShadow(color: Color(0x1AE05D38), blurRadius: 48, offset: Offset(0, 20)),
-  ];
-
-  static const List<BoxShadow> glass = [
-    BoxShadow(color: Color(0x08140E08), blurRadius: 1, offset: Offset(0, 0)),
-    BoxShadow(color: Color(0x0A140E08), blurRadius: 8, offset: Offset(0, 3)),
-    BoxShadow(color: Color(0x12140E08), blurRadius: 28, offset: Offset(0, 14)),
-    BoxShadow(color: Color(0x0A140E08), blurRadius: 56, offset: Offset(0, 28)),
-  ];
-
-  /// One shadow instead of three or four. Each [BoxShadow] is its own blurred
-  /// draw, so stacking them is the quiet expense in an otherwise flat design.
+  /// The only shadow in the app: one soft, neutral drop, used where a surface
+  /// genuinely floats over another (sheets, cards, the nav bar). Each
+  /// [BoxShadow] is its own blurred draw, so there is never more than one.
   static const List<BoxShadow> flat = [
     BoxShadow(color: Color(0x1F140E08), blurRadius: 8, offset: Offset(0, 3)),
   ];
 
-  /// [glass], collapsed to [flat] when effects are reduced.
-  static List<BoxShadow> glassFor(BuildContext context) =>
-      AppPerf.reduceEffects(context) ? flat : glass;
+  // The stacked and coloured shadows below are retained as names so call
+  // sites keep compiling, but they are all [flat] or [none] now. The multi-
+  // layer drops (2/24px, 4/28/64px, 1/8/28/56px) and the terra glows are
+  // gone — they were the "depth" half of the old glass look.
+  static const List<BoxShadow> card = flat;
+  static const List<BoxShadow> elevated = flat;
+  static const List<BoxShadow> glass = flat;
 
-  /// [elevated], collapsed to [flat] when effects are reduced.
-  static List<BoxShadow> elevatedFor(BuildContext context) =>
-      AppPerf.reduceEffects(context) ? flat : elevated;
+  static const List<BoxShadow> terraWash = none;
+  static const List<BoxShadow> terraGlow = none;
+  static const List<BoxShadow> logoGlow = none;
 
-  /// The palette's per-brightness card shadow, collapsed to [flat] when
-  /// effects are reduced. This is the one that matters most at scale — a
-  /// tables floor draws it once per tile, every frame.
-  static List<BoxShadow> cardFor(BuildContext context) =>
-      AppPerf.reduceEffects(context) ? flat : context.palette.cardShadow;
+  /// These four used to branch on [AppPerf.reduceEffects]. There is nothing
+  /// left to branch to — the rich variants no longer exist — so they are now
+  /// constant. They stay as functions because ~10 call sites pass a context.
+  static List<BoxShadow> glassFor(BuildContext context) => flat;
 
-  /// The terra wash behind a table you're serving. Same story as [cardFor] —
-  /// it's per-tile, so it collapses too.
-  static List<BoxShadow> mineFor(BuildContext context) =>
-      AppPerf.reduceEffects(context) ? flat : context.palette.mineShadow;
+  static List<BoxShadow> elevatedFor(BuildContext context) => flat;
+
+  static List<BoxShadow> cardFor(BuildContext context) => flat;
+
+  /// The table you're serving is marked by its fill and border, not by a
+  /// coloured glow behind the tile.
+  static List<BoxShadow> mineFor(BuildContext context) => none;
 }
 
 class AppAlphas {
@@ -805,4 +783,12 @@ class AppPerf {
 
   /// Grid prefetch window for the tables floor.
   static const double gridCacheExtent = 400;
+
+  /// Prefetch is a RAM trade. A constant window meant the device least able
+  /// to hold offscreen rows kept exactly as many alive as a flagship.
+  static double listCacheExtentFor(BuildContext context) =>
+      tier(context) == PerfTier.low ? 220 : listCacheExtent;
+
+  static double gridCacheExtentFor(BuildContext context) =>
+      tier(context) == PerfTier.low ? 180 : gridCacheExtent;
 }

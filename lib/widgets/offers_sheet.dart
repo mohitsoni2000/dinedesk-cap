@@ -1,6 +1,7 @@
 
 
 import 'package:flutter/material.dart';
+import '../data/money.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -18,7 +19,7 @@ class _AppliedOffer {
   final String offerId;
   final String offerName;
   final String source;
-  final double totalDiscount;
+  final Money totalDiscount;
   const _AppliedOffer({
     required this.id,
     required this.offerId,
@@ -32,7 +33,7 @@ class _AppliedOffer {
         offerId: m['offer_id']?.toString() ?? '',
         offerName: m['offer_name']?.toString() ?? 'Offer',
         source: m['source']?.toString() ?? 'manual',
-        totalDiscount: (m['total_discount'] as num?)?.toDouble() ?? 0,
+        totalDiscount: Money.fromWire(m['total_discount']) ?? Money.zero,
       );
 }
 
@@ -149,14 +150,13 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
 
   Map<String, dynamic>? _resultForCaller() {
     if (_applied.isEmpty) return null;
-    final totalDiscount =
-        _applied.fold<double>(0, (sum, a) => sum + a.totalDiscount);
+    final totalDiscount = _applied.map((a) => a.totalDiscount).sumMoney();
     final label = _applied.length == 1
         ? _applied.first.offerName
         : '${_applied.length} offers';
     return {
       'order': _lastOrder,
-      'discount_amount': totalDiscount,
+      'discount_amount': totalDiscount.toWire(),
       'discount_label': label,
     };
   }
@@ -365,7 +365,7 @@ class _AppliedOfferTile extends StatelessWidget {
                 Text(offer.offerName,
                     style: AppTypography.bodyMd
                         .copyWith(fontWeight: FontWeight.w600)),
-                if (offer.totalDiscount > 0)
+                if (offer.totalDiscount.isPositive)
                   Text('-${formatRupeesCompact(offer.totalDiscount)}',
                       style: AppTypography.caption
                           .copyWith(color: AppColors.success)),

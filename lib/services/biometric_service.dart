@@ -1,7 +1,8 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
+
+import 'log.dart';
 
 /// FaceID / fingerprint unlock.
 ///
@@ -28,7 +29,7 @@ class BiometricService {
     try {
       return await _auth.isDeviceSupported() && await _auth.canCheckBiometrics;
     } catch (e) {
-      debugPrint('$_tag canUse error: $e');
+      logD(_tag, 'canUse error: $e');
       return false;
     }
   }
@@ -43,13 +44,25 @@ class BiometricService {
   Future<void> enable(String pin) async {
     await _store.write(key: _kPin, value: pin);
     await _store.write(key: _kEnabled, value: '1');
-    debugPrint('$_tag enabled');
+    logD(_tag, 'enabled');
   }
 
   Future<void> disable() async {
     await _store.delete(key: _kPin);
     await _store.write(key: _kEnabled, value: '0');
-    debugPrint('$_tag disabled');
+    logD(_tag, 'disabled');
+  }
+
+  /// Wipes every biometric key, including the "already asked" marker.
+  ///
+  /// Called on unpair and after a PIN change. Without the PIN-change hook the
+  /// stored PIN went stale and every biometric unlock failed server-side with
+  /// no explanation the operator could act on.
+  Future<void> forget() async {
+    await _store.delete(key: _kPin);
+    await _store.delete(key: _kEnabled);
+    await _store.delete(key: _kPrompted);
+    logD(_tag, 'credentials forgotten');
   }
 
   /// Shows the system biometric prompt; on success returns the stored PIN
@@ -67,7 +80,7 @@ class BiometricService {
       if (!ok) return null;
       return _store.read(key: _kPin);
     } catch (e) {
-      debugPrint('$_tag unlock error: $e');
+      logD(_tag, 'unlock error: $e');
       return null;
     }
   }

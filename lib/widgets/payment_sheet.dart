@@ -5,43 +5,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/providers.dart';
 import '../data/currency.dart';
+import '../data/money.dart';
+import '../data/providers.dart';
+import '../models/server_models.dart';
 import '../services/pin_guard.dart';
+import '../utils/request_id.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
 import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
-class BillInfo {
-  final String id;
-  final String billNumber;
-  final double totalAmount;
-  final String billType;
-
-  const BillInfo({
-    required this.id,
-    required this.billNumber,
-    required this.totalAmount,
-    required this.billType,
-  });
-
-  factory BillInfo.fromMap(Map<String, dynamic> m) {
-    return BillInfo(
-      id: m['id']?.toString() ?? '',
-      billNumber: m['bill_number']?.toString() ?? '',
-      totalAmount: (m['total_amount'] as num?)?.toDouble() ?? 0,
-      billType: m['bill_type']?.toString() ?? 'food',
-    );
-  }
-}
-
 enum PaymentMode { cash, upi, card, complimentary, credit, company }
 
 class _PaymentEntry {
   final PaymentMode mode;
-  final double amount;
+  final Money amount;
   final String? reference;
   final String? notes;
 
@@ -52,9 +32,9 @@ class _PaymentEntry {
     this.notes,
   });
 
-  Map<String, dynamic> toMap() => {
+  Map<String, dynamic> toMap() => <String, dynamic>{
         'payment_mode': mode.name,
-        'amount': amount,
+        'amount': amount.toWire(),
         if (reference != null && reference!.isNotEmpty)
           'reference_number': reference,
         if (notes != null && notes!.isNotEmpty) 'notes': notes,
@@ -83,11 +63,10 @@ class PaymentSheet {
 
   static Future<bool?> show(
     BuildContext context, {
-    required List<BillInfo> bills,
+    required List<ServerBill> bills,
     bool hasCustomer = false,
   }) {
-    final grandTotal =
-        bills.fold(0.0, (double s, BillInfo b) => s + b.totalAmount);
+    final grandTotal = bills.map((b) => b.totalAmount).sumMoney();
     return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -103,8 +82,8 @@ class PaymentSheet {
 }
 
 class _PaymentSheetBody extends ConsumerStatefulWidget {
-  final List<BillInfo> bills;
-  final double grandTotal;
+  final List<ServerBill> bills;
+  final Money grandTotal;
   final bool hasCustomer;
   const _PaymentSheetBody({
     required this.bills,
@@ -126,16 +105,18 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
   final List<_PaymentEntry> _splits = [];
   final _splitAmountController = TextEditingController();
 
-  double get _paidSoFar => _splits.fold(0.0, (s, e) => s + e.amount);
-  double get _remaining => widget.grandTotal - _paidSoFar;
+  Money get _paidSoFar => _splits.map((e) => e.amount).sumMoney();
+  Money get _remaining => widget.grandTotal - _paidSoFar;
 
-  double get _tendered {
-    final t = double.tryParse(_tenderedController.text.trim());
-    return t ?? 0;
+  /// Parsed from the tendered-cash field. This is the only place a typed
+  /// rupee string becomes money, and it becomes paise immediately.
+  Money get _tendered =>
+      Money.fromWire(_tenderedController.text.trim()) ?? Money.zero;
+
+  Money get _change {
+    final difference = _tendered - widget.grandTotal;
+    return difference.isPositive ? difference : Money.zero;
   }
-
-  double get _change =>
-      (_tendered - widget.grandTotal).clamp(0, double.infinity);
 
   bool get _needsRef =>
       _selectedMode == PaymentMode.upi || _selectedMode == PaymentMode.card;
@@ -145,20 +126,35 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
   bool get _isCreditBlocked =>
       _selectedMode == PaymentMode.credit && !widget.hasCustomer;
 
+  /// Comp / credit / company were appended unconditionally, ignoring the
+  /// flags that exist precisely to control them — every waiter could comp a
+  /// bill. The desk must enforce this too; this is the UX half only.
   List<PaymentMode> _availableModes() {
-    final modes = <PaymentMode>[
+    final flags = ref.read(flagsProvider);
+    return <PaymentMode>[
       PaymentMode.cash,
       PaymentMode.upi,
       PaymentMode.card,
+      if (flags.complimentary) PaymentMode.complimentary,
+      if (flags.customers) PaymentMode.credit,
+      if (flags.complimentary) PaymentMode.company,
     ];
-
-    modes.addAll([
-      PaymentMode.complimentary,
-      PaymentMode.credit,
-      PaymentMode.company,
-    ]);
-    return modes;
   }
+
+  /// Bills already settled in this sheet's lifetime.
+  ///
+  /// The old flow reported "Paid 1 of 2 — retry remaining" and then restarted
+  /// the loop from bill index 0 on the next tap, re-paying the settled bill.
+  /// `bill:payment` also carried no idempotency key here (unlike the
+  /// quick-settle path), so the desk had nothing to dedupe on.
+  final Set<String> _settledBillIds = <String>{};
+
+  /// Idempotency keys, stable per bill for the life of this sheet. A retry
+  /// re-sends the *same* key so the desk can recognise and collapse it.
+  final Map<String, String> _requestIds = <String, String>{};
+
+  String _requestIdFor(String billId) =>
+      _requestIds.putIfAbsent(billId, newRequestId);
 
   Future<void> _pay() async {
     if (_submitting) return;
@@ -169,24 +165,36 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       return;
     }
 
+    final flags = ref.read(flagsProvider);
+    final useSplits = flags.splitPayment && _splits.isNotEmpty;
+
+    // Guard the non-split branch explicitly. `canPay` allowed a null mode
+    // through whenever split mode was on with an empty split list and the
+    // grand total happened to be zero, and `_selectedMode!` then threw.
+    final selectedMode = _selectedMode;
+    if (!useSplits && selectedMode == null) {
+      DynamicToast.show(context,
+          message: 'Pick a payment mode first', kind: ToastKind.error);
+      return;
+    }
+
     final pinOk = await requirePinIfNeeded(context, ref, 'payment');
     if (!pinOk || !mounted) return;
 
     setState(() => _submitting = true);
 
-    final flags = ref.read(flagsProvider);
     final socketService = ref.read(socketServiceProvider);
 
-    List<_PaymentEntry> entries;
-    if (flags.splitPayment && _splits.isNotEmpty) {
+    final List<_PaymentEntry> entries;
+    if (useSplits) {
       entries = _splits;
     } else {
       final notes = _needsReason
           ? '${_reasonController.text.trim()} | Auth: ${_authorizedByController.text.trim()}'
           : null;
-      entries = [
+      entries = <_PaymentEntry>[
         _PaymentEntry(
-          mode: _selectedMode!,
+          mode: selectedMode!,
           amount: widget.grandTotal,
           reference: _refController.text.trim().isNotEmpty
               ? _refController.text.trim()
@@ -196,77 +204,91 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       ];
     }
 
-    int billsPaid = 0;
+    // Bills still owing. Anything already settled in this sheet is skipped,
+    // which is what makes the retry button safe.
+    final outstanding = widget.bills
+        .where((b) => !_settledBillIds.contains(b.id))
+        .toList(growable: false);
+    final billWeights =
+        outstanding.map((b) => b.totalAmount).toList(growable: false);
 
-    for (final bill in widget.bills) {
-      final billPayments = <Map<String, dynamic>>[];
-      double billRemaining = bill.totalAmount;
-
-      for (final entry in entries) {
-        if (billRemaining <= 0.01) break;
-        final share = entry.amount * (bill.totalAmount / widget.grandTotal);
-        final payAmount = share.clamp(0, billRemaining);
-        if (payAmount < 0.01) continue;
-        billPayments.add(_PaymentEntry(
-          mode: entry.mode,
-          amount: double.parse(payAmount.toStringAsFixed(2)),
-          reference: entry.reference,
-          notes: entry.notes,
-        ).toMap());
-        billRemaining -= payAmount;
+    // Every entry is split across the outstanding bills by largest
+    // remainder, in integer paise. Each entry's allocations sum back to the
+    // entry exactly — no drift to patch up afterwards, and no NaN when the
+    // weights are all zero.
+    final perBillPayments = <String, List<Map<String, dynamic>>>{
+      for (final bill in outstanding) bill.id: <Map<String, dynamic>>[],
+    };
+    for (final entry in entries) {
+      final shares = allocateProportionally(entry.amount, billWeights);
+      for (var i = 0; i < outstanding.length; i++) {
+        final share = shares[i];
+        if (share.isZero) continue;
+        perBillPayments[outstanding[i].id]!.add(
+          _PaymentEntry(
+            mode: entry.mode,
+            amount: share,
+            reference: entry.reference,
+            notes: entry.notes,
+          ).toMap(),
+        );
       }
+    }
 
-      if (billPayments.isNotEmpty && billRemaining > 0.001 && billRemaining < 1.0) {
-        final last = billPayments.last;
-        final lastAmt = (last['amount'] as num).toDouble();
-        billPayments[billPayments.length - 1] = {
-          ...last,
-          'amount': double.parse((lastAmt + billRemaining).toStringAsFixed(2)),
-        };
-      }
+    var failures = 0;
+    for (final bill in outstanding) {
+      final payments = perBillPayments[bill.id]!;
+      if (payments.isEmpty) continue;
 
-      if (billPayments.isEmpty) continue;
-
-      final completer = Completer<bool>();
-      socketService.emit('bill:payment', <String, dynamic>{
-        'bill_id': bill.id,
-        'payments': billPayments,
-      }, onAck: (response) {
-        if (!completer.isCompleted) {
-          completer.complete(response['kind'] == 'success');
-        }
-      });
-
-      final success = await completer.future.timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => false,
+      final response = await socketService.emitAck(
+        'bill:payment',
+        <String, dynamic>{
+          'bill_id': bill.id,
+          'payments': payments,
+          'client_request_id': _requestIdFor(bill.id),
+        },
+        timeout: const Duration(seconds: 15),
       );
-      if (success) billsPaid++;
+
+      if (response['kind'] == 'success') {
+        _settledBillIds.add(bill.id);
+      } else {
+        failures++;
+        // Stop on the first failure. Carrying on would settle later bills
+        // while an earlier one is in an unknown state.
+        break;
+      }
     }
 
     if (!mounted) return;
-    if (billsPaid == widget.bills.length) {
+    if (failures == 0 && _settledBillIds.length == widget.bills.length) {
       Navigator.of(context).pop(true);
-    } else {
-      setState(() => _submitting = false);
-      DynamicToast.show(context,
-          message:
-              'Paid $billsPaid of ${widget.bills.length} bills — retry remaining',
-          kind: ToastKind.error);
+      return;
     }
+
+    setState(() => _submitting = false);
+    final done = _settledBillIds.length;
+    DynamicToast.show(
+      context,
+      message: done == 0
+          ? 'Payment failed — nothing was charged. Retry.'
+          : 'Settled $done of ${widget.bills.length}. '
+              'Retry sends only the remaining ${widget.bills.length - done}.',
+      kind: ToastKind.error,
+    );
   }
 
   void _addSplit() {
-    if (_selectedMode == null) return;
-    final amountText = _splitAmountController.text.trim();
-    final amount = double.tryParse(amountText);
-    if (amount == null || amount <= 0) return;
+    final mode = _selectedMode;
+    if (mode == null) return;
+    final amount = Money.fromWire(_splitAmountController.text.trim());
+    if (amount == null || !amount.isPositive) return;
     final capped = amount > _remaining ? _remaining : amount;
-    if (capped <= 0) return;
+    if (!capped.isPositive) return;
 
     setState(() {
       _splits.add(_PaymentEntry(
-        mode: _selectedMode!,
+        mode: mode,
         amount: capped,
         reference: _refController.text.trim().isNotEmpty
             ? _refController.text.trim()
@@ -301,7 +323,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
 
     final bool canPay;
     if (isSplitMode && _splits.isNotEmpty) {
-      canPay = (_remaining.abs() < 0.01) && !_submitting;
+      canPay = _remaining.isZero && !_submitting;
     } else {
       canPay = _selectedMode != null && !_submitting && !_isCreditBlocked;
     }
@@ -444,7 +466,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                 prefix: '₹ ',
                 onChanged: (_) => setState(() {}),
               ),
-              if (_tendered > 0 && _change > 0) ...[
+              if (_tendered.isPositive && _change.isPositive) ...[
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(10),
@@ -474,7 +496,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                 runSpacing: 8,
                 children: [
                   for (final d in [100, 200, 500, 1000, 2000])
-                    if (d >= widget.grandTotal * 0.5)
+                    if (Money.rupees(d) >= widget.grandTotal)
                       GestureDetector(
                         onTap: () {
                           _tenderedController.text = d.toString();
@@ -506,7 +528,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                 const Spacer(),
                 Text('Remaining: ${formatRupeesCompact(_remaining)}',
                     style: AppTypography.caption.copyWith(
-                        color: _remaining > 0.01
+                        color: _remaining.isPositive
                             ? AppColors.terra500
                             : AppColors.success,
                         fontWeight: FontWeight.w600)),
@@ -540,7 +562,13 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                   ),
                 ),
 
-              if (_remaining > 0 && _remaining < 1.0 && _splits.isNotEmpty)
+              // Explicit, operator-initiated round-off. The automatic
+              // version silently topped up the last payment line by up to
+              // 99 paise the customer never handed over; this makes it a
+              // deliberate act with a "Round-off" note attached.
+              if (_remaining.isPositive &&
+                  _remaining < const Money.rupees(1) &&
+                  _splits.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: GestureDetector(
@@ -548,7 +576,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                       setState(() {
                         _splits.add(_PaymentEntry(
                           mode: PaymentMode.cash,
-                          amount: double.parse(_remaining.toStringAsFixed(2)),
+                          amount: _remaining,
                           notes: 'Round-off',
                         ));
                       });
@@ -577,7 +605,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                     ),
                   ),
                 ),
-              if (_remaining > 0.01) ...[
+              if (_remaining.isPositive) ...[
                 Row(children: [
                   Expanded(
                       child: _InputField(
@@ -594,14 +622,8 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                       width: AppTouchTargets.control,
                       height: AppTouchTargets.control,
                       decoration: BoxDecoration(
-                        gradient: _selectedMode != null
-                            ? const LinearGradient(colors: [
-                                AppColors.terra400,
-                                AppColors.terra600
-                              ])
-                            : null,
                         color: _selectedMode != null
-                            ? null
+                            ? AppColors.terra500
                             : context.palette.ink05,
                         borderRadius: const BorderRadius.all(AppRadii.sm),
                       ),

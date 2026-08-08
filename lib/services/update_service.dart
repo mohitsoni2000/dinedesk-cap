@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:in_app_update/in_app_update.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'log.dart';
 
 const _tag = '[Update]';
 
@@ -39,7 +40,7 @@ class UpdateService {
       if (Platform.isAndroid) return await _checkAndroid();
       if (Platform.isIOS) return await _checkIos();
     } catch (e) {
-      debugPrint('$_tag check failed: $e');
+      logD(_tag, 'check failed: $e');
     }
     return const UpdateCheckResult.none();
   }
@@ -47,7 +48,7 @@ class UpdateService {
   Future<UpdateCheckResult> _checkAndroid() async {
     final info = await InAppUpdate.checkForUpdate();
     if (info.updateAvailability == UpdateAvailability.updateAvailable) {
-      debugPrint('$_tag Android update available '
+      logD(_tag, 'Android update available '
           '(immediate: ${info.immediateUpdateAllowed}, flexible: ${info.flexibleUpdateAllowed})');
       return UpdateCheckResult.android(info);
     }
@@ -78,7 +79,7 @@ class UpdateService {
 
       final current = (await PackageInfo.fromPlatform()).version;
       if (_isNewer(latest, current)) {
-        debugPrint('$_tag iOS update available: $current -> $latest');
+        logD(_tag, 'iOS update available: $current -> $latest');
         return UpdateCheckResult.ios(storeUrl);
       }
     } finally {
@@ -115,13 +116,14 @@ class UpdateService {
         return;
       }
     } catch (e) {
-      debugPrint('$_tag Android update flow failed: $e');
+      logD(_tag, 'Android update flow failed: $e');
     }
     await openStoreUrl('https://play.google.com/store/apps/details?id=$_storeId');
   }
 
   Future<void> openStoreUrl(String url) async {
-    final uri = Uri.parse(url);
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }

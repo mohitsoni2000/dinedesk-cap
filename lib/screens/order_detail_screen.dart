@@ -5,9 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../data/providers.dart';
 import '../data/currency.dart';
+import '../data/money.dart';
+import '../data/providers.dart';
+import '../models/server_models.dart';
+import '../models/wire.dart';
 import '../motion/motion.dart';
+import '../services/log.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import '../utils/socket_helpers.dart';
@@ -44,13 +48,13 @@ class OrderDetailScreen extends ConsumerStatefulWidget {
 class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   String get orderId => widget.orderId;
 
-  List<BillInfo> _bills = [];
+  List<ServerBill> _bills = [];
   String? _billId;
   String? _billNumber;
-  double? _billTotal;
-  double? _billGst;
-  double? _billServiceCharge;
-  double? _discountAmount;
+  Money? _billTotal;
+  Money? _billGst;
+  Money? _billServiceCharge;
+  Money? _discountAmount;
   String? _discountLabel;
   bool _billGenerated = false;
   bool _paymentCollected = false;
@@ -231,11 +235,18 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             kind: ToastKind.error);
       } else {
         final billsRaw = response['bills'];
-        final parsedBills = <BillInfo>[];
+        final parsedBills = <ServerBill>[];
         if (billsRaw is List) {
           for (final b in billsRaw) {
             if (b is Map) {
-              parsedBills.add(BillInfo.fromMap(Map<String, dynamic>.from(b)));
+              try {
+                parsedBills
+                    .add(ServerBill.fromMap(Map<String, dynamic>.from(b)));
+              } on WireFormatException catch (e) {
+                // A bill we cannot price must not reach the payment sheet —
+                // that is exactly how a zero grand total got there before.
+                logE('[OrderDetail]', 'dropped a malformed bill', e);
+              }
             }
           }
         }
@@ -245,7 +256,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 : null;
 
         final grandTotal =
-            parsedBills.fold(0.0, (double s, BillInfo b) => s + b.totalAmount);
+            parsedBills.map((b) => b.totalAmount).sumMoney();
 
         setState(() {
           _generatingBill = false;
@@ -254,13 +265,17 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           _billId = bill?['id']?.toString() ?? response['bill_id']?.toString();
           _billNumber = bill?['bill_number']?.toString() ??
               response['bill_number']?.toString();
-          _billTotal = grandTotal > 0 ? grandTotal : order.total;
-          _billGst = (bill?['total_gst'] as num?)?.toDouble() ??
-              (response['gst'] as num?)?.toDouble();
-          _billServiceCharge = (bill?['service_charge'] as num?)?.toDouble() ??
-              (response['service_charge'] as num?)?.toDouble();
-          _discountAmount = (bill?['discount_amount'] as num?)?.toDouble() ??
-              (response['discount'] as num?)?.toDouble();
+          // The generated bills are authoritative once they exist. The old
+          // guard treated a zero grand total as "no data" and silently fell
+          // back to the order total — so a fully comped bill displayed and
+          // charged the undiscounted amount.
+          _billTotal = parsedBills.isNotEmpty ? grandTotal : order.total;
+          _billGst = Money.fromWire(bill?['total_gst']) ??
+              Money.fromWire(response['gst']);
+          _billServiceCharge = Money.fromWire(bill?['service_charge']) ??
+              Money.fromWire(response['service_charge']);
+          _discountAmount = Money.fromWire(bill?['discount_amount']) ??
+              Money.fromWire(response['discount']);
           _discountLabel = response['discount_label']?.toString();
         });
         DynamicToast.show(context,
@@ -288,11 +303,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final billsToPass = _bills.isNotEmpty
         ? _bills
         : [
-            BillInfo(
+            ServerBill(
                 id: _billId!,
                 billNumber: _billNumber ?? '',
-                totalAmount: _billTotal ?? 0,
-                billType: 'food')
+                totalAmount: _billTotal ?? Money.zero,
+                billType: 'food',
+                isPaid: false)
           ];
 
     final currentOrder =
@@ -320,15 +336,15 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       final orderMap = result['order'];
       if (orderMap is Map) {
         setState(() {
-          _discountAmount = (orderMap['discount_amount'] as num?)?.toDouble() ??
-              (result['discount_amount'] as num?)?.toDouble();
+          _discountAmount = Money.fromWire(orderMap['discount_amount']) ??
+              Money.fromWire(result['discount_amount']);
           _discountLabel = orderMap['discount_label']?.toString() ??
               result['discount_label']?.toString();
         });
       } else {
         setState(() {
-          _discountAmount = (result['discount_amount'] as num?)?.toDouble() ??
-              (result['amount'] as num?)?.toDouble();
+          _discountAmount = Money.fromWire(result['discount_amount']) ??
+              Money.fromWire(result['amount']);
           _discountLabel = result['discount_label']?.toString() ??
               result['label']?.toString();
         });
@@ -353,7 +369,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       final orderMap = result['order'];
       if (orderMap is Map) {
         setState(() {
-          _discountAmount = (orderMap['discount_amount'] as num?)?.toDouble();
+          _discountAmount = Money.fromWire(orderMap['discount_amount']);
           _discountLabel = orderMap['discount_label']?.toString() ?? 'Coupon';
         });
       }
@@ -374,7 +390,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final result = await OffersSheet.show(context, orderId: order.orderId);
     if (result != null && mounted) {
       setState(() {
-        _discountAmount = (result['discount_amount'] as num?)?.toDouble();
+        _discountAmount = Money.fromWire(result['discount_amount']);
         _discountLabel = result['discount_label']?.toString() ?? 'Offer';
       });
       if (_billGenerated) {
@@ -408,14 +424,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         .where((o) => o.id == orderId || o.orderId == orderId)
         .firstOrNull;
 
-    ref.listen(activeOrdersProvider, (_, activeOrders) {
+    ref.listen<List<ServerOrder>>(activeOrdersProvider, (_, activeOrders) {
       if (_billGenerated || order == null) return;
-      for (final raw in activeOrders) {
-        if (raw['id']?.toString() != order.orderId) continue;
-        final bills = raw['bills'];
-        if (bills is List && bills.isNotEmpty) {
-          setState(() => _billGenerated = true);
-        }
+      for (final active in activeOrders) {
+        if (active.id != order.orderId) continue;
+        if (active.hasBills) setState(() => _billGenerated = true);
         break;
       }
     });
@@ -602,7 +615,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                               ],
                             ),
                             if (_discountAmount != null &&
-                                _discountAmount! > 0) ...[
+                                _discountAmount!.isPositive) ...[
                               const SizedBox(height: 4),
                               Row(
                                 children: [
@@ -756,8 +769,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                     ),
                                     Text(
                                         formatRupeesCompact(
-                                            entry.value[i].price *
-                                                entry.value[i].qty),
+                                            entry.value[i].price
+                                                .times(entry.value[i].qty)),
                                         style: AppTypography.bodyMd.copyWith(
                                             fontWeight: FontWeight.w600)),
                                   ],

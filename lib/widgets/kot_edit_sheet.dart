@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../data/money.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
@@ -190,7 +191,7 @@ class _EditableLine {
   final String name;
   final int originalQty;
   final int currentQty;
-  final double price;
+  final Money price;
   final String kitchenSection;
 
   const _EditableLine({

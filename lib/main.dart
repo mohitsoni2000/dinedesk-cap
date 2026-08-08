@@ -19,6 +19,7 @@ import 'theme/theme_mode_provider.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   _lockOrientationForFormFactor();
+  _capImageCache();
   // Nothing is awaited here on purpose. These three inits are platform-channel
   // round trips (an audio player pool, local notifications — which can raise
   // the OS permission dialog) and awaiting them in sequence delayed the very
@@ -28,6 +29,22 @@ void main() {
     container: ProviderContainer(),
     child: const RestroApp(),
   ));
+}
+
+/// Flutter's decoded-image cache defaults to 1000 entries / 100MB.
+///
+/// That default is sized for a flagship. On a 2GB device it is a large slice
+/// of the whole heap and, once it fills, it triggers texture thrashing and GC
+/// pauses that show up as scroll jank — the Flutter issue tracker has a long
+/// history of exactly this on low-RAM hardware.
+///
+/// This app is not image-heavy (three bundled PNGs, no network images today),
+/// so a much smaller cache costs nothing and removes the ceiling risk if
+/// item photos are ever added to the menu.
+void _capImageCache() {
+  final cache = PaintingBinding.instance.imageCache;
+  cache.maximumSize = 60;
+  cache.maximumSizeBytes = 24 << 20; // 24MB
 }
 
 /// Phones stay portrait; tablets rotate freely.

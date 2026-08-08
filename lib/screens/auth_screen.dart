@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -83,17 +86,22 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
 
     final pin = _pin.join();
-    SessionService().getSavedPairing().then((pairing) {
-      if (pairing?.token == 'demo-token') {
-        _submitDemo();
+    unawaited(SessionService().getSavedPairing().then((pairing) {
+      // Debug builds only. In release the demo token can never be written
+      // (see QrScanScreen._demoScan), and even if one survived from an older
+      // install we route it through the real handshake so it simply fails
+      // rather than granting a PIN-less session.
+      if (kDebugMode && pairing?.token == 'demo-token') {
+        unawaited(_submitDemo());
       } else {
-        _submitReal(pin);
+        unawaited(_submitReal(pin));
       }
-    });
+    }));
   }
 
   Future<void> _submitDemo() async {
-    await Future.delayed(const Duration(milliseconds: 500));
+    assert(kDebugMode, 'demo login must never run in a release build');
+    await Future<void>.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
 
@@ -101,12 +109,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
       name: 'Demo Waiter',
       role: 'Waiter',
       shift: 'Day',
-      username: 'op_demo',
+      id: 'op_demo',
     );
 
     final syncService = ref.read(syncServiceProvider);
     await syncService.applyInitialSync(buildDemoSyncPayload());
-    syncService.unregisterListeners();
     syncService.registerListeners();
 
     ref.read(connectionProvider.notifier).state = ConnectionStatus(
@@ -120,56 +127,57 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     if (mounted) context.go('/tables');
   }
 
-  void _submitReal(String pin) {
+  Future<void> _submitReal(String pin) async {
     final socketService = ref.read(socketServiceProvider);
     final syncService = ref.read(syncServiceProvider);
 
-    socketService.verifyPin(
-      pin,
-      onVerified: (response) async {
-        if (!mounted) return;
-        ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
-        final syncRaw = response['sync'];
-        final syncData =
-            (syncRaw is Map) ? Map<String, dynamic>.from(syncRaw) : response;
-        await syncService.applyInitialSync(syncData);
-        syncService.unregisterListeners();
-        syncService.registerListeners();
+    // verifyPin is a Future now rather than a callback pair — the callback
+    // form had no ack timeout at all, so a desk that accepted the packet and
+    // never replied left this screen spinning forever.
+    final response = await socketService.verifyPin(pin);
+    if (!mounted) return;
 
-        final opData = response['operator'];
-        if (opData is Map) {
-          final om = Map<String, dynamic>.from(opData);
-          ref.read(operatorProvider.notifier).state = Operator(
-            name: om['name']?.toString() ?? 'Operator',
-            role: om['role']?.toString() ?? 'Waiter',
-            shift: om['shift']?.toString() ?? 'Day',
-            username: om['id']?.toString() ?? om['username']?.toString() ?? '',
-          );
-        }
+    if (response['kind'] != 'success') {
+      ref.read(feedbackServiceProvider).fire(const FeedbackError());
+      setState(() {
+        _submitting = false;
+        _error = response['message']?.toString() ?? 'Invalid PIN';
+        _pin.clear();
+      });
+      _shakeCtrl.forward(from: 0);
+      return;
+    }
 
-        ref.read(connectionProvider.notifier).state = ConnectionStatus(
-          online: true,
-          label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
-        );
-        ref.read(isAuthenticatedProvider.notifier).state = true;
-        ref.read(kotQueueProvider).flush(socketService);
-        await _maybeOfferBiometric(pin);
-        if (!mounted) return;
-        setState(() => _verified = true);
-        await Future.delayed(const Duration(milliseconds: 400));
-        if (mounted) context.go('/tables');
-      },
-      onRejected: (error) {
-        if (!mounted) return;
-        ref.read(feedbackServiceProvider).fire(const FeedbackError());
-        setState(() {
-          _submitting = false;
-          _error = error;
-          _pin.clear();
-        });
-        _shakeCtrl.forward(from: 0);
-      },
+    ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
+    final syncRaw = response['sync'];
+    final syncData =
+        (syncRaw is Map) ? Map<String, dynamic>.from(syncRaw) : response;
+    await syncService.applyInitialSync(syncData);
+    if (!mounted) return;
+    syncService.registerListeners();
+
+    final opData = response['operator'];
+    if (opData is Map) {
+      final om = Map<String, dynamic>.from(opData);
+      ref.read(operatorProvider.notifier).state = Operator(
+        name: om['name']?.toString() ?? 'Operator',
+        role: om['role']?.toString() ?? 'Waiter',
+        shift: om['shift']?.toString() ?? 'Day',
+        id: om['id']?.toString() ?? om['username']?.toString() ?? '',
+      );
+    }
+
+    ref.read(connectionProvider.notifier).state = ConnectionStatus(
+      online: true,
+      label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
     );
+    ref.read(isAuthenticatedProvider.notifier).state = true;
+    unawaited(ref.read(kotQueueProvider).flush(socketService));
+    await _maybeOfferBiometric(pin);
+    if (!mounted) return;
+    setState(() => _verified = true);
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    if (mounted) context.go('/tables');
   }
 
   Future<void> _tryBiometricUnlock() async {
@@ -182,8 +190,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
       return; // desk not reachable — PIN pad stays as fallback
     }
     final pin = await bio.unlock();
-    if (pin == null || pin.length != 4 || !mounted) return;
-    _submitReal(pin);
+    if (pin == null || pin.isEmpty || !mounted) return;
+    await _submitReal(pin);
   }
 
   Future<void> _maybeOfferBiometric(String pin) async {
@@ -405,16 +413,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                       color: borderColor,
                                       width: 1.5,
                                     ),
-                                    boxShadow: filled && !isError
-                                        ? [
-                                            BoxShadow(
-                                              color: AppColors.terra400
-                                                  .withValues(alpha: 0.4 * t),
-                                              blurRadius: 10,
-                                              spreadRadius: 1,
-                                            ),
-                                          ]
-                                        : null,
+                                    // A filled PIN dot is marked by its fill
+                                    // and its size, not by a terra halo.
                                   ),
                                 );
                               },

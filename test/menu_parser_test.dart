@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restro/data/money.dart';
 import 'package:restro/services/menu_parser.dart';
 
 /// Pins the behaviour of the menu parse after it was lifted out of
@@ -94,7 +95,7 @@ void main() {
       expect(group.selectionType, 'M');
       expect(group.maxSelect, 3);
       expect(group.choices.single.name, 'Extra cheese');
-      expect(group.choices.single.price, 40);
+      expect(group.choices.single.price, const Money.rupees(40));
     });
 
     test('falls back to the cheapest variation when base price is zero', () {
@@ -102,13 +103,13 @@ void main() {
           parseMenu(payload).items.firstWhere((i) => i.id == 'i2');
 
       expect(item.variations.map((v) => v.name), ['Half', 'Full']);
-      expect(item.price, 320);
+      expect(item.price, const Money.rupees(320));
     });
 
     test('keeps an explicit base price over the variations', () {
       final item =
           parseMenu(payload).items.firstWhere((i) => i.id == 'i1');
-      expect(item.price, 250);
+      expect(item.price, const Money.rupees(250));
     });
 
     test('supports the older shape with items nested under categories', () {

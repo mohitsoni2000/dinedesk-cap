@@ -1,8 +1,10 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const _tag = '[Session]';
+import 'biometric_service.dart';
+import 'log.dart';
+
+const String _tag = '[Session]';
 
 class PairingInfo {
   final String host;
@@ -27,12 +29,12 @@ class SessionService {
   );
 
   Future<void> savePairing(PairingInfo info) async {
-    debugPrint('$_tag Saving pairing → ${info.host}:${info.port}');
+    logD(_tag, 'Saving pairing → ${info.host}:${info.port}');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyHost, info.host);
     await prefs.setInt(_keyPort, info.port);
     await _secureStore.write(key: _keyToken, value: info.token);
-    debugPrint('$_tag ✓ Pairing saved');
+    logD(_tag, '✓ Pairing saved');
   }
 
   Future<PairingInfo?> getSavedPairing() async {
@@ -52,19 +54,26 @@ class SessionService {
     if (legacyToken != null) await prefs.remove(_keyToken);
 
     if (host == null || port == null || token == null) {
-      debugPrint('$_tag No saved pairing found');
+      logD(_tag, 'No saved pairing found');
       return null;
     }
-    debugPrint('$_tag ✓ Loaded saved pairing → $host:$port');
+    logD(_tag, '✓ Loaded saved pairing → $host:$port');
     return PairingInfo(host: host, port: port, token: token);
   }
 
+  /// Clears the pairing **and every credential derived from it**.
+  ///
+  /// This used to leave the biometric keys alone, so unpairing a device and
+  /// handing it to a different waiter left the previous operator's PIN in the
+  /// keystore — still unlockable by whichever fingerprint is enrolled on the
+  /// phone.
   Future<void> clearPairing() async {
-    debugPrint('$_tag Clearing pairing data');
+    logD(_tag, 'Clearing pairing data');
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyHost);
     await prefs.remove(_keyPort);
     await _secureStore.delete(key: _keyToken);
-    debugPrint('$_tag ✓ Pairing cleared');
+    await BiometricService().forget();
+    logD(_tag, 'Pairing cleared');
   }
 }

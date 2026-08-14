@@ -93,6 +93,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
     logD('[Connect]', 'Pairing loaded: ${pairing.host}:${pairing.port}');
     final socketService = ref.read(socketServiceProvider);
 
+    _socketSub?.cancel();
     _socketSub = socketService.stateStream.listen((state) {
       if (!mounted) return;
       logD('[Connect]', 'Socket state changed: $state');
@@ -159,32 +160,57 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
     final candidates = await scanForDesks();
     if (!mounted) return;
 
-    for (final candidate in candidates) {
-      if (candidate.ip == pairing.host && candidate.port == pairing.port) {
-        continue; // already know this exact address doesn't answer
-      }
-      final result =
-          await SocketService.probe(candidate.ip, candidate.port, pairing.token);
+    final toProbe = candidates
+        .where((c) => !(c.ip == pairing.host && c.port == pairing.port))
+        .toList();
+
+    final verified = await _firstVerifiedDesk(toProbe, pairing.token);
+    if (!mounted) return;
+
+    if (verified != null) {
+      logD(
+        '[Connect]',
+        '✓ Found desk at new address ${verified.ip}:${verified.port} — re-pairing silently',
+      );
+      final updated = PairingInfo(
+        host: verified.ip,
+        port: verified.port,
+        token: pairing.token,
+      );
+      await SessionService().savePairing(updated);
       if (!mounted) return;
-      if (result == ProbeResult.ok) {
-        logD(
-          '[Connect]',
-          '✓ Found desk at new address ${candidate.ip}:${candidate.port} — re-pairing silently',
-        );
-        final updated = PairingInfo(
-          host: candidate.ip,
-          port: candidate.port,
-          token: pairing.token,
-        );
-        await SessionService().savePairing(updated);
-        if (!mounted) return;
-        _connectToServer(updated);
-        return;
-      }
+      _connectToServer(updated);
+      return;
     }
 
     logD('[Connect]', '✗ Rediscovery found nothing reachable');
     if (mounted && !_failed) setState(() => _failed = true);
+  }
+
+  /// Probes every candidate concurrently and resolves with the first one
+  /// that verifies (ProbeResult.ok), without waiting for slower
+  /// non-matching candidates to finish timing out. Resolves null only once
+  /// every candidate has been accounted for. This is what keeps total
+  /// rediscovery latency bounded by the slowest *individual* probe (~6s)
+  /// rather than growing with the number of candidates found.
+  Future<DiscoveredDesk?> _firstVerifiedDesk(
+    List<DiscoveredDesk> candidates,
+    String token,
+  ) {
+    if (candidates.isEmpty) return Future.value(null);
+    final completer = Completer<DiscoveredDesk?>();
+    var remaining = candidates.length;
+    for (final candidate in candidates) {
+      SocketService.probe(candidate.ip, candidate.port, token).then((result) {
+        if (completer.isCompleted) return;
+        if (result == ProbeResult.ok) {
+          completer.complete(candidate);
+        } else if (--remaining == 0) {
+          completer.complete(null);
+        }
+      });
+    }
+    return completer.future;
   }
 
   void _runDemoStages() {
@@ -211,7 +237,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
     _stageTimer?.cancel();
     _socketSub?.cancel();
     ref.read(socketServiceProvider).disconnect();
-    _connectToServer();
+    _connectToServer(_pairing);
   }
 
   @override

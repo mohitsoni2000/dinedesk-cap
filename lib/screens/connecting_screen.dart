@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../motion/motion.dart';
+import '../services/discovery_service.dart';
 import '../services/log.dart';
 import '../services/session_service.dart';
 import '../services/socket_service.dart';
@@ -56,10 +57,11 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
     _connectToServer();
   }
 
-  Future<void> _connectToServer() async {
+  Future<void> _connectToServer([PairingInfo? overridePairing]) async {
     logD('[Connect]', 'Loading saved pairing...');
-    final pairing =
-        widget.initialPairing ?? await SessionService().getSavedPairing();
+    final pairing = overridePairing ??
+        widget.initialPairing ??
+        await SessionService().getSavedPairing();
     if (!mounted) return;
 
     if (pairing == null) {
@@ -79,7 +81,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
 
     _timeoutTimer?.cancel();
     _timeoutTimer = Timer(const Duration(seconds: 10), () {
-      if (mounted && !_failed) setState(() => _failed = true);
+      if (mounted && !_failed) _attemptRediscoveryThenFail(pairing);
     });
 
     if (kDebugMode && pairing.token == 'demo-token') {
@@ -143,6 +145,46 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
         context.go('/auth');
       }
     });
+  }
+
+  /// The saved host stopped answering — most often because the desk's own
+  /// network address changed (see discovery_service.dart and the desk-side
+  /// fix in network-change-watcher.service.ts). Before giving up, listen
+  /// briefly for the desk's discovery beacon and verify any candidate with a
+  /// real probe — this is what stops a phone from ever being silently
+  /// redirected to some other device that happens to broadcast a
+  /// look-alike beacon on the same LAN.
+  Future<void> _attemptRediscoveryThenFail(PairingInfo pairing) async {
+    logD('[Connect]', 'Timed out on ${pairing.host} — scanning for the desk');
+    final candidates = await scanForDesks();
+    if (!mounted) return;
+
+    for (final candidate in candidates) {
+      if (candidate.ip == pairing.host && candidate.port == pairing.port) {
+        continue; // already know this exact address doesn't answer
+      }
+      final result =
+          await SocketService.probe(candidate.ip, candidate.port, pairing.token);
+      if (!mounted) return;
+      if (result == ProbeResult.ok) {
+        logD(
+          '[Connect]',
+          '✓ Found desk at new address ${candidate.ip}:${candidate.port} — re-pairing silently',
+        );
+        final updated = PairingInfo(
+          host: candidate.ip,
+          port: candidate.port,
+          token: pairing.token,
+        );
+        await SessionService().savePairing(updated);
+        if (!mounted) return;
+        _connectToServer(updated);
+        return;
+      }
+    }
+
+    logD('[Connect]', '✗ Rediscovery found nothing reachable');
+    if (mounted && !_failed) setState(() => _failed = true);
   }
 
   void _runDemoStages() {

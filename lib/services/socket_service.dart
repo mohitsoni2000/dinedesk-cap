@@ -59,14 +59,27 @@ class SocketService {
   /// True when the desk turned the handshake away over the pairing itself
   /// rather than the network failing.
   ///
-  /// The desk should send a structured `code` on the handshake error.
-  /// Substring matching on the message is the fallback, kept only so an older
-  /// desk build still lands on the right screen. The terms mirror every
-  /// rejection the gateway's middleware can produce — "Missing auth token",
-  /// "Token has been revoked", "Token expired or invalid" and "Operator
-  /// deactivated". That last one used to match nothing here and was reported
-  /// to the waiter as an unreachable server.
+  /// The desk sends a structured `{code, message}` payload on every
+  /// handshake rejection now (see `authError()` in the desk's
+  /// session-manager.ts) — checked first, and authoritative when present.
+  /// Substring matching on a bare message is kept only as a fallback for a
+  /// Desk build that predates the structured codes; a restaurant's phones
+  /// and Desk software can be on different versions for a while after an
+  /// update, so this can't be removed outright yet.
+  static const Set<String> _authErrorCodes = <String>{
+    'MISSING_TOKEN',
+    'TOKEN_EXPIRED',
+    'TOKEN_INVALID',
+    'TOKEN_REVOKED',
+    'OPERATOR_DEACTIVATED',
+    'VERIFICATION_UNAVAILABLE',
+  };
+
   static bool isAuthHandshakeError(Object? err) {
+    if (err is Map) {
+      final code = err['code'];
+      if (code is String) return _authErrorCodes.contains(code);
+    }
     final message = err.toString().toLowerCase();
     return message.contains('unauthorized') ||
         message.contains('auth') ||

@@ -136,6 +136,32 @@ class DisconnectedScreen extends ConsumerWidget {
                           leadingIcon: Icons.qr_code_scanner,
                           onPressed: () => _confirmScanQr(context, ref),
                         ),
+                        // Only offered when this exact phone already holds a
+                        // device secret from a prior real pairing — the desk
+                        // still decides at connect time whether the admin has
+                        // actually turned this on, but there is no reason to
+                        // show the option on a device that could never use it.
+                        FutureBuilder<bool>(
+                          future: SessionService().hasDeviceSecret(),
+                          builder: (context, snapshot) {
+                            if (snapshot.data != true) {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: TextButton(
+                                onPressed: () =>
+                                    context.push('/recovery-login'),
+                                child: Text(
+                                  'Log in with employee ID instead',
+                                  style: AppTypography.caption.copyWith(
+                                    color: context.palette.ink50,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ),

@@ -1,5 +1,3 @@
-
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -19,10 +17,10 @@ class ConnectionBanner extends ConsumerStatefulWidget {
 }
 
 class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
-  static const _reconnectWindowSeconds = 15 * 60;
+  int _reconnectWindowSeconds = 15 * 60;
 
   Timer? _ticker;
-  int _remaining = _reconnectWindowSeconds;
+  int _remaining = 15 * 60;
   FeedbackService? _feedbackSvc;
 
   @override
@@ -39,6 +37,8 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
 
   void _startTimer() {
     _ticker?.cancel();
+    _reconnectWindowSeconds =
+        ref.read(flagsProvider).operatorReconnectWindowMinutes * 60;
     setState(() => _remaining = _reconnectWindowSeconds);
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -118,7 +118,9 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
       children: [
         widget.child,
         Positioned(
-          top: 0, left: 0, right: 0,
+          top: 0,
+          left: 0,
+          right: 0,
           child: IgnorePointer(
             ignoring: conn.online,
             child: SpringBuilder(
@@ -163,7 +165,6 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
                                       .copyWith(color: context.palette.ink70)),
                             ],
                           )),
-
                           SizedBox(
                             width: 32,
                             height: 32,
@@ -202,7 +203,8 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
                                     horizontal: 10, vertical: 5),
                                 decoration: BoxDecoration(
                                   border: Border.all(
-                                    color: AppColors.danger.withValues(alpha: 0.5),
+                                    color:
+                                        AppColors.danger.withValues(alpha: 0.5),
                                     width: 1,
                                   ),
                                   borderRadius: BorderRadius.all(AppRadii.sm),

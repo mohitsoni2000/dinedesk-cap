@@ -76,5 +76,21 @@ void main() {
         isA<PairingUriInvalid>(),
       );
     });
+
+    test('captures the desk_instance_id when the QR carries one', () {
+      final result = parsePairingUri(
+        'restroapp://pair?host=192.168.1.42&port=8080&token=abc&id=desk-abc-123',
+      );
+      expect(result, isA<PairingUriOk>());
+      expect((result as PairingUriOk).pairing.deskInstanceId, 'desk-abc-123');
+    });
+
+    test('leaves desk_instance_id null for a QR without one (older Desk build)', () {
+      final result = parsePairingUri(
+        'restroapp://pair?host=192.168.1.42&port=8080&token=abc',
+      );
+      expect(result, isA<PairingUriOk>());
+      expect((result as PairingUriOk).pairing.deskInstanceId, isNull);
+    });
   });
 }

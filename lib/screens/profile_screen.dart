@@ -17,7 +17,7 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final op = ref.watch(operatorProvider);
     final opName = op?.name ?? '';
-    final opUsername = op?.id ?? '';
+    final opEmployeeId = op?.employeeId;
     final opRole = op?.role ?? '';
     final opShift = op?.shift ?? '';
     final stats = ref.watch(operatorStatsProvider);
@@ -73,7 +73,10 @@ class ProfileScreen extends ConsumerWidget {
                               children: [
                                 Text(opName, style: AppTypography.title),
                                 const SizedBox(height: 2),
-                                Text('@$opUsername · $opRole · $restaurantName',
+                                Text(
+                                    opEmployeeId != null
+                                        ? '$opEmployeeId · $opRole · $restaurantName'
+                                        : '$opRole · $restaurantName',
                                     style: context.palette.caption,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis),

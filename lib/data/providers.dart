@@ -487,11 +487,17 @@ class Operator {
   /// against the wrong thing in two places.
   final String id;
 
+  /// Auto-generated staff-facing code (EMP001, ...) — what the waiter enters
+  /// on the "Log in without a QR" screen. Null on a Desk build old enough
+  /// not to send it yet.
+  final String? employeeId;
+
   const Operator({
     required this.name,
     required this.role,
     required this.shift,
     required this.id,
+    this.employeeId,
   });
 }
 

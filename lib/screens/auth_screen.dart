@@ -164,6 +164,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
         role: om['role']?.toString() ?? 'Waiter',
         shift: om['shift']?.toString() ?? 'Day',
         id: om['id']?.toString() ?? om['username']?.toString() ?? '',
+        employeeId: om['employeeId']?.toString(),
       );
     }
 

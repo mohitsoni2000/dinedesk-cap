@@ -556,12 +556,26 @@ class SyncService {
           .toList();
     });
 
-    _socket.on('force:disconnect', (_) {
+    _socket.on('force:disconnect', (data) {
+      final reason = asMap(data)['reason']?.toString();
+      if (reason == 'duplicate_login') {
+        // Fires when another socket registers for this operator — a second
+        // phone on the same QR, or our own reconnect after a WiFi blip
+        // beating the old socket to the punch. Not a real logout: socket.io
+        // already has infinite reconnect attempts, so just let it retry.
+        logD(_tag,
+            'Ignoring force:disconnect (duplicate_login) — socket.io will reconnect');
+        return;
+      }
       unregisterListeners();
       _ref.read(forceDisconnectedProvider.notifier).state = true;
       _ref.read(isAuthenticatedProvider.notifier).state = false;
-      _ref.read(connectionProvider.notifier).state =
-          const ConnectionStatus(online: false, label: 'Disconnected by admin');
+      _ref.read(connectionProvider.notifier).state = ConnectionStatus(
+        online: false,
+        label: reason == 'token_revoked'
+            ? 'Disconnected by admin'
+            : 'Pairing expired — scan a new QR from the admin desktop',
+      );
       _socket.disconnect();
     });
 
@@ -835,6 +849,7 @@ class SyncService {
             role: om['role']?.toString() ?? 'Waiter',
             shift: om['shift']?.toString() ?? 'Day',
             id: optionalStringAny(om, <String>['id', 'username']) ?? '',
+            employeeId: om['employeeId']?.toString(),
           );
         }
         // The server only reports success here if our session is still

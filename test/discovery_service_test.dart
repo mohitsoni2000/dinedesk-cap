@@ -71,6 +71,49 @@ void main() {
       await expectLater(scanFuture, completes);
     });
 
+    test('parses id and ips[] when the beacon sends them', () async {
+      final scanFuture = scanForDesks(timeout: const Duration(seconds: 2));
+      await Future.delayed(const Duration(milliseconds: 150));
+
+      final sender = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      final payload = utf8.encode(json.encode(<String, dynamic>{
+        'app': 'commanddesk-main',
+        'name': 'Test Desk',
+        'ip': '127.0.0.1',
+        'ips': ['127.0.0.1', '10.0.0.5'],
+        'port': 8083,
+        'id': 'desk-abc-123',
+      }));
+      sender.send(payload, InternetAddress('127.0.0.1'), discoveryPort);
+      sender.close();
+
+      final found = await scanFuture;
+      final match = found.where((d) => d.ip == '127.0.0.1' && d.port == 8083);
+      expect(match, isNotEmpty, reason: 'expected to find the beacon we just sent, among: $found');
+      expect(match.first.id, 'desk-abc-123');
+      expect(match.first.ips, containsAll(<String>['127.0.0.1', '10.0.0.5']));
+    });
+
+    test('leaves id null and ips empty for a beacon without those fields', () async {
+      final scanFuture = scanForDesks(timeout: const Duration(seconds: 2));
+      await Future.delayed(const Duration(milliseconds: 150));
+
+      final sender = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      final payload = utf8.encode(json.encode(<String, dynamic>{
+        'app': 'commanddesk-main',
+        'ip': '127.0.0.1',
+        'port': 8084,
+      }));
+      sender.send(payload, InternetAddress('127.0.0.1'), discoveryPort);
+      sender.close();
+
+      final found = await scanFuture;
+      final match = found.where((d) => d.ip == '127.0.0.1' && d.port == 8084);
+      expect(match, isNotEmpty, reason: 'expected to find the beacon we just sent, among: $found');
+      expect(match.first.id, isNull);
+      expect(match.first.ips, isEmpty);
+    });
+
     test('a scan with nothing local broadcasting still returns a normal empty-or-ambient list', () async {
       // Not asserting emptiness — see the note in the first test. The only
       // thing this test can safely assert on a real, possibly-noisy network

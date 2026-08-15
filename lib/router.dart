@@ -19,6 +19,7 @@ import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/change_pin_screen.dart';
 import 'screens/disconnected_screen.dart';
+import 'screens/recovery_login_screen.dart';
 import 'screens/force_disconnected_screen.dart';
 import 'theme/tokens.dart';
 import 'widgets/connection_banner.dart';
@@ -195,6 +196,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           path: '/disconnected',
           pageBuilder: (_, s) =>
               liquidPage(key: s.pageKey, child: const DisconnectedScreen())),
+      GoRoute(
+          path: '/recovery-login',
+          pageBuilder: (_, s) =>
+              liquidPage(key: s.pageKey, child: const RecoveryLoginScreen())),
       GoRoute(
           path: '/force-disconnected',
           pageBuilder: (_, s) => liquidPage(

@@ -164,8 +164,19 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
         .where((c) => !(c.ip == pairing.host && c.port == pairing.port))
         .toList();
 
-    final verified = await _firstVerifiedDesk(toProbe, pairing.token);
+    var verified = await _firstVerifiedDesk(toProbe, pairing.deskInstanceId);
     if (!mounted) return;
+
+    // GET /ping is new server-side code — an un-upgraded Desk simply won't
+    // answer it. Fall back to the old real-socket verification so a phone
+    // doesn't regress to "can't reach the server" against a perfectly
+    // reachable Desk during the routine window before every Desk install on
+    // site has picked up the update.
+    if (verified == null) {
+      logD('[Connect]', 'No candidate answered /ping — falling back to probe()');
+      verified = await _firstVerifiedDeskViaProbe(toProbe, pairing.token);
+      if (!mounted) return;
+    }
 
     if (verified != null) {
       logD(
@@ -176,6 +187,8 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
         host: verified.ip,
         port: verified.port,
         token: pairing.token,
+        deviceSecret: pairing.deviceSecret,
+        deskInstanceId: pairing.deskInstanceId,
       );
       await SessionService().savePairing(updated);
       if (!mounted) return;
@@ -187,13 +200,67 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
     if (mounted && !_failed) setState(() => _failed = true);
   }
 
-  /// Probes every candidate concurrently and resolves with the first one
-  /// that verifies (ProbeResult.ok), without waiting for slower
-  /// non-matching candidates to finish timing out. Resolves null only once
-  /// every candidate has been accounted for. This is what keeps total
-  /// rediscovery latency bounded by the slowest *individual* probe (~6s)
-  /// rather than growing with the number of candidates found.
+  /// Pings every (candidate × address) pair concurrently — a plain
+  /// unauthenticated `GET /ping`, not a real socket — and resolves with the
+  /// first one that answers, without waiting for slower non-matching pairs
+  /// to finish timing out. Resolves null only once every pair has been
+  /// accounted for. This keeps total rediscovery latency bounded by the
+  /// slowest *individual* ping rather than growing with the number of
+  /// candidates found, and — unlike the old SocketService.probe()-based
+  /// version — never opens more than one real authenticated socket for this
+  /// operator (see CREW_NETWORK_DESIGN.md §5.2/§9).
+  ///
+  /// Each candidate's `ip` AND every address in its `ips[]` are tried, not
+  /// just `ip` — a multi-homed Desk can be unreachable on the interface the
+  /// beacon happened to key the candidate by while still reachable on
+  /// another one it also holds (§5.5). The winning address, not necessarily
+  /// `candidate.ip`, is what gets returned and re-paired to.
+  ///
+  /// When [expectedId] is known (a pairing made after desk_instance_id
+  /// existed), a candidate must report the same id to be accepted — this is
+  /// what stops re-pairing to a different Desk that happens to answer on the
+  /// same LAN. Older pairings have no id to check against, so any reachable
+  /// candidate is accepted, same trust level as before this change.
   Future<DiscoveredDesk?> _firstVerifiedDesk(
+    List<DiscoveredDesk> candidates,
+    String? expectedId,
+  ) {
+    final targets = <DiscoveredDesk>[];
+    for (final candidate in candidates) {
+      for (final address in {candidate.ip, ...candidate.ips}) {
+        targets.add(DiscoveredDesk(
+          ip: address,
+          port: candidate.port,
+          id: candidate.id,
+        ));
+      }
+    }
+    if (targets.isEmpty) return Future.value(null);
+    final completer = Completer<DiscoveredDesk?>();
+    var remaining = targets.length;
+    for (final target in targets) {
+      SocketService.ping(target.ip, target.port).then((result) {
+        if (completer.isCompleted) return;
+        final matches = switch (result) {
+          PingOk(id: final id) => expectedId == null || id == expectedId,
+          PingFailed() => false,
+        };
+        if (matches) {
+          completer.complete(target);
+        } else if (--remaining == 0) {
+          completer.complete(null);
+        }
+      });
+    }
+    return completer.future;
+  }
+
+  /// Fallback verification for a Desk that hasn't been upgraded yet and so
+  /// has no `/ping` route: opens a real, disposable authenticated socket per
+  /// candidate (the pre-existing, version-agnostic verification method).
+  /// Only reached when [_firstVerifiedDesk] finds nothing, so an up-to-date
+  /// Desk never pays for the extra auth sockets this opens.
+  Future<DiscoveredDesk?> _firstVerifiedDeskViaProbe(
     List<DiscoveredDesk> candidates,
     String token,
   ) {

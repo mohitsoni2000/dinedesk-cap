@@ -49,6 +49,8 @@ PairingUriResult parsePairingUri(String raw) {
   final host = uri.queryParameters['host']?.trim();
   final portText = uri.queryParameters['port']?.trim();
   final token = uri.queryParameters['token']?.trim();
+  final deviceSecret = uri.queryParameters['device_secret']?.trim();
+  final deskInstanceId = uri.queryParameters['id']?.trim();
 
   if (host == null || host.isEmpty) {
     return const PairingUriInvalid('missing host');
@@ -65,7 +67,16 @@ PairingUriResult parsePairingUri(String raw) {
   if (!isLocalNetworkHost(host)) return PairingUriOffNetwork(host);
 
   return PairingUriOk(
-    PairingInfo(host: host, port: port, token: token),
+    PairingInfo(
+        host: host,
+        port: port,
+        token: token,
+        deviceSecret: (deviceSecret == null || deviceSecret.isEmpty)
+            ? null
+            : deviceSecret,
+        deskInstanceId: (deskInstanceId == null || deskInstanceId.isEmpty)
+            ? null
+            : deskInstanceId),
   );
 }
 

@@ -15,7 +15,20 @@ const String _appTag = 'commanddesk-main';
 class DiscoveredDesk {
   final String ip;
   final int port;
-  const DiscoveredDesk({required this.ip, required this.port});
+
+  /// The Desk's stable identity, if this beacon build sends one. Null for
+  /// older Desk builds — callers fall back to their pre-existing trust level.
+  final String? id;
+
+  /// Every LAN IPv4 the Desk reported holding, if the beacon carries the
+  /// field. Empty for older Desk builds.
+  final List<String> ips;
+  const DiscoveredDesk({
+    required this.ip,
+    required this.port,
+    this.id,
+    this.ips = const [],
+  });
 }
 
 /// Listens for the desk's UDP discovery beacon — already broadcasting on the
@@ -25,9 +38,11 @@ class DiscoveredDesk {
 /// This alone does NOT prove a discovered desk is the one this phone is
 /// paired with: the beacon carries no credential, and a different
 /// restaurant's desk on a shared LAN broadcasts the identical `app` tag.
-/// Callers MUST verify a candidate with SocketService.probe() (real JWT
-/// auth against this phone's saved token) before trusting it enough to
-/// switch the saved pairing to it.
+/// Callers MUST verify a candidate with SocketService.ping() and, when a
+/// desk_instance_id is on file, check it matches [DiscoveredDesk.id] before
+/// trusting it enough to switch the saved pairing to it — see
+/// CREW_NETWORK_DESIGN.md §5.2/§9 for why this is `ping()` and not the
+/// heavier `probe()` (a real authenticated socket per candidate).
 Future<List<DiscoveredDesk>> scanForDesks({
   Duration timeout = const Duration(seconds: 4),
 }) async {
@@ -47,7 +62,15 @@ Future<List<DiscoveredDesk>> scanForDesks({
         final ip = decoded['ip'];
         final port = decoded['port'];
         if (ip is! String || port is! int) return;
-        found['$ip:$port'] = DiscoveredDesk(ip: ip, port: port);
+        final id = decoded['id'];
+        final rawIps = decoded['ips'];
+        final ips = rawIps is List ? rawIps.whereType<String>().toList() : const <String>[];
+        found['$ip:$port'] = DiscoveredDesk(
+          ip: ip,
+          port: port,
+          id: id is String ? id : null,
+          ips: ips,
+        );
       } catch (err) {
         logD(_tag, 'ignoring malformed beacon packet: $err');
       }

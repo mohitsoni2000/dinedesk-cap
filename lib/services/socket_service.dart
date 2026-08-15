@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
@@ -7,6 +9,46 @@ import 'log.dart';
 enum SocketState { disconnected, connecting, connected, verified }
 
 enum ProbeResult { ok, authRejected, unreachable }
+
+/// Result of an unauthenticated `GET /ping` probe — cheap enough to fan out
+/// to every rediscovery candidate without the auth-socket cost `probe()`
+/// pays (see CREW_NETWORK_DESIGN.md §5.2/§9).
+sealed class PingResult {
+  const PingResult();
+}
+
+final class PingOk extends PingResult {
+  /// The Desk's stable identity, if this Desk build sends one.
+  final String? id;
+  const PingOk(this.id);
+}
+
+final class PingFailed extends PingResult {
+  const PingFailed();
+}
+
+/// Result of a device-secret recovery attempt (employee ID + PIN login,
+/// no QR). A one-shot, disposable connection — same shape as [probe] — since
+/// the credentials it carries are only good for this single handshake; the
+/// real ongoing connection is a normal [SocketService.connect] using the
+/// fresh token this returns.
+sealed class RecoveryResult {
+  const RecoveryResult();
+}
+
+final class RecoverySuccess extends RecoveryResult {
+  final String token;
+  final String deviceSecret;
+  const RecoverySuccess(this.token, this.deviceSecret);
+}
+
+final class RecoveryFailed extends RecoveryResult {
+  /// 'RECOVERY_DISABLED' or 'RECOVERY_FAILED' from the desk, null for a
+  /// network-level failure (unreachable, timeout, malformed response).
+  final String? code;
+  final String message;
+  const RecoveryFailed(this.code, this.message);
+}
 
 /// Why the last live connect attempt failed, when it failed during the
 /// handshake and never reached `connected`.
@@ -136,6 +178,132 @@ class SocketService {
     timeoutTimer = Timer(const Duration(seconds: 6), () {
       logD(_tag, 'probe: timeout');
       finish(ProbeResult.unreachable);
+    });
+
+    return completer.future;
+  }
+
+  /// Hits the Desk's unauthenticated `GET /ping` — no socket, no token, no
+  /// session mutation. Used to verify a rediscovery candidate is reachable
+  /// (and, when the caller has a stored desk_instance_id, that it's the
+  /// *same* Desk) without paying for a real authenticated socket per
+  /// candidate the way [probe] does.
+  ///
+  /// [timeout] bounds the whole call, matching [probe]/[recover] — not just
+  /// one of its internal awaits — so a caller racing several candidates gets
+  /// the ceiling it asked for rather than up to 3x it.
+  static Future<PingResult> ping(
+    String host,
+    int port, {
+    bool useTls = false,
+    Duration timeout = const Duration(seconds: 3),
+  }) {
+    return _pingUnbounded(host, port, useTls: useTls).timeout(
+      timeout,
+      onTimeout: () {
+        logD(_tag, 'ping $host:$port: timeout');
+        return const PingFailed();
+      },
+    );
+  }
+
+  static Future<PingResult> _pingUnbounded(
+    String host,
+    int port, {
+    bool useTls = false,
+  }) async {
+    final scheme = useTls ? 'https' : 'http';
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(Uri.parse('$scheme://$host:$port/ping'));
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        logD(_tag, 'ping $host:$port: bad status ${response.statusCode}');
+        return const PingFailed();
+      }
+      final body = await response.transform(utf8.decoder).join();
+      final decoded = jsonDecode(body);
+      final id = decoded is Map ? decoded['id'] : null;
+      logD(_tag, 'ping $host:$port: ok (id=$id)');
+      return PingOk(id is String ? id : null);
+    } catch (err) {
+      logD(_tag, 'ping $host:$port failed: $err');
+      return const PingFailed();
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Attempts a device-secret recovery login (employee ID + PIN, no QR).
+  /// Never touches this instance's state — on success the caller persists
+  /// the returned credentials and opens the real connection via [connect].
+  static Future<RecoveryResult> recover(
+    String host,
+    int port,
+    String employeeId,
+    String pin,
+    String deviceSecret, {
+    bool useTls = false,
+  }) {
+    final completer = Completer<RecoveryResult>();
+    io.Socket? recoverySocket;
+    Timer? timeoutTimer;
+
+    void finish(RecoveryResult result) {
+      if (completer.isCompleted) return;
+      completer.complete(result);
+      timeoutTimer?.cancel();
+      recoverySocket?.dispose();
+    }
+
+    final url = namespaceUrl(host, port, useTls: useTls);
+    logD(_tag, 'recover $url');
+    recoverySocket = io.io(
+      url,
+      io.OptionBuilder()
+          .setTransports(<String>['websocket'])
+          .setAuth(<String, dynamic>{
+            'recovery': <String, dynamic>{
+              'employee_id': employeeId,
+              'pin': pin,
+              'device_secret': deviceSecret,
+            },
+          })
+          .disableReconnection()
+          .build(),
+    );
+    recoverySocket.on('pairing:recovered', (dynamic data) {
+      if (data is Map) {
+        final token = data['token'];
+        final secret = data['device_secret'];
+        if (token is String && secret is String) {
+          logD(_tag, 'recover: ok');
+          finish(RecoverySuccess(token, secret));
+          return;
+        }
+      }
+      finish(const RecoveryFailed(null, 'Malformed response from desk'));
+    });
+    recoverySocket.onConnectError((Object? err) {
+      logD(_tag, 'recover: connect_error');
+      String? code;
+      var message = "Can't reach the desk — same Wi-Fi?";
+      if (err is Map) {
+        final c = err['code'];
+        if (c is String) code = c;
+        final m = err['message'];
+        if (m is String) message = m;
+      }
+      finish(RecoveryFailed(code, message));
+    });
+    recoverySocket.onError((_) {
+      logD(_tag, 'recover: error');
+      finish(const RecoveryFailed(null, 'Connection error'));
+    });
+    recoverySocket.connect();
+    timeoutTimer = Timer(const Duration(seconds: 8), () {
+      logD(_tag, 'recover: timeout');
+      finish(const RecoveryFailed(null, "The desk didn't respond in time"));
     });
 
     return completer.future;

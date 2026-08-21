@@ -3,6 +3,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/feature_flags.dart';
 import '../models/server_models.dart';
+import '../services/connection_bootstrap.dart';
 import '../services/customer_link_service.dart';
 import '../services/socket_service.dart';
 import '../services/sync_service.dart';
@@ -643,6 +644,10 @@ class ActiveOperator {
 
 final tablesProvider = StateProvider<List<RestaurantTable>>((_) => []);
 final roomsProvider = StateProvider<List<RestaurantRoom>>((_) => []);
+/// CC-LAT-009: true whenever tables/floors/rooms came from the on-disk floor
+/// cache rather than a live sync. A stale table that looks live is how a
+/// waiter seats a party twice — this is a correctness signal, not decoration.
+final isFloorDataStaleProvider = StateProvider<bool>((_) => false);
 final offersProvider = StateProvider<List<Offer>>((_) => []);
 final menuProvider = StateProvider<List<MenuItem>>((_) => []);
 final menuLoadingProvider = StateProvider<bool>((_) => false);
@@ -971,6 +976,12 @@ final customerLinkServiceProvider = Provider<CustomerLinkService>(
   (ref) => CustomerLinkService(
       ref.read(socketServiceProvider), ref.read(syncServiceProvider)),
 );
+
+/// CC-LAT-010: started from `main()`, before the first frame — see
+/// connection_bootstrap.dart for why.
+final connectionBootstrapProvider =
+    StateNotifierProvider<ConnectionBootstrap, BootstrapOutcome>(
+        (ref) => ConnectionBootstrap(ref));
 
 final tablePresencesProvider = StateProvider<Map<String, String>>((_) => {});
 

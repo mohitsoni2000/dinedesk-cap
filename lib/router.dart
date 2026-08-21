@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'data/providers.dart';
-import 'services/session_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/qr_scan_screen.dart';
 import 'screens/connecting_screen.dart';
@@ -32,14 +31,30 @@ import 'widgets/root_shell.dart';
 /// sync_service.dart) reach the root Overlay — e.g. to show a DynamicToast.
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
+/// CC-LAT-001: notifies GoRouter's `redirect` to re-run without recomputing
+/// `routerProvider` itself. Watching isAuthenticatedProvider/
+/// forceDisconnectedProvider directly in the provider body used to rebuild a
+/// brand-new GoRouter — and with it a new RouterDelegate — every time either
+/// flipped, tearing the Navigator back down to `initialLocation: '/splash'`
+/// at the exact moment connect succeeds, racing the screen's own
+/// `context.go('/tables')`.
+class _RouterRefreshNotifier extends ChangeNotifier {
+  _RouterRefreshNotifier(Ref ref) {
+    ref.listen(isAuthenticatedProvider, (_, __) => notifyListeners());
+    ref.listen(forceDisconnectedProvider, (_, __) => notifyListeners());
+  }
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
-  final authed = ref.watch(isAuthenticatedProvider);
-  final forceDisconnected = ref.watch(forceDisconnectedProvider);
+  final refreshNotifier = _RouterRefreshNotifier(ref);
 
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
+    refreshListenable: refreshNotifier,
     redirect: (context, state) {
+      final authed = ref.read(isAuthenticatedProvider);
+      final forceDisconnected = ref.read(forceDisconnectedProvider);
       final loc = state.matchedLocation;
       const authFlow = ['/splash', '/scan', '/connecting', '/auth'];
       final onAuthFlow = authFlow.any((p) => loc.startsWith(p));
@@ -75,10 +90,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
           path: '/connecting',
           pageBuilder: (_, s) => liquidPage(
-              key: s.pageKey,
-              child: ConnectingScreen(
-                  initialPairing:
-                      s.extra is PairingInfo ? s.extra as PairingInfo : null))),
+              key: s.pageKey, child: const ConnectingScreen())),
       GoRoute(
           path: '/auth',
           pageBuilder: (_, s) =>

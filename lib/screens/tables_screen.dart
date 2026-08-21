@@ -15,6 +15,7 @@ import '../data/recent_tables.dart';
 import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
 import '../services/socket_service.dart' show SocketState;
+import '../services/trace.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_surface.dart';
 import '../widgets/page_content_clamp.dart';
@@ -44,6 +45,12 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => Trace.mark('tables_visible'));
+    // CC-LAT-009: paint the last known floor layout instantly, before the
+    // socket has even connected. isFloorDataStaleProvider drives the banner
+    // below until a real sync overwrites this with live data.
+    unawaited(ref.read(syncServiceProvider).hydrateFromFloorCache());
     _refreshController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -264,6 +271,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     final query = _query.trim().toLowerCase();
     final isSearching = query.isNotEmpty;
     final floorCounts = ref.watch(floorCountsProvider);
+    // CC-LAT-009: this data came from the on-disk floor cache, not a live
+    // sync. A stale table that looks live is how a waiter seats a party
+    // twice — so this stays visible until the real sync lands and clears it.
+    final floorDataStale = ref.watch(isFloorDataStaleProvider);
 
     return Scaffold(
       backgroundColor: context.palette.paper,
@@ -342,6 +353,29 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                   ),
                 ),
               ),
+              if (floorDataStale)
+                Container(
+                  width: double.infinity,
+                  color: context.palette.warnBg,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.history_toggle_off,
+                          size: 16, color: context.palette.warnText),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Showing last known table layout — syncing…',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: context.palette.warnText,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               if (_searchOpen)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),

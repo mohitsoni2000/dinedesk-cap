@@ -11,22 +11,35 @@ import 'motion/motion.dart';
 import 'router.dart';
 import 'services/app_messenger.dart';
 import 'services/platform_surfaces.dart';
+import 'services/trace.dart';
 import 'services/update_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/perf_scope.dart';
 import 'theme/theme_mode_provider.dart';
 
 void main() {
+  Trace.reset();
+  Trace.mark('app_start');
   WidgetsFlutterBinding.ensureInitialized();
   _lockOrientationForFormFactor();
   _capImageCache();
+
+  final container = ProviderContainer();
+  // CC-LAT-010: the pairing read and the socket connect race start here,
+  // before a single widget has built. The old flow paid for that
+  // sequencing serially — splash mounts, reads the pairing, connecting
+  // mounts, calls connect() — 300-450ms of pure waiting before a packet
+  // went out. By the time SplashScreen's first frame paints, this is
+  // typically already past the pairing read and into the connect attempt.
+  container.read(connectionBootstrapProvider.notifier).start();
+
   // Nothing is awaited here on purpose. These three inits are platform-channel
   // round trips (an audio player pool, local notifications — which can raise
   // the OS permission dialog) and awaiting them in sequence delayed the very
   // first frame. They now run in parallel once the app is on screen; see
   // _RestroAppState.initState.
   runApp(UncontrolledProviderScope(
-    container: ProviderContainer(),
+    container: container,
     child: const RestroApp(),
   ));
 }

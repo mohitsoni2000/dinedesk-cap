@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../data/providers.dart';
 import '../motion/motion.dart';
-import '../services/session_service.dart';
+import '../services/connection_bootstrap.dart';
 import '../theme/tokens.dart';
 
-class SplashScreen extends StatefulWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends ConsumerState<SplashScreen> {
   bool _showLogo = false;
   bool _showWordmark = false;
   bool _showOperator = false;
@@ -32,27 +34,33 @@ class _SplashScreenState extends State<SplashScreen> {
         if (mounted) setState(() => _showVersion = true);
       });
     });
-
-    // The pairing read starts immediately and we navigate the moment it
-    // resolves — the cosmetic stagger above runs independently rather than
-    // gating it behind a fixed wait.
-    _resolveAndNavigate();
   }
 
-  Future<void> _resolveAndNavigate() async {
-    final pairing = await SessionService().getSavedPairing();
+  void _navigate(BootstrapOutcome outcome) {
     if (!mounted) return;
-    // Handed to ConnectingScreen so it doesn't repeat the Keystore-backed
-    // read we just did.
-    if (pairing != null) {
-      context.go('/connecting', extra: pairing);
-    } else {
+    // Everything but "no pairing at all" belongs on /connecting — that
+    // screen is itself just a view over the same outcome, so there's
+    // nothing left here to hand it.
+    if (outcome is BootstrapNoPairing) {
       context.go('/scan');
+    } else {
+      context.go('/connecting');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // CC-LAT-010: the pairing read + connect race started in main(), before
+    // this screen even existed. React to whatever it has already resolved
+    // to (the common case — main() had a full frame's head start) or
+    // whatever it resolves to next.
+    ref.listen<BootstrapOutcome>(connectionBootstrapProvider, (_, next) {
+      if (next is! BootstrapIdle) _navigate(next);
+    });
+    final outcome = ref.read(connectionBootstrapProvider);
+    if (outcome is! BootstrapIdle) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _navigate(outcome));
+    }
     // The only screen with no Scaffold of its own — its text needs a Material
     // ancestor like everything else.
     return Material(

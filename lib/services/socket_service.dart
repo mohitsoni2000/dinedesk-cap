@@ -86,7 +86,12 @@ class SocketService {
   /// Default ack timeout. Every ack path now has one — `emit(onAck:)`
   /// previously had none at all, so a desk that accepted a packet and never
   /// replied left the calling screen spinning forever.
-  static const Duration ackTimeout = Duration(seconds: 12);
+  ///
+  /// CC-LAT-004: dropped from 12s to a LAN-appropriate 4s. `bill:payment`
+  /// keeps its own explicit 15s in payment_sheet.dart — a settle call that
+  /// times out early and gets retried is a duplicate-payment path, so that
+  /// one call site must never fall back to this default.
+  static const Duration ackTimeout = Duration(seconds: 4);
 
   /// Builds the namespace URL.
   ///
@@ -362,7 +367,15 @@ class SocketService {
           .setTransports(<String>['websocket'])
           .setAuth(<String, dynamic>{'token': token})
           .enableReconnection()
-          .setReconnectionDelay(2000)
+          // A dead LAN IP black-holes the SYN (ARP never resolves), so
+          // without an explicit connect timeout the default 20s turns the
+          // "retry every 2s" loop into a pile of hung sockets.
+          .setTimeout(3000)
+          .setReconnectionDelay(400)
+          .setReconnectionDelayMax(3000)
+          // Stops every phone on the floor retrying in lockstep after a
+          // shared-router blip.
+          .setRandomizationFactor(0.3)
           .setReconnectionAttempts(double.maxFinite.toInt())
           .build(),
     );

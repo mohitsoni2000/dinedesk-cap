@@ -14,11 +14,13 @@ import '../models/wire.dart';
 import '../motion/feedback_kind.dart';
 import '../motion/feedback_service.dart';
 import 'app_messenger.dart';
+import 'floor_cache.dart';
 import 'kot_queue_service.dart';
 import 'log.dart';
 import 'menu_parser.dart';
 import 'platform_surfaces.dart';
 import 'socket_service.dart';
+import 'trace.dart';
 
 const _tag = '[Sync]';
 
@@ -59,28 +61,16 @@ class SyncService {
   Map<String, DateTime> _tableTimerCache = {};
   Map<String, dynamic>? _lastFlagsMap;
 
-  /// Raw payload each section was last parsed from. A resync triggered by an
-  /// unrelated change (a permissions tweak, say) re-ships the whole snapshot,
-  /// so comparing first lets us skip re-parsing what didn't move.
+  /// CC-LAT-007: the desk's menu_version (CD-LAT-004) for whatever menu is
+  /// currently applied. A string compare replaces the old approach of
+  /// diffing the entire raw menu map on every sync — cheap regardless of
+  /// catalogue size, and it no longer has to hold the last raw payload in
+  /// memory for the process lifetime just to compare against it.
   ///
-  /// Only the menu is tracked, on purpose. It's the expensive parse — nested
-  /// option, variation and addon groups across the whole catalogue — while
-  /// tables/rooms/offers/discounts are flat field mappings. Those are also
-  /// mutated by their own socket events between syncs, which would leave a
-  /// payload cache able to disagree with provider state; not worth the risk
-  /// for parses that are already cheap.
-  final Map<String, Object?> _lastSectionRaw = {};
-
-  static const _sectionEquality = DeepCollectionEquality();
-
-  /// True when this section's payload matches what it was last parsed from.
-  ///
-  /// Pure on purpose — the cache is only written once a parse has actually
-  /// been committed, so an abandoned parse can't leave it claiming a menu
-  /// that was never applied.
-  bool _sectionUnchanged(String key, Object? raw) =>
-      _lastSectionRaw.containsKey(key) &&
-      _sectionEquality.equals(_lastSectionRaw[key], raw);
+  /// Null on a desk build that predates menu_version — that's the deliberate
+  /// fallback signal to always re-parse rather than assume unchanged; desk
+  /// and Crew versions diverge at outlets for weeks after a rollout.
+  String? _lastMenuVersion;
 
   /// Guards against an older off-thread menu parse landing after a newer one.
   int _menuParseSeq = 0;
@@ -97,13 +87,17 @@ class SyncService {
     }
   }
 
-  /// Commits a parse result. [raw] is recorded as the payload the menu was
-  /// built from, so [_sectionChanged] can never compare against a stale one.
-  void _applyParsedMenu(MenuParseResult parsed, Map<String, dynamic> raw) {
+  /// Commits a parse result. [version] is the desk's menu_version this menu
+  /// was built from (CD-LAT-004) — recorded so the next resync can tell the
+  /// desk what it already has (CD-LAT-005). Null when the source push didn't
+  /// carry one (an older desk, or a live menu:updated broadcast rather than
+  /// a resync response), which correctly forces the next resync to fall back
+  /// to "always re-fetch".
+  void _applyParsedMenu(MenuParseResult parsed, Map<String, dynamic> raw, {String? version}) {
     _ref.read(menuCategoriesProvider.notifier).state = parsed.categories;
     _ref.read(menuProvider.notifier).state = parsed.items;
     _ref.read(rawMenuDataProvider.notifier).state = raw;
-    _lastSectionRaw['menu'] = raw;
+    _lastMenuVersion = version;
     _applyPendingFastAdd();
   }
 
@@ -446,7 +440,7 @@ class SyncService {
     // showing items the operator can no longer sell (or missing newly
     // granted ones) until then.
     _socket.on('menu:access:updated', (_) {
-      unawaited(_requestResync());
+      unawaited(_requestMenuOnlyResync());
     });
 
     // Fire-and-forget emits (e.g. quick-settle's print:bill loop) have no
@@ -609,6 +603,24 @@ class SyncService {
     return table != null ? 'Table ${table.id}' : 'order $orderId';
   }
 
+  /// CC-LAT-009: paint the last known floor layout immediately on cold
+  /// start, before the socket has even connected. Marks the data stale so
+  /// the tables screen can warn the operator until a real sync lands.
+  Future<void> hydrateFromFloorCache() async {
+    final cached = await FloorCache.load();
+    if (cached == null) return;
+    // _floorMap (id -> name) is left empty here — it's only consulted when
+    // resolving a fresh ServerTable, and _serverTableToLocal already falls
+    // back to the raw floor id if a name isn't cached, so this is harmless
+    // until the next real sync repopulates it.
+    _ref.read(floorNamesProvider.notifier).state = cached.floorNames;
+    _ref.read(tablesProvider.notifier).state = cached.tables;
+    _ref.read(roomsProvider.notifier).state = cached.rooms;
+    _ref.read(isFloorDataStaleProvider.notifier).state = true;
+    logD(_tag, '  Floor cache: hydrated ${cached.tables.length} tables, '
+        '${cached.rooms.length} rooms (stale, awaiting live sync)');
+  }
+
   Future<void> applyInitialSync(Map<String, dynamic> data) async {
     logD(_tag, '── Applying initial sync ──');
     logD(_tag, '  Keys: ${data.keys.toList()}');
@@ -685,6 +697,16 @@ class SyncService {
       logD(_tag, '  Rooms: ${rooms.length} loaded');
     }
 
+    // CC-LAT-009: this sync's floors/tables/rooms are now live data — clear
+    // the stale flag and persist a fresh snapshot for the next cold start.
+    // Fire-and-forget: a cache write failure must never hold up the sync.
+    _ref.read(isFloorDataStaleProvider.notifier).state = false;
+    unawaited(FloorCache.save(FloorCacheSnapshot(
+      floorNames: _floorMap.values.toList(),
+      tables: _ref.read(tablesProvider),
+      rooms: _ref.read(roomsProvider),
+    )));
+
     final offersList = data['offers'];
     if (offersList is List) {
       final offers = <Offer>[];
@@ -705,32 +727,45 @@ class SyncService {
       logD(_tag, '  Offers: ${offers.length} loaded');
     }
 
+    final serverMenuVersion = data['menu_version'] as String?;
     final menuRaw = data['menu'];
-    if (menuRaw is Map) {
-      if (_sectionUnchanged('menu', menuRaw)) {
-        logD(_tag, '  Menu: unchanged — skipping re-parse');
-      } else {
-        final menuMap = Map<String, dynamic>.from(menuRaw);
-        final seq = ++_menuParseSeq;
-        _ref.read(menuLoadingProvider.notifier).state = true;
-        try {
-          // Off the UI thread: this is the heaviest work in a sync, and it
-          // lands right as the operator is waiting on the tables screen.
-          final parsed = await _parseMenuOffThread(menuMap);
-          if (seq == _menuParseSeq) {
-            _applyParsedMenu(parsed, menuMap);
-            logD(_tag, '  Menu items: ${parsed.items.length}');
-          }
-        } catch (e, st) {
-          // Never let a menu problem abort the rest of the sync — fast-add,
-          // active orders and the connected status all still need to apply.
-          logD(_tag, '  Menu parse failed: $e $st');
-        } finally {
-          if (seq == _menuParseSeq) {
-            _ref.read(menuLoadingProvider.notifier).state = false;
-          }
+    // CC-LAT-007: a menu_version match means our current menu is still
+    // correct — skip the parse entirely, whether the desk sent the menu
+    // block anyway or omitted it outright (CD-LAT-005). No menu_version at
+    // all is the fallback signal for an older desk build: always re-parse.
+    final menuVersionMatches =
+        serverMenuVersion != null && serverMenuVersion == _lastMenuVersion;
+    Trace.mark('menu_gate_done');
+    if (menuVersionMatches) {
+      logD(_tag, '  Menu: unchanged (menu_version matches) — skipping re-parse');
+      Trace.mark('menu_parsed');
+    } else if (menuRaw is Map) {
+      final menuMap = Map<String, dynamic>.from(menuRaw);
+      final seq = ++_menuParseSeq;
+      _ref.read(menuLoadingProvider.notifier).state = true;
+      try {
+        // Off the UI thread: this is the heaviest work in a sync, and it
+        // lands right as the operator is waiting on the tables screen.
+        final parsed = await _parseMenuOffThread(menuMap);
+        if (seq == _menuParseSeq) {
+          _applyParsedMenu(parsed, menuMap, version: serverMenuVersion);
+          logD(_tag, '  Menu items: ${parsed.items.length}');
         }
+      } catch (e, st) {
+        // Never let a menu problem abort the rest of the sync — fast-add,
+        // active orders and the connected status all still need to apply.
+        logD(_tag, '  Menu parse failed: $e $st');
+      } finally {
+        if (seq == _menuParseSeq) {
+          _ref.read(menuLoadingProvider.notifier).state = false;
+        }
+        Trace.mark('menu_parsed');
       }
+    } else {
+      // No menu block and no version match — nothing to parse (e.g. this is
+      // the very first sync this session and the desk had nothing to send,
+      // or an edge case with no prior menu_version to compare against).
+      Trace.mark('menu_parsed');
     }
 
     final fastAddRaw = data['fast_add'];
@@ -829,13 +864,30 @@ class SyncService {
   /// fully synced and authenticated, false if PIN re-entry is required.
   Future<bool> requestResync() => _requestResync();
 
-  Future<bool> _requestResync() {
+  /// CC-LAT-008: a menu-access edit only ever changes what the menu looks
+  /// like for whoever's in that group — nothing about tables/orders/etc.
+  /// moved. Scoping the request to `sections: ['menu']` means every online
+  /// device reconnecting on this broadcast pays for a menu-only round trip,
+  /// not the full snapshot.
+  Future<bool> _requestMenuOnlyResync() => _requestResync(sections: const ['menu']);
+
+  Future<bool> _requestResync({List<String>? sections}) {
     _ref.read(connectionProvider.notifier).state = const ConnectionStatus(
       online: true,
       label: 'Syncing…',
     );
 
-    return _socket.emitAck('operator:resync', {}).then((res) async {
+    Trace.mark('resync_emitted');
+    // CC-LAT-007: menu_version lets the desk skip re-sending (CD-LAT-005) an
+    // unchanged menu. An older desk build that doesn't recognise either
+    // field just ignores it and sends the full snapshot every time —
+    // harmless, not a breaking request shape.
+    final resyncPayload = <String, dynamic>{
+      if (_lastMenuVersion != null) 'menu_version': _lastMenuVersion,
+      if (sections != null) 'sections': sections,
+    };
+    return _socket.emitAck('operator:resync', resyncPayload).then((res) async {
+      Trace.mark('resync_acked');
       if (res['kind'] == 'success') {
         final syncRaw = res['sync'];
         if (syncRaw is Map) {

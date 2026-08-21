@@ -43,11 +43,28 @@ class DiscoveredDesk {
 /// trusting it enough to switch the saved pairing to it — see
 /// CREW_NETWORK_DESIGN.md §5.2/§9 for why this is `ping()` and not the
 /// heavier `probe()` (a real authenticated socket per candidate).
+/// CC-LAT-003: [timeout] is the ceiling for the nothing-heard case — the
+/// desk broadcasts every 2s, so waiting the old flat timeout even when a
+/// beacon arrives at 40ms was a flat tax on every rediscovery. The first
+/// valid beacon instead opens a short [settleAfterFirst] window (to collect
+/// a multi-homed desk's other addresses, which can arrive as separate
+/// packets with distinct ip:port keys) and resolves at the end of it. The
+/// settle timer is armed exactly once, on the first hit — re-arming it on
+/// every packet would let a chatty LAN hold the scan open indefinitely.
 Future<List<DiscoveredDesk>> scanForDesks({
-  Duration timeout = const Duration(seconds: 4),
+  Duration timeout = const Duration(seconds: 3),
+  Duration settleAfterFirst = const Duration(milliseconds: 250),
 }) async {
   final found = <String, DiscoveredDesk>{};
   RawDatagramSocket? socket;
+  final completer = Completer<void>();
+  Timer? settleTimer;
+  Timer? ceilingTimer;
+
+  void finish() {
+    if (!completer.isCompleted) completer.complete();
+  }
+
   try {
     socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, discoveryPort,
         reuseAddress: true);
@@ -65,20 +82,27 @@ Future<List<DiscoveredDesk>> scanForDesks({
         final id = decoded['id'];
         final rawIps = decoded['ips'];
         final ips = rawIps is List ? rawIps.whereType<String>().toList() : const <String>[];
+        final isFirstHit = found.isEmpty;
         found['$ip:$port'] = DiscoveredDesk(
           ip: ip,
           port: port,
           id: id is String ? id : null,
           ips: ips,
         );
+        if (isFirstHit) {
+          settleTimer = Timer(settleAfterFirst, finish);
+        }
       } catch (err) {
         logD(_tag, 'ignoring malformed beacon packet: $err');
       }
     });
-    await Future.delayed(timeout);
+    ceilingTimer = Timer(timeout, finish);
+    await completer.future;
   } catch (err) {
     logD(_tag, 'scan failed: $err');
   } finally {
+    settleTimer?.cancel();
+    ceilingTimer?.cancel();
     socket?.close();
   }
   return found.values.toList();

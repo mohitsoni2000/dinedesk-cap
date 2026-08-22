@@ -230,7 +230,13 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
 
   Future<void> _refresh() async {
     if (_refreshing) return;
-    if (ref.read(socketServiceProvider).state != SocketState.verified) {
+    // `connected` (transport up, PIN re-verification still landing after a
+    // resume) is not a disconnected state — only reject while the socket is
+    // actually down, so a refresh tap doesn't falsely claim "not connected"
+    // during that narrow race.
+    final socketState = ref.read(socketServiceProvider).state;
+    if (socketState != SocketState.connected &&
+        socketState != SocketState.verified) {
       _showTableError('Not connected — nothing to resync');
       return;
     }

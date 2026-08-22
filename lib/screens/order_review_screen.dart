@@ -485,7 +485,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           errorMessage: 'Bill generated but ID not returned — please retry',
         );
       }
-      final billTotal = (bill['total_amount'] as num?)?.toDouble();
+      final billTotal = Money.fromWire(bill['total_amount']);
       if (billTotal == null) {
         return _OrderFlowStepResult(
           failedStep: _OrderFlowStep.payment,
@@ -498,7 +498,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         <String, dynamic>{
           'bill_id': billId,
           'payments': [
-            {'payment_mode': quickSettleMode, 'amount': billTotal}
+            {'payment_mode': quickSettleMode, 'amount': billTotal.toWire()}
           ],
           'client_request_id': _quickSettleRequestIdFor(billId),
         },

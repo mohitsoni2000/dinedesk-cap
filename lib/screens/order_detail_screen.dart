@@ -281,6 +281,15 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               Money.fromWire(response['discount']);
           _discountLabel = response['discount_label']?.toString();
         });
+        if (ref.read(flagsProvider).autoPrintBillOnGenerate) {
+          final billIds = _bills.isNotEmpty
+              ? _bills.map((b) => b.id).toList()
+              : (_billId != null ? [_billId!] : const <String>[]);
+          for (final id in billIds) {
+            socketService
+                .emit('print:bill', <String, dynamic>{'bill_id': id});
+          }
+        }
         DynamicToast.show(context,
             message:
                 'Bill generated${_billNumber != null ? ' · $_billNumber' : ''}',

@@ -61,6 +61,31 @@ class SyncService {
   Map<String, DateTime> _tableTimerCache = {};
   Map<String, dynamic>? _lastFlagsMap;
 
+  // Coalesces a burst of table-affecting broadcasts (a KOT split across
+  // kitchen sections can fire table:updated + order:updated + kot:sent
+  // almost back-to-back) into one provider write instead of one per event —
+  // each write notifies every tablesProvider watcher synchronously. Reads
+  // and writes during the window go through _currentTables/_setTables so
+  // each handler still sees every other handler's change from the same
+  // burst; only the actual provider notification is batched.
+  List<RestaurantTable>? _pendingTables;
+  Timer? _tablesFlushTimer;
+
+  List<RestaurantTable> get _currentTables =>
+      _pendingTables ?? _ref.read(tablesProvider);
+
+  void _setTables(List<RestaurantTable> tables) {
+    _pendingTables = tables;
+    _tablesFlushTimer ??= Timer(const Duration(milliseconds: 16), () {
+      _tablesFlushTimer = null;
+      final pending = _pendingTables;
+      _pendingTables = null;
+      if (pending != null) {
+        _ref.read(tablesProvider.notifier).state = pending;
+      }
+    });
+  }
+
   /// True once a real `applyInitialSync` has landed live floor/table/room
   /// data. Distinct from [isFloorDataStaleProvider] on purpose — that flag
   /// defaults to `false` before anything has ever run, which reads
@@ -215,14 +240,14 @@ class SyncService {
         logE(_tag, 'dropped a malformed table', e);
         return;
       }
-      final tables = [..._ref.read(tablesProvider)];
+      final tables = [..._currentTables];
       // A deactivated table (e.g. a temp table from a table-rename split, freed
       // once its order settles) drops out of every future full-list push — the
       // server only tells us about it going away via this single-table event,
       // so it must be removed here rather than upserted like an active table.
       if (!st.isActive) {
         tables.removeWhere((t) => t.serverId == st.id);
-        _ref.read(tablesProvider.notifier).state = tables;
+        _setTables(tables);
         return;
       }
       final updated = _serverTableToLocal(st);
@@ -232,7 +257,7 @@ class SyncService {
       } else {
         tables.add(updated);
       }
-      _ref.read(tablesProvider.notifier).state = tables;
+      _setTables(tables);
     });
 
     _socket.on('room:updated', (data) {
@@ -697,6 +722,7 @@ class SyncService {
     logD(_tag, '  Floors: ${_floorMap.length} → ${_floorMap.values.toList()}');
 
     await _loadTimerCache();
+    Trace.mark('timer_cache_loaded');
     final tablesList = data['tables'];
     if (tablesList is List) {
       if (tablesList.isNotEmpty && tablesList.first is Map) {
@@ -744,6 +770,11 @@ class SyncService {
       tables: _ref.read(tablesProvider),
       rooms: _ref.read(roomsProvider),
     )));
+    // Splits the previously-opaque resync_acked -> menu_gate_done leg so
+    // production trace data can actually show whether floor/table/room
+    // parsing (this) or everything after it (offers/discounts/history/etc.)
+    // is the dominant cost, instead of one black-box number.
+    Trace.mark('floor_table_room_applied');
 
     final offersList = data['offers'];
     if (offersList is List) {
@@ -889,11 +920,11 @@ class SyncService {
       return;
     }
     final updated = _serverTableToLocal(st);
-    final tables = [..._ref.read(tablesProvider)];
+    final tables = [..._currentTables];
     final idx = tables.indexWhere((t) => t.serverId == updated.serverId);
     if (idx == -1) return;
     tables[idx] = updated;
-    _ref.read(tablesProvider.notifier).state = tables;
+    _setTables(tables);
   }
 
   /// Public entry point for a user-triggered resync (e.g. the Tables screen
@@ -999,6 +1030,7 @@ class SyncService {
   /// Called when the provider is torn down.
   void dispose() {
     unregisterListeners();
+    _tablesFlushTimer?.cancel();
   }
 
   /// Legacy per-table keys. Read once at startup for migration, then removed.
@@ -1063,9 +1095,10 @@ class SyncService {
       }
       if (legacy.isNotEmpty) {
         await _flushTimerCache();
-        for (final key in legacy) {
-          await prefs.remove(key);
-        }
+        // Only hit on a first-launch-after-upgrade, but this list scales
+        // with table count and used to be N sequential awaits sitting on
+        // the sync's render-blocking path — parallelize them.
+        await Future.wait(legacy.map(prefs.remove));
       }
     } catch (_) {
       _tableTimerCache = {};
@@ -1299,7 +1332,7 @@ class SyncService {
 
   void _updateTableForOrder(ServerOrder order, {bool markBilled = false}) {
     if (order.tableId.isEmpty) return;
-    final tables = [..._ref.read(tablesProvider)];
+    final tables = [..._currentTables];
     final idx = tables.indexWhere((t) => t.serverId == order.tableId);
     if (idx < 0) return;
     final current = tables[idx];
@@ -1315,7 +1348,7 @@ class SyncService {
       orderItemCount: order.itemCount,
       bill: order.total,
     );
-    _ref.read(tablesProvider.notifier).state = tables;
+    _setTables(tables);
   }
 
   // Upserts by id rather than replacing the whole list — a floor-restricted
@@ -1327,7 +1360,7 @@ class SyncService {
     final tableMaps = env.tablesList;
     if (tableMaps.isEmpty) return;
     final parsed = parseEach(tableMaps, ServerTable.fromMap, 'ServerTable');
-    final tables = [..._ref.read(tablesProvider)];
+    final tables = [..._currentTables];
     for (final st in parsed) {
       if (!st.isActive) {
         tables.removeWhere((t) => t.serverId == st.id);
@@ -1341,7 +1374,7 @@ class SyncService {
         tables.add(updated);
       }
     }
-    _ref.read(tablesProvider.notifier).state = tables;
+    _setTables(tables);
   }
 
   OrderStatus _mapOrderStatus(String status) {

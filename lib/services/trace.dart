@@ -64,6 +64,21 @@ class Trace {
     ('socket_connected -> resync_emitted', 'socket_connected', 'resync_emitted'),
     ('resync_emitted -> resync_acked', 'resync_emitted', 'resync_acked'),
     ('resync_acked -> menu_gate_done', 'resync_acked', 'menu_gate_done'),
+    (
+      'resync_acked -> timer_cache_loaded',
+      'resync_acked',
+      'timer_cache_loaded'
+    ),
+    (
+      'timer_cache_loaded -> floor_table_room_applied',
+      'timer_cache_loaded',
+      'floor_table_room_applied'
+    ),
+    (
+      'floor_table_room_applied -> menu_gate_done',
+      'floor_table_room_applied',
+      'menu_gate_done'
+    ),
     ('menu_gate_done -> menu_parsed', 'menu_gate_done', 'menu_parsed'),
     ('menu_parsed -> tables_visible', 'menu_parsed', 'tables_visible'),
     ('boot -> tables_visible', 'app_start', 'tables_visible'),

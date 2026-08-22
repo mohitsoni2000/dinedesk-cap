@@ -495,8 +495,16 @@ class SocketService {
       return _errorAck(AckCode.connectionLost, 'Connection lost');
     }
     try {
-      final raw =
-          await socket.emitWithAckAsync(event, data).timeout(effectiveTimeout);
+      // socket.timeout(ms) — not Future.timeout() on the returned Dart
+      // Future — so the library's own ack registry drops the callback and
+      // prunes the send-buffer entry when it fires. A Future-level timeout
+      // only abandons *our* wait; the library keeps the ack closure in
+      // `acks` forever (the same long-lived Socket survives every
+      // reconnect), leaking one per timed-out call for the life of the
+      // connection.
+      final raw = await socket
+          .timeout(effectiveTimeout.inMilliseconds)
+          .emitWithAckAsync(event, data);
       if (raw is! Map) {
         logE(_tag, '$event ack was not a Map');
         return _errorAck(AckCode.badResponse, 'Invalid server response');
@@ -504,13 +512,17 @@ class SocketService {
       final response = Map<String, dynamic>.from(raw);
       logD(_tag, '<- $event ack kind=${response['kind']}');
       return response;
-    } on TimeoutException {
-      logE(_tag, '$event ack timed out');
-      return _errorAck(
-        AckCode.timeout,
-        "The desk didn't respond — check the connection and retry",
-      );
     } catch (err, stack) {
+      // socket.timeout() completes with a plain Exception("operation has
+      // timed out"), not a Dart TimeoutException — string-match is the
+      // library's own contract here, not a workaround.
+      if (err.toString().contains('timed out')) {
+        logE(_tag, '$event ack timed out');
+        return _errorAck(
+          AckCode.timeout,
+          "The desk didn't respond — check the connection and retry",
+        );
+      }
       logE(_tag, '$event failed', err, stack);
       return _errorAck(AckCode.connectionLost, 'Connection lost');
     }

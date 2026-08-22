@@ -228,7 +228,11 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
     final toProbe = candidates
         .where((c) => !(c.ip == pairing.host && c.port == pairing.port))
         .toList();
-    final verified = await _firstVerifiedDesk(toProbe, pairing.deskInstanceId);
+    final verified = await _firstVerifiedDesk(
+      toProbe,
+      pairing.deskInstanceId,
+      priorityHost: pairing.host,
+    );
     if (gen != _generation) return;
 
     if (verified != null) {
@@ -277,10 +281,23 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   /// second-operator-socket risk this rewrite's invariant rules out. An
   /// unpatched desk simply won't be found by rediscovery; it will if the
   /// operator moves it back to its last-known address or reconnects Wi-Fi.
+  /// Same `/24` as [host] — a cheap heuristic, not a real subnet-mask
+  /// check, but every device on a shared restaurant router (and therefore
+  /// every plausible new address for a desk that just moved) satisfies it.
+  static bool _sameSubnet(String a, String host) {
+    final partsA = a.split('.');
+    final partsB = host.split('.');
+    if (partsA.length != 4 || partsB.length != 4) return false;
+    return partsA[0] == partsB[0] &&
+        partsA[1] == partsB[1] &&
+        partsA[2] == partsB[2];
+  }
+
   Future<DiscoveredDesk?> _firstVerifiedDesk(
     List<DiscoveredDesk> candidates,
-    String? expectedId,
-  ) {
+    String? expectedId, {
+    String? priorityHost,
+  }) {
     final targets = <DiscoveredDesk>[];
     for (final candidate in candidates) {
       for (final address in {candidate.ip, ...candidate.ips}) {
@@ -294,8 +311,18 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
     if (targets.isEmpty) return Future.value(null);
     final completer = Completer<DiscoveredDesk?>();
     var remaining = targets.length;
-    for (final target in targets) {
-      SocketService.ping(target.ip, target.port).then((result) {
+
+    void pingTarget(DiscoveredDesk target) {
+      SocketService.ping(
+        target.ip,
+        target.port,
+        // The race's wall-clock is set by the fastest responder regardless
+        // of this ceiling — shrunk from the 3s default because the only
+        // case that ever burns the full timeout is a black-holed IP with no
+        // ARP entry, which is exactly what rediscovery expects to hit for
+        // most of the fan-out.
+        timeout: const Duration(milliseconds: 1500),
+      ).then((result) {
         if (completer.isCompleted) return;
         final matches = switch (result) {
           PingOk(id: final id) => expectedId == null || id == expectedId,
@@ -305,6 +332,41 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
           completer.complete(target);
         } else if (--remaining == 0) {
           completer.complete(null);
+        }
+      });
+    }
+
+    // The previously-known address's subnet is by far the likeliest match
+    // (a desk that "moved" almost always just got a new DHCP lease on the
+    // same router) — probe it immediately, and give it a short head start
+    // before opening every other candidate's socket. Doesn't change
+    // best-case latency (the race still resolves on whichever responds
+    // first), only the number of concurrent connections/radio wake-ups in
+    // the common case.
+    final priority = <DiscoveredDesk>[];
+    final rest = <DiscoveredDesk>[];
+    for (final target in targets) {
+      (priorityHost != null && _sameSubnet(target.ip, priorityHost)
+              ? priority
+              : rest)
+          .add(target);
+    }
+    for (final target in priority) {
+      pingTarget(target);
+    }
+    if (rest.isEmpty) {
+      return completer.future;
+    }
+    if (priority.isEmpty) {
+      // Nothing to give a head start to — no point delaying.
+      for (final target in rest) {
+        pingTarget(target);
+      }
+    } else {
+      Future<void>.delayed(const Duration(milliseconds: 300), () {
+        if (completer.isCompleted) return;
+        for (final target in rest) {
+          pingTarget(target);
         }
       });
     }

@@ -29,17 +29,10 @@ dependencies:
   # Audio playback for multi-sensory feedback
   audioplayers: ^6.1.0
 
-  # Animations (Material motion / OpenContainer)
-  animations: ^2.0.11
-
-  # Rive state-machine animations
-  rive: ^0.13.20
-
   # Utility
   collection: ^1.18.0
   socket_io_client: ^3.0.2
   shared_preferences: ^2.2.3
-  connectivity_plus: ^6.0.5
   sensors_plus: ^6.1.0
 
   # Biometric unlock (FaceID / fingerprint → replays PIN verify)
@@ -86,9 +79,10 @@ flutter:
           weight: 700
     - family: Cormorant
       fonts:
+        # Registered once. The three previous entries all pointed at this
+        # same physical file under different declared weights — Flutter
+        # resolves any unregistered weight to the nearest registered one, so
+        # a w500/w600 request already rendered this exact file; the extra
+        # entries only tripled parse cost at startup for no visual change.
         - asset: assets/fonts/CormorantGaramond.ttf
           weight: 400
-        - asset: assets/fonts/CormorantGaramond.ttf
-          weight: 500
-        - asset: assets/fonts/CormorantGaramond.ttf
-          weight: 600

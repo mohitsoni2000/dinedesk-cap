@@ -66,8 +66,14 @@ class _DepthParallaxStackState extends State<DepthParallaxStack>
       _sub?.cancel();
       _sub = null;
       _ticker.stop();
-    } else {
-      _sub ??= gyroscopeEventStream().listen(_onGyro);
+    } else if (_sub == null) {
+      // Deferred a frame so this decorative sensor stream doesn't compete
+      // with the pairing-read/socket-connect race for platform-channel
+      // bandwidth in the very first tick — this widget is only ever seen on
+      // the splash/auth screens, right when that race is running.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _sub ??= gyroscopeEventStream().listen(_onGyro);
+      });
     }
   }
 

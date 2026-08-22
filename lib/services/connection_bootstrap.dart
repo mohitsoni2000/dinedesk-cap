@@ -109,6 +109,15 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   void start() {
     if (_started) return;
     _started = true;
+    // CC-LAT-009: fired here, in parallel with the connect race below, not
+    // from TablesScreen.initState(). The router never mounts that screen
+    // before isAuthenticatedProvider is true, and that flag is only set
+    // after a real sync has already applied live data — so calling this
+    // from the screen always lost the race and overwrote live state with a
+    // stale disk snapshot. Starting it here means the disk read and the
+    // socket connect genuinely happen concurrently, and whichever screen
+    // paints first sees the cache instead of nothing.
+    unawaited(_ref.read(syncServiceProvider).hydrateFromFloorCache());
     unawaited(_run());
   }
 
@@ -139,8 +148,8 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
     logD(_tag, 'Pairing loaded: ${pairing.host}:${pairing.port}');
     final socketService = _ref.read(socketServiceProvider);
     unawaited(_socketSub?.cancel());
-    _socketSub =
-        socketService.stateStream.listen((s) => _onSocketState(s, pairing, gen));
+    _socketSub = socketService.stateStream
+        .listen((s) => _onSocketState(s, pairing, gen));
 
     _connectTimeout?.cancel();
     _connectTimeout = Timer(

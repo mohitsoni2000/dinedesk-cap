@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import '../data/money.dart';
 import 'package:flutter/services.dart';
@@ -15,7 +13,6 @@ import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
 class DiscountSheet {
-
   static Future<Map<String, dynamic>?> show(
     BuildContext context, {
     required String orderId,
@@ -42,7 +39,6 @@ class _DiscountSheet extends ConsumerStatefulWidget {
 }
 
 class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
-
   String? _selectedPresetId;
 
   _DiscountType _customType = _DiscountType.percent;
@@ -112,7 +108,12 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       };
     }
 
-    socketService.emit('discount:apply', payload, onAck: (response) {
+    socketService.emit('discount:apply', payload,
+        // Money event — SocketService.emit refuses to guess a timeout for
+        // one of these. Same generous window as bill:payment: a discount
+        // apply that times out early and gets retried risks the discount
+        // landing twice, not just a slower retry.
+        timeout: const Duration(seconds: 15), onAck: (response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() => _submitting = false);
@@ -156,17 +157,14 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       maxChildSize: 0.88,
       builder: (_, scrollCtrl) => AppSurface(
         borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
-        padding: EdgeInsets.fromLTRB(
-            20, 12, 20, 28 + context.sheetBottomInset),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 28 + context.sheetBottomInset),
         child: ListView(
           controller: scrollCtrl,
           children: [
-
             Center(
               child: const SheetHandle(),
             ),
             const SizedBox(height: 16),
-
             Row(
               children: [
                 const Icon(Icons.discount_outlined,
@@ -179,7 +177,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
               ],
             ),
             const SizedBox(height: 20),
-
             if (hasPresets) ...[
               Row(
                 children: [
@@ -207,7 +204,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
               ),
               const SizedBox(height: 16),
             ],
-
             if (!_showCustom && hasPresets) ...[
               Text('AVAILABLE DISCOUNTS',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
@@ -232,7 +228,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
               ),
               const SizedBox(height: 16),
             ],
-
             if (_showCustom || !hasPresets) ...[
               Text('DISCOUNT TYPE',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
@@ -265,7 +260,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                 ],
               ),
               const SizedBox(height: 16),
-
               Text('VALUE',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 8),
@@ -273,7 +267,8 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                 decoration: BoxDecoration(
                   color: context.palette.surface,
                   borderRadius: const BorderRadius.all(AppRadii.sm),
-                  border: Border.all(color: context.palette.hairline, width: 1.5),
+                  border:
+                      Border.all(color: context.palette.hairline, width: 1.5),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: TextField(
@@ -300,7 +295,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                   ),
                 ),
               ),
-
               if (_customType == _DiscountType.percent &&
                   _customValue != null &&
                   _customValue! > 0) ...[
@@ -313,7 +307,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                   ),
                 ),
               ],
-
               if (_customType == _DiscountType.percent &&
                   _customValue != null &&
                   _customValue! > 100) ...[
@@ -324,7 +317,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                       AppTypography.caption.copyWith(color: AppColors.danger),
                 ),
               ],
-
               if (_customType == _DiscountType.flat &&
                   _customValue != null &&
                   (Money.fromWire(_customValue!) ?? Money.zero) >
@@ -336,9 +328,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                       AppTypography.caption.copyWith(color: AppColors.danger),
                 ),
               ],
-
               const SizedBox(height: 12),
-
               Text('LABEL (OPTIONAL)',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
               const SizedBox(height: 8),
@@ -346,7 +336,8 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
                 decoration: BoxDecoration(
                   color: context.palette.surface,
                   borderRadius: const BorderRadius.all(AppRadii.sm),
-                  border: Border.all(color: context.palette.hairline, width: 1.5),
+                  border:
+                      Border.all(color: context.palette.hairline, width: 1.5),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: TextField(
@@ -363,9 +354,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
               ),
               const SizedBox(height: 16),
             ],
-
             const SizedBox(height: 8),
-
             Row(
               children: [
                 Expanded(
@@ -490,15 +479,12 @@ class _PresetChip extends StatelessWidget {
             Text(name,
                 style: AppTypography.bodyMd.copyWith(
                   fontWeight: FontWeight.w600,
-                  color:
-                      selected ? AppColors.terraDeep : context.palette.ink,
+                  color: selected ? AppColors.terraDeep : context.palette.ink,
                 )),
             const SizedBox(height: 2),
             Text(value,
                 style: AppTypography.caption.copyWith(
-                  color: selected
-                      ? AppColors.terraInk
-                      : context.palette.ink70,
+                  color: selected ? AppColors.terraInk : context.palette.ink70,
                 )),
           ],
         ),

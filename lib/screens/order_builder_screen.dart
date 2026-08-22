@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -38,6 +39,7 @@ class OrderBuilderScreen extends ConsumerStatefulWidget {
 
 class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   String _query = '';
+  Timer? _searchDebounce;
   bool _searchOpen = false;
 
   /// Drives the collapse-on-scroll of the running-order + quick-add zone.
@@ -411,7 +413,11 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     final allSections = ref.watch(orderedCategoryNamesProvider);
     // Flat list, only for the fast-add chip fallback below.
     final menu = ref.watch(menuProvider);
-    final cart = ref.watch(cartProvider);
+    // Only the empty/non-empty transition is used below — watching the
+    // whole cart here rebuilt this entire screen (including every menu
+    // tile's Builder) on every quantity tap. Per-item quantities are
+    // watched by each _ItemRow itself, via plainCartQtyProvider.
+    final cartIsEmpty = ref.watch(cartProvider.select((c) => c.isEmpty));
     final orderNotes = ref.watch(orderNotesProvider);
     final flags = ref.watch(flagsProvider);
 
@@ -427,19 +433,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
               .where((m) => m.name.toLowerCase().contains(query))
               .toList(growable: false);
       if (items.isNotEmpty) sections[entry.key] = items;
-    }
-
-    // Cart quantities for the menu tiles' badges, in one pass. Each tile used
-    // to scan the entire cart itself, making this O(cart × items) per build.
-    // CartLine.isPlain, not a hand-rolled predicate: this must agree exactly
-    // with what decrementPlainLine() will touch, or the badge counts a line
-    // the "−" button can't reach. The old test here missed selectedAddons and
-    // selectedOptions, so a line with paid add-ons counted as plain.
-    final simpleQtyById = <String, int>{};
-    for (final l in cart) {
-      if (l.isPlain) {
-        simpleQtyById[l.item.id] = (simpleQtyById[l.item.id] ?? 0) + l.qty;
-      }
     }
 
     // Scoped to this screen's own slot: sync preserves the object identity of
@@ -771,7 +764,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                     ],
                                   ),
                                 ),
-                              if (cart.isNotEmpty) ...[
+                              if (!cartIsEmpty) ...[
                                 const PopupMenuDivider(),
                                 PopupMenuItem(
                                   value: 'clear_cart',
@@ -856,7 +849,15 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             icon: Icon(Icons.search,
                                 color: context.palette.ink50, size: 18),
                           ),
-                          onChanged: (v) => setState(() => _query = v),
+                          onChanged: (v) {
+                            _searchDebounce?.cancel();
+                            _searchDebounce = Timer(
+                              const Duration(milliseconds: 150),
+                              () {
+                                if (mounted) setState(() => _query = v);
+                              },
+                            );
+                          },
                         ),
                       ),
                     ),
@@ -897,13 +898,13 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     ),
                   ),
                   _ZoneReveal(
-                    visible: !wide && !_searchOpen && cart.isEmpty,
+                    visible: !wide && !_searchOpen && cartIsEmpty,
                     scroll: _scrollCollapse,
                     child: (runningOrder != null && runningOrder.itemCount > 0)
                         ? _RunningOrderCard(
                             order: runningOrder,
                             tableId: widget.tableId,
-                            cartIsEmpty: cart.isEmpty,
+                            cartIsEmpty: cartIsEmpty,
                             showPrintSummary: flags.printSummary,
                             onPrintSummary: () {
                               ref.read(socketServiceProvider).emit(
@@ -1076,7 +1077,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               controller: _menuScroll,
                               child: ListView(
                                 scrollCacheExtent: ScrollCacheExtent.pixels(
-                                    AppPerf.listCacheExtent),
+                                    AppPerf.listCacheExtentFor(context)),
                                 controller: _menuScroll,
                                 padding: const EdgeInsets.fromLTRB(
                                     AppSpacing.lg,
@@ -1103,9 +1104,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                               i++) ...[
                                             Builder(builder: (_) {
                                               final menuItem = entry.value[i];
-                                              final simpleQty =
-                                                  simpleQtyById[menuItem.id] ??
-                                                      0;
                                               return _SwipeToAddWrapper(
                                                 readOnly: _readOnly,
                                                 onDragTick: () => ref
@@ -1122,7 +1120,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                                     context, menuItem),
                                                 child: _ItemRow(
                                                   item: menuItem,
-                                                  simpleQty: simpleQty,
                                                   onAdd: () => _addOrConfigure(
                                                       context, menuItem),
                                                   // Only ever touches plain
@@ -1434,7 +1431,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       // the same autoSend plumbing — reuses the review
                       // screen's Send-to-Kitchen flow instead of a second
                       // implementation.
-                      onSendKot: (_readOnly || cart.isEmpty)
+                      onSendKot: (_readOnly || cartIsEmpty)
                           ? null
                           : () => context.push(_reviewRoute, extra: true),
                       onViewBill: runningOrder != null
@@ -1463,6 +1460,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _menuScroll.removeListener(_onMenuScroll);
     _menuScroll.dispose();
     _scrollCollapse.dispose();
@@ -1867,16 +1865,14 @@ class _SwipeToAddWrapperState extends State<_SwipeToAddWrapper>
   }
 }
 
-class _ItemRow extends StatelessWidget {
+class _ItemRow extends ConsumerWidget {
   final MenuItem item;
-  final int simpleQty;
   final VoidCallback onAdd;
   final VoidCallback onDecrement;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   const _ItemRow({
     required this.item,
-    required this.simpleQty,
     required this.onAdd,
     required this.onDecrement,
     required this.onTap,
@@ -1884,7 +1880,13 @@ class _ItemRow extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watches only this item's own cart quantity — a tap on any other row
+    // no longer rebuilds this one. Previously the parent screen computed
+    // every item's quantity in one pass and passed it down, which meant
+    // watching the whole cart at the screen level and rebuilding the full
+    // catalogue on every tap.
+    final simpleQty = ref.watch(plainCartQtyProvider(item.id));
     final unavailable = !item.available;
     final hasVariations = item.variations.isNotEmpty;
     final needsSheet = _itemNeedsSheet(item);

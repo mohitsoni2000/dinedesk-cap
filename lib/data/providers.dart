@@ -899,6 +899,24 @@ final customerNameByOrderIdProvider = Provider<Map<String, String>>((ref) {
   return names;
 });
 
+/// Same shape of fix as [customerNameByOrderIdProvider] above: every table
+/// tile used to run its own `.any()` scan over [readyOrdersProvider] on
+/// every ready-ticket broadcast — 60 tiles × N ready tickets, repeated per
+/// event. One pass here, O(1) `.contains()` per tile.
+final readyTableIdsProvider = Provider<Set<String>>((ref) {
+  final ready = ref.watch(readyOrdersProvider);
+  return {
+    for (final t in ready)
+      if (t.tableId != null) t.tableId!,
+  };
+});
+
+/// Same fix, for the `isLinked` scan over [linkGroupsProvider]'s values.
+final linkedTableIdsProvider = Provider<Set<String>>((ref) {
+  final groups = ref.watch(linkGroupsProvider);
+  return {for (final ids in groups.values) ...ids};
+});
+
 final operatorProvider = StateProvider<Operator?>((_) => null);
 
 /// The business date the desk is currently booking to, as reported on the

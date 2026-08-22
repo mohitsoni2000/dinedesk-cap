@@ -39,6 +39,12 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   bool _refreshing = false;
   late final AnimationController _refreshController;
 
+  // Same reasoning as rooms_screen.dart's _RoomsScreenState: itemBuilder
+  // runs again for every tile recycled during a scroll, so leaving Entrance
+  // ungated here replayed the fade and allocated a fresh AnimationController
+  // per recycle — on the app's single busiest, most-scrolled screen.
+  bool _hasScrolled = false;
+
   /// Coast pager: floors become horizontally swipeable "beaches".
   final PageController _floorPager = PageController();
 
@@ -111,31 +117,37 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
       color: AppColors.terra,
       backgroundColor: context.palette.surface,
       displacement: 28,
-      child: GridView.builder(
-        scrollCacheExtent: ScrollCacheExtent.pixels(AppPerf.gridCacheExtent),
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: context.tableTileExtent,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          // A tile's contents (27pt name, badges, footer) grow with the system
-          // font scale, but childAspectRatio alone would keep the tile height
-          // pinned to its width and overflow. Same height as the old 1.05
-          // ratio at default scale; taller only when the text demands it, plus
-          // headroom for the badge row wrapping to a second line.
-          mainAxisExtent: context.tableTileExtent /
-                  1.05 *
-                  context.effectiveTextScale.clamp(1.0, 1.55) +
-              16,
-        ),
-        itemCount: list.length,
-        itemBuilder: (_, i) {
-          final t = list[i];
-          return Entrance(
-            delay: Duration(milliseconds: 35 * (i < 12 ? i : 12)),
-            offsetY: 10,
-            child: _TableCard(
+      child: NotificationListener<ScrollUpdateNotification>(
+        onNotification: (n) {
+          if (!_hasScrolled && (n.scrollDelta?.abs() ?? 0) > 2) {
+            _hasScrolled = true;
+          }
+          return false;
+        },
+        child: GridView.builder(
+          scrollCacheExtent:
+              ScrollCacheExtent.pixels(AppPerf.gridCacheExtentFor(context)),
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: context.tableTileExtent,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            // A tile's contents (27pt name, badges, footer) grow with the
+            // system font scale, but childAspectRatio alone would keep the
+            // tile height pinned to its width and overflow. Same height as
+            // the old 1.05 ratio at default scale; taller only when the
+            // text demands it, plus headroom for the badge row wrapping to
+            // a second line.
+            mainAxisExtent: context.tableTileExtent /
+                    1.05 *
+                    context.effectiveTextScale.clamp(1.0, 1.55) +
+                16,
+          ),
+          itemCount: list.length,
+          itemBuilder: (_, i) {
+            final t = list[i];
+            final card = _TableCard(
               table: t,
               isLoading: _openingTable && _openingTableId == t.serverId,
               onTap: () => _onTableTap(t),
@@ -147,9 +159,23 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                   ? () => TableMergeSheet.show(context, t)
                   : null,
               occupiedSince: t.occupiedSince,
-            ),
-          );
-        },
+            );
+            // itemBuilder runs again for every tile recycled during a
+            // scroll, so wrapping all of them replayed the fade and
+            // allocated a fresh AnimationController each time.
+            if (i >= 12 || _hasScrolled || AppPerf.reduceEffects(context)) {
+              return KeyedSubtree(key: ValueKey(t.serverId), child: card);
+            }
+            return KeyedSubtree(
+              key: ValueKey(t.serverId),
+              child: Entrance(
+                delay: Duration(milliseconds: 35 * i),
+                offsetY: 10,
+                child: card,
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -1294,12 +1320,10 @@ class _TableCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isLinked = ref.watch(linkGroupsProvider.select(
-      (groups) => groups.values.any((ids) => ids.contains(table.serverId)),
-    ));
-    final isReady = ref.watch(readyOrdersProvider.select(
-      (list) => list.any((t) => t.tableId == table.serverId),
-    ));
+    final isLinked = ref.watch(linkedTableIdsProvider
+        .select((ids) => ids.contains(table.serverId)));
+    final isReady = ref.watch(
+        readyTableIdsProvider.select((ids) => ids.contains(table.serverId)));
     final isMine = table.state == TableState.mine;
     final customerName = ref.watch(flagsProvider.select((f) => f.customers))
         ? ref.watch(historyProvider.select((orders) => orders

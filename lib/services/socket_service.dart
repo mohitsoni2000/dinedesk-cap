@@ -86,7 +86,27 @@ class SocketService {
   /// Default ack timeout. Every ack path now has one — `emit(onAck:)`
   /// previously had none at all, so a desk that accepted a packet and never
   /// replied left the calling screen spinning forever.
-  static const Duration ackTimeout = Duration(seconds: 12);
+  ///
+  /// CC-LAT-004: dropped from 12s to a LAN-appropriate 4s. `bill:payment`
+  /// keeps its own explicit 15s — a settle call that times out early and
+  /// gets retried is a duplicate-payment path, so no money event may ever
+  /// fall back to this default. See [_moneyEvents]: `emitAck` throws rather
+  /// than silently inheriting it for one of these events.
+  static const Duration ackTimeout = Duration(seconds: 4);
+
+  /// Events for which a silently-inherited [ackTimeout] is a
+  /// duplicate-payment/duplicate-charge risk, not just a slower retry.
+  /// `order_review_screen.dart`'s quick-settle path once relied on the
+  /// default here — a payment that legitimately took 5–14s was treated as
+  /// failed and retried, and the retry's fresh `client_request_id` couldn't
+  /// dedupe against the original. `emitAck` below refuses to guess for any
+  /// event in this set; the caller must say what it means. Add an event here
+  /// the moment it touches money — do not wait for it to also grow a bug.
+  static const Set<String> _moneyEvents = {
+    'bill:payment',
+    'bill:generate',
+    'discount:apply',
+  };
 
   /// Builds the namespace URL.
   ///
@@ -215,7 +235,8 @@ class SocketService {
     final scheme = useTls ? 'https' : 'http';
     final client = HttpClient();
     try {
-      final request = await client.getUrl(Uri.parse('$scheme://$host:$port/ping'));
+      final request =
+          await client.getUrl(Uri.parse('$scheme://$host:$port/ping'));
       final response = await request.close();
       if (response.statusCode != 200) {
         logD(_tag, 'ping $host:$port: bad status ${response.statusCode}');
@@ -330,8 +351,7 @@ class SocketService {
   /// retrying is worth anything.
   ConnectFailure get lastConnectFailure => _lastConnectFailure;
 
-  bool get isUsable =>
-      _socket != null && _state != SocketState.disconnected;
+  bool get isUsable => _socket != null && _state != SocketState.disconnected;
 
   /// Nudges an already-configured socket that is sitting disconnected. The OS
   /// can freeze background networking, so engine.io's heartbeat may not have
@@ -362,7 +382,15 @@ class SocketService {
           .setTransports(<String>['websocket'])
           .setAuth(<String, dynamic>{'token': token})
           .enableReconnection()
-          .setReconnectionDelay(2000)
+          // A dead LAN IP black-holes the SYN (ARP never resolves), so
+          // without an explicit connect timeout the default 20s turns the
+          // "retry every 2s" loop into a pile of hung sockets.
+          .setTimeout(3000)
+          .setReconnectionDelay(400)
+          .setReconnectionDelayMax(3000)
+          // Stops every phone on the floor retrying in lockstep after a
+          // shared-router blip.
+          .setRandomizationFactor(0.3)
           .setReconnectionAttempts(double.maxFinite.toInt())
           .build(),
     );
@@ -392,7 +420,8 @@ class SocketService {
 
   Future<Map<String, dynamic>> verifyPin(String pin) async {
     logD(_tag, 'operator:verify');
-    final response = await emitAck('operator:verify', <String, dynamic>{'pin': pin});
+    final response =
+        await emitAck('operator:verify', <String, dynamic>{'pin': pin});
     if (response['kind'] == 'success') _setState(SocketState.verified);
     return response;
   }
@@ -408,14 +437,29 @@ class SocketService {
   }
 
   /// Fire-and-forget, or callback-with-ack. The ack path now carries the same
-  /// timeout as [emitAck].
+  /// timeout as [emitAck] — including the same refusal to guess for a money
+  /// event. [timeout] has no default for the same reason it has none on
+  /// [emitAck]: `bill:generate`/`discount:apply` were both being called
+  /// through this method with no [timeout] argument, silently inheriting
+  /// [ackTimeout] before this existed.
+  ///
+  /// A money event with no [onAck] at all is refused outright, not just an
+  /// unspecified timeout — true fire-and-forget means the caller has no way
+  /// to know a money mutation failed, which is its own silent-failure risk.
   void emit(
     String event,
     Map<String, dynamic> data, {
     void Function(Map<String, dynamic>)? onAck,
-    Duration timeout = ackTimeout,
+    Duration? timeout,
   }) {
     if (onAck == null) {
+      if (_moneyEvents.contains(event)) {
+        throw ArgumentError(
+          '$event is a money event and must be called with emitAck (or '
+          'emit(onAck:...) with an explicit timeout) — fire-and-forget with '
+          'no ack leaves the caller unable to tell if it failed.',
+        );
+      }
       final socket = _socket;
       logD(_tag, '-> $event ${summarizeShape(data)}');
       if (socket == null || _state == SocketState.disconnected) {
@@ -428,18 +472,31 @@ class SocketService {
     unawaited(emitAck(event, data, timeout: timeout).then(onAck));
   }
 
+  /// [timeout] has no default on purpose. A money event (see
+  /// [_moneyEvents]) must pass one explicitly — falling through to
+  /// [ackTimeout] here is exactly the bug this parameter shape exists to
+  /// make impossible. Every non-money call site keeps working unchanged by
+  /// passing `null` (or nothing), which still resolves to [ackTimeout] below.
   Future<Map<String, dynamic>> emitAck(
     String event,
     Map<String, dynamic> data, {
-    Duration timeout = ackTimeout,
+    Duration? timeout,
   }) async {
+    if (timeout == null && _moneyEvents.contains(event)) {
+      throw ArgumentError(
+        '$event is a money event and must pass an explicit timeout — '
+        'the $ackTimeout default is not safe for it (see _moneyEvents doc).',
+      );
+    }
+    final effectiveTimeout = timeout ?? ackTimeout;
     final socket = _socket;
     logD(_tag, '-> $event ${summarizeShape(data)}');
     if (socket == null || _state == SocketState.disconnected) {
       return _errorAck(AckCode.connectionLost, 'Connection lost');
     }
     try {
-      final raw = await socket.emitWithAckAsync(event, data).timeout(timeout);
+      final raw =
+          await socket.emitWithAckAsync(event, data).timeout(effectiveTimeout);
       if (raw is! Map) {
         logE(_tag, '$event ack was not a Map');
         return _errorAck(AckCode.badResponse, 'Invalid server response');

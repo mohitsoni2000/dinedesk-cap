@@ -1,28 +1,20 @@
-
-
-import 'dart:async';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../motion/motion.dart';
-import '../services/discovery_service.dart';
-import '../services/log.dart';
-import '../services/session_service.dart';
-import '../services/socket_service.dart';
+import '../services/connection_bootstrap.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_surface.dart';
 
+/// CC-LAT-010: a pure view over [connectionBootstrapProvider] — every
+/// connect/rediscovery/resume decision lives in `connection_bootstrap.dart`
+/// now, started from `main()` well before this screen ever mounts. This
+/// class owns nothing but the spinner animation and navigating on terminal
+/// outcomes.
 class ConnectingScreen extends ConsumerStatefulWidget {
-  /// Handed over by the splash screen, which has already paid for the
-  /// Keystore-backed read. Null when this route is entered directly (e.g. a
-  /// reconnect), in which case we read it ourselves.
-  final PairingInfo? initialPairing;
-
-  const ConnectingScreen({super.key, this.initialPairing});
+  const ConnectingScreen({super.key});
   @override
   ConsumerState<ConnectingScreen> createState() => _ConnectingScreenState();
 }
@@ -34,293 +26,52 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
     'Securing the session',
     'Loading restaurant data',
   ];
-  int _stage = 0;
-  bool _failed = false;
-
-  /// The desk refused the pairing itself — expired, revoked, or the operator
-  /// was deactivated. Distinct from [_failed] because retrying cannot fix it.
-  bool _pairingRejected = false;
-  Timer? _stageTimer;
-  Timer? _timeoutTimer;
-  StreamSubscription<SocketState>? _socketSub;
-  String? _errorMsg;
-  PairingInfo? _pairing;
 
   late final AnimationController _spin = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 2),
   )..repeat();
 
-  @override
-  void initState() {
-    super.initState();
-    _connectToServer();
-  }
+  Future<void> _cancelToScan() =>
+      ref.read(connectionBootstrapProvider.notifier).cancelToScan();
 
-  Future<void> _connectToServer([PairingInfo? overridePairing]) async {
-    logD('[Connect]', 'Loading saved pairing...');
-    final pairing = overridePairing ??
-        widget.initialPairing ??
-        await SessionService().getSavedPairing();
-    if (!mounted) return;
-
-    if (pairing == null) {
-      logD('[Connect]', 'No pairing found → redirecting to /scan');
-      context.go('/scan');
-      return;
-    }
-
-    ref.read(hasSavedPairingProvider.notifier).state = true;
-    setState(() {
-      _pairing = pairing;
-      _stage = 0;
-      _failed = false;
-      _pairingRejected = false;
-      _errorMsg = null;
-    });
-
-    _timeoutTimer?.cancel();
-    _timeoutTimer = Timer(const Duration(seconds: 10), () {
-      if (mounted && !_failed) _attemptRediscoveryThenFail(pairing);
-    });
-
-    if (kDebugMode && pairing.token == 'demo-token') {
-      logD('[Connect]', 'Demo pairing — skipping real socket handshake');
-      _runDemoStages();
-      return;
-    }
-
-    logD('[Connect]', 'Pairing loaded: ${pairing.host}:${pairing.port}');
-    final socketService = ref.read(socketServiceProvider);
-
-    _socketSub?.cancel();
-    _socketSub = socketService.stateStream.listen((state) {
-      if (!mounted) return;
-      logD('[Connect]', 'Socket state changed: $state');
-      if (state == SocketState.connected) {
-        logD('[Connect]', '✓ Connected → checking for a resumable session');
-        _timeoutTimer?.cancel();
-        setState(() => _stage = 1);
-        _attemptSilentResume();
-      } else if (state == SocketState.disconnected &&
-          socketService.lastConnectFailure == ConnectFailure.authRejected) {
-        // No point burning the full 10s timeout, and no point letting
-        // socket.io retry this every 2s forever — the token will be just as
-        // dead next time. Tear it down and say so.
-        logD('[Connect]', '✗ Pairing rejected by the desk');
-        _timeoutTimer?.cancel();
-        socketService.disconnect();
-        setState(() {
-          _failed = true;
-          _pairingRejected = true;
-        });
-      } else if (state == SocketState.disconnected && _stage > 0) {
-        logD('[Connect]', '✗ Connection lost during handshake');
-        setState(() => _errorMsg = 'Connection lost — retrying…');
-      }
-    });
-
-    logD('[Connect]', 'Starting socket connection...');
-    socketService.connect(pairing.host, pairing.port, pairing.token);
-  }
-
-  /// If the operator was disconnected for less than the backend's PIN grace
-  /// window (e.g. the app was killed/backgrounded and relaunched, or a WiFi
-  /// blip just reconnected), the server still trusts the prior PIN
-  /// verification — resume straight to /tables instead of prompting again.
-  Future<void> _attemptSilentResume() async {
-    final resumed = await ref.read(syncServiceProvider).requestResync();
-    if (!mounted) return;
-    if (resumed) {
-      logD('[Connect]', '✓ Session resumed silently → /tables');
-      // registerListeners() is idempotent now — it unregisters itself first.
-      ref.read(syncServiceProvider).registerListeners();
-      context.go('/tables');
-      return;
-    }
-    logD('[Connect]', 'Session needs PIN → /auth');
-    setState(() => _stage = 2);
-    _stageTimer = Timer(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        logD('[Connect]', 'Navigating to /auth');
-        context.go('/auth');
-      }
-    });
-  }
-
-  /// The saved host stopped answering — most often because the desk's own
-  /// network address changed (see discovery_service.dart and the desk-side
-  /// fix in network-change-watcher.service.ts). Before giving up, listen
-  /// briefly for the desk's discovery beacon and verify any candidate with a
-  /// real probe — this is what stops a phone from ever being silently
-  /// redirected to some other device that happens to broadcast a
-  /// look-alike beacon on the same LAN.
-  Future<void> _attemptRediscoveryThenFail(PairingInfo pairing) async {
-    logD('[Connect]', 'Timed out on ${pairing.host} — scanning for the desk');
-    final candidates = await scanForDesks();
-    if (!mounted) return;
-
-    final toProbe = candidates
-        .where((c) => !(c.ip == pairing.host && c.port == pairing.port))
-        .toList();
-
-    var verified = await _firstVerifiedDesk(toProbe, pairing.deskInstanceId);
-    if (!mounted) return;
-
-    // GET /ping is new server-side code — an un-upgraded Desk simply won't
-    // answer it. Fall back to the old real-socket verification so a phone
-    // doesn't regress to "can't reach the server" against a perfectly
-    // reachable Desk during the routine window before every Desk install on
-    // site has picked up the update.
-    if (verified == null) {
-      logD('[Connect]', 'No candidate answered /ping — falling back to probe()');
-      verified = await _firstVerifiedDeskViaProbe(toProbe, pairing.token);
-      if (!mounted) return;
-    }
-
-    if (verified != null) {
-      logD(
-        '[Connect]',
-        '✓ Found desk at new address ${verified.ip}:${verified.port} — re-pairing silently',
-      );
-      final updated = PairingInfo(
-        host: verified.ip,
-        port: verified.port,
-        token: pairing.token,
-        deviceSecret: pairing.deviceSecret,
-        deskInstanceId: pairing.deskInstanceId,
-      );
-      await SessionService().savePairing(updated);
-      if (!mounted) return;
-      _connectToServer(updated);
-      return;
-    }
-
-    logD('[Connect]', '✗ Rediscovery found nothing reachable');
-    if (mounted && !_failed) setState(() => _failed = true);
-  }
-
-  /// Pings every (candidate × address) pair concurrently — a plain
-  /// unauthenticated `GET /ping`, not a real socket — and resolves with the
-  /// first one that answers, without waiting for slower non-matching pairs
-  /// to finish timing out. Resolves null only once every pair has been
-  /// accounted for. This keeps total rediscovery latency bounded by the
-  /// slowest *individual* ping rather than growing with the number of
-  /// candidates found, and — unlike the old SocketService.probe()-based
-  /// version — never opens more than one real authenticated socket for this
-  /// operator (see CREW_NETWORK_DESIGN.md §5.2/§9).
-  ///
-  /// Each candidate's `ip` AND every address in its `ips[]` are tried, not
-  /// just `ip` — a multi-homed Desk can be unreachable on the interface the
-  /// beacon happened to key the candidate by while still reachable on
-  /// another one it also holds (§5.5). The winning address, not necessarily
-  /// `candidate.ip`, is what gets returned and re-paired to.
-  ///
-  /// When [expectedId] is known (a pairing made after desk_instance_id
-  /// existed), a candidate must report the same id to be accepted — this is
-  /// what stops re-pairing to a different Desk that happens to answer on the
-  /// same LAN. Older pairings have no id to check against, so any reachable
-  /// candidate is accepted, same trust level as before this change.
-  Future<DiscoveredDesk?> _firstVerifiedDesk(
-    List<DiscoveredDesk> candidates,
-    String? expectedId,
-  ) {
-    final targets = <DiscoveredDesk>[];
-    for (final candidate in candidates) {
-      for (final address in {candidate.ip, ...candidate.ips}) {
-        targets.add(DiscoveredDesk(
-          ip: address,
-          port: candidate.port,
-          id: candidate.id,
-        ));
-      }
-    }
-    if (targets.isEmpty) return Future.value(null);
-    final completer = Completer<DiscoveredDesk?>();
-    var remaining = targets.length;
-    for (final target in targets) {
-      SocketService.ping(target.ip, target.port).then((result) {
-        if (completer.isCompleted) return;
-        final matches = switch (result) {
-          PingOk(id: final id) => expectedId == null || id == expectedId,
-          PingFailed() => false,
-        };
-        if (matches) {
-          completer.complete(target);
-        } else if (--remaining == 0) {
-          completer.complete(null);
-        }
-      });
-    }
-    return completer.future;
-  }
-
-  /// Fallback verification for a Desk that hasn't been upgraded yet and so
-  /// has no `/ping` route: opens a real, disposable authenticated socket per
-  /// candidate (the pre-existing, version-agnostic verification method).
-  /// Only reached when [_firstVerifiedDesk] finds nothing, so an up-to-date
-  /// Desk never pays for the extra auth sockets this opens.
-  Future<DiscoveredDesk?> _firstVerifiedDeskViaProbe(
-    List<DiscoveredDesk> candidates,
-    String token,
-  ) {
-    if (candidates.isEmpty) return Future.value(null);
-    final completer = Completer<DiscoveredDesk?>();
-    var remaining = candidates.length;
-    for (final candidate in candidates) {
-      SocketService.probe(candidate.ip, candidate.port, token).then((result) {
-        if (completer.isCompleted) return;
-        if (result == ProbeResult.ok) {
-          completer.complete(candidate);
-        } else if (--remaining == 0) {
-          completer.complete(null);
-        }
-      });
-    }
-    return completer.future;
-  }
-
-  void _runDemoStages() {
-    setState(() => _stage = 1);
-    _stageTimer = Timer(const Duration(milliseconds: 700), () {
-      if (!mounted) return;
-      setState(() => _stage = 2);
-      _stageTimer = Timer(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          _timeoutTimer?.cancel();
-          context.go('/auth');
-        }
-      });
-    });
-  }
-
-  Future<void> _cancelToScan() async {
-    await SessionService().clearPairing();
-    if (!mounted) return;
-    context.go('/scan');
-  }
-
-  void _retry() {
-    _stageTimer?.cancel();
-    _socketSub?.cancel();
-    ref.read(socketServiceProvider).disconnect();
-    _connectToServer(_pairing);
-  }
+  void _retry() => ref.read(connectionBootstrapProvider.notifier).retry();
 
   @override
   void dispose() {
-    _stageTimer?.cancel();
-    _timeoutTimer?.cancel();
-    _socketSub?.cancel();
     _spin.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final host = _pairing?.host ?? '';
-    final port = _pairing?.port;
-    final isDemo = _pairing?.token == 'demo-token';
+    ref.listen<BootstrapOutcome>(connectionBootstrapProvider, (_, next) {
+      if (!mounted) return;
+      if (next is BootstrapResumed) {
+        context.go('/tables');
+      } else if (next is BootstrapNeedsAuth) {
+        context.go('/auth');
+      } else if (next is BootstrapNoPairing) {
+        // Cancel-to-scan, or a rejected/failed pairing that was cleared.
+        context.go('/scan');
+      }
+    });
+    final outcome = ref.watch(connectionBootstrapProvider);
+
+    final pairing = switch (outcome) {
+      BootstrapConnecting(:final pairing) => pairing,
+      BootstrapRediscovering(:final pairing) => pairing,
+      _ => null,
+    };
+    final stage = outcome is BootstrapConnecting ? outcome.stage : 0;
+    final errorMsg = outcome is BootstrapConnecting ? outcome.errorMsg : null;
+    final failed =
+        outcome is BootstrapFailed || outcome is BootstrapPairingRejected;
+    final pairingRejected = outcome is BootstrapPairingRejected;
+
+    final host = pairing?.host ?? '';
+    final port = pairing?.port;
+    final isDemo = pairing?.token == 'demo-token';
 
     return ColoredBox(
       color: context.palette.paper,
@@ -344,16 +95,16 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            if (!_failed) _PulseRing(),
+                            if (!failed) _PulseRing(),
                             RotationTransition(
-                              turns: _failed
+                              turns: failed
                                   ? const AlwaysStoppedAnimation(0)
                                   : _spin,
                               child: Container(
                                 width: 64,
                                 height: 64,
                                 decoration: BoxDecoration(
-                                  color: _failed
+                                  color: failed
                                       ? AppColors.terraDeep
                                       : AppColors.terra500,
                                   shape: BoxShape.circle,
@@ -362,9 +113,9 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                                   // A wifi-off glyph beside "Wi-Fi is not the
                                   // problem" is the same mixed signal this
                                   // screen is meant to stop sending.
-                                  _pairingRejected
+                                  pairingRejected
                                       ? Icons.link_off_rounded
-                                      : _failed
+                                      : failed
                                           ? Icons.wifi_off_rounded
                                           : Icons.wifi_tethering,
                                   color: Colors.white,
@@ -377,9 +128,9 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                       ),
                     ),
                     const SizedBox(height: 24),
-                    if (_failed) ...[
+                    if (failed) ...[
                       Text(
-                          _pairingRejected
+                          pairingRejected
                               ? 'This device needs pairing again'
                               : "Can't reach the server",
                           style: AppTypography.displayMd,
@@ -389,7 +140,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                         alignment: Alignment.centerLeft,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: _pairingRejected
+                          children: pairingRejected
                               ? const [
                                   _ChecklistItem(
                                       text:
@@ -415,7 +166,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                         ),
                       ),
                       const SizedBox(height: 20),
-                      if (_pairingRejected)
+                      if (pairingRejected)
                         SizedBox(
                           width: double.infinity,
                           child: _CardButton(
@@ -466,9 +217,9 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (_errorMsg != null) ...[
+                      if (errorMsg != null) ...[
                         const SizedBox(height: 8),
-                        Text(_errorMsg!,
+                        Text(errorMsg,
                             style: AppTypography.caption
                                 .copyWith(color: AppColors.warn),
                             textAlign: TextAlign.center),
@@ -479,8 +230,8 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                           for (int i = 0; i < _stages.length; i++) ...[
                             _StageRow(
                               label: _stages[i],
-                              done: i < _stage,
-                              active: i == _stage,
+                              done: i < stage,
+                              active: i == stage,
                             ),
                             if (i < _stages.length - 1)
                               const SizedBox(height: 6),

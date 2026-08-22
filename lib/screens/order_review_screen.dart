@@ -73,6 +73,19 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   _OrderType _orderType = _OrderType.dineIn;
   StateController<String>? _notesNotifier;
 
+  /// Quick-settle idempotency keys, keyed **per bill** — same pattern as
+  /// `payment_sheet.dart`'s `_requestIds`. An order can carry more than one
+  /// bill, so a single shared id would be wrong two different ways: a retry
+  /// of bill 1's payment needs the *same* key it used before (so the desk
+  /// can collapse it), but bill 2's payment needs a *different* key from
+  /// bill 1's, or the desk sees it as a duplicate of bill 1 and never
+  /// settles it. Stable per bill, per screen instance, is the only shape
+  /// that gets both right.
+  final Map<String, String> _quickSettleRequestIds = <String, String>{};
+
+  String _quickSettleRequestIdFor(String billId) =>
+      _quickSettleRequestIds.putIfAbsent(billId, newRequestId);
+
   @override
   void initState() {
     super.initState();
@@ -432,6 +445,11 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final billResponse = await socketService.emitAck(
       'bill:generate',
       <String, dynamic>{'order_id': orderId},
+      // Money event — SocketService.emitAck refuses to guess a timeout for
+      // one of these. Same generous window as bill:payment: a bill-generate
+      // that times out early and gets retried is a duplicate-bill risk, not
+      // just a slower retry.
+      timeout: const Duration(seconds: 15),
     );
     if (billResponse['kind'] == 'error') {
       return _OrderFlowStepResult(
@@ -482,8 +500,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           'payments': [
             {'payment_mode': quickSettleMode, 'amount': billTotal}
           ],
-          'client_request_id': newRequestId(),
+          'client_request_id': _quickSettleRequestIdFor(billId),
         },
+        // Money event — must not fall back to SocketService's LAN-tuned
+        // default. A settle call that times out early and gets retried is
+        // a duplicate-payment path (see the id comment above); this stays
+        // the same 15s payment_sheet.dart uses for the same reason.
+        timeout: const Duration(seconds: 15),
       );
       if (paymentResponse['kind'] == 'error') {
         return _OrderFlowStepResult(
@@ -1416,12 +1439,10 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                     foodTotal += lineAmt;
                                   }
                                 }
-                                final showLiquor =
-                                    liquorTotal.isPositive &&
-                                        flags.liquorBilling;
-                                final showBev =
-                                    bevTotal.isPositive &&
-                                        flags.beveragesBilling;
+                                final showLiquor = liquorTotal.isPositive &&
+                                    flags.liquorBilling;
+                                final showBev = bevTotal.isPositive &&
+                                    flags.beveragesBilling;
 
                                 return AppCard(
                                   child: Column(

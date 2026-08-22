@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/providers.dart';
 import '../services/biometric_service.dart';
+import '../services/trace.dart';
 import '../theme/perf_mode.dart';
 import '../theme/theme_mode_provider.dart';
 import '../theme/tokens.dart';
@@ -167,6 +168,13 @@ class SettingsScreen extends ConsumerWidget {
                           subtitle: 'v2.0 · $restaurantName',
                           onTap: () =>
                               _showAboutSheet(context, restaurantName),
+                        ),
+                        Divider(height: 1, color: context.palette.hairline),
+                        _SettingsRow(
+                          icon: Icons.speed_outlined,
+                          title: 'Connect Diagnostics',
+                          subtitle: 'Timing for this session\'s last connect',
+                          onTap: () => _showDiagnosticsSheet(context),
                         ),
                       ]),
                     ),
@@ -484,6 +492,70 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: LiquidSecondaryButton(
+                label: 'Close',
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+            SizedBox(height: context.sheetBottomInset + 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// CC-LAT-006: renders Trace.connectBreakdown() — the only production
+  /// timing data this app has, since log.dart compiles out in release.
+  void _showDiagnosticsSheet(BuildContext context) {
+    final breakdown = Trace.connectBreakdown();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.palette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: AppRadii.lg),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Connect Diagnostics', style: AppTypography.headline),
+            const SizedBox(height: 4),
+            const Text(
+              'Timing for this session\'s most recent connect attempt. '
+              'Nothing here is shared automatically.',
+              style: AppTypography.caption,
+            ),
+            const SizedBox(height: 16),
+            if (breakdown.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  'No connect completed yet this session.',
+                  style: AppTypography.caption,
+                ),
+              )
+            else
+              AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    for (final entry in breakdown.entries) ...[
+                      _AboutRow(
+                        icon: Icons.timer_outlined,
+                        label: entry.key,
+                        value: '${entry.value}ms',
+                      ),
+                      if (entry.key != breakdown.entries.last.key)
+                        Divider(height: 1, color: context.palette.ink10),
+                    ],
+                  ],
+                ),
+              ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,

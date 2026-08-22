@@ -85,11 +85,24 @@ class SessionService {
     final prefs = await SharedPreferences.getInstance();
     final host = prefs.getString(_keyHost);
     final port = prefs.getInt(_keyPort);
-    var token = await _secureStore.read(key: _keyToken);
+
+    // CC-LAT-002: these three were sequential awaits — each is a platform-
+    // channel round trip plus a Keystore crypto op with
+    // encryptedSharedPreferences: true, and the socket can't start until all
+    // three finish. Future.wait fires them together instead.
+    final secureReads = await Future.wait([
+      _secureStore.read(key: _keyToken),
+      getDeviceSecret(),
+      getDeskInstanceId(),
+    ]);
+    var token = secureReads[0];
+    final deviceSecret = secureReads[1];
+    final deskInstanceId = secureReads[2];
 
     // One-time migration: earlier builds stored the token in plaintext
     // SharedPreferences under this same key. Move it into secure storage on
     // next read instead of forcing every paired device to re-scan its QR.
+    // Runs after the parallel reads — it depends on `token` from above.
     final legacyToken = prefs.getString(_keyToken);
     if (token == null && legacyToken != null) {
       token = legacyToken;
@@ -101,8 +114,6 @@ class SessionService {
       logD(_tag, 'No saved pairing found');
       return null;
     }
-    final deviceSecret = await getDeviceSecret();
-    final deskInstanceId = await getDeskInstanceId();
     logD(_tag, '✓ Loaded saved pairing → $host:$port');
     return PairingInfo(
         host: host,

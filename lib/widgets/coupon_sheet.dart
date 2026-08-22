@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -54,10 +52,17 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
     });
 
     final socketService = ref.read(socketServiceProvider);
-    socketService.emit('discount:apply', <String, dynamic>{
-      'order_id': widget.orderId,
-      'coupon_code': code,
-    }, onAck: (response) {
+    socketService.emit(
+        'discount:apply',
+        <String, dynamic>{
+          'order_id': widget.orderId,
+          'coupon_code': code,
+        },
+        // Money event — SocketService.emit refuses to guess a timeout for
+        // one of these. Same generous window as bill:payment: a discount
+        // apply that times out early and gets retried risks the discount
+        // landing twice, not just a slower retry.
+        timeout: const Duration(seconds: 15), onAck: (response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() {
@@ -111,8 +116,8 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
                     decoration: BoxDecoration(
                       color: context.palette.surface,
                       borderRadius: const BorderRadius.all(AppRadii.sm),
-                      border:
-                          Border.all(color: context.palette.hairline, width: 1.5),
+                      border: Border.all(
+                          color: context.palette.hairline, width: 1.5),
                     ),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -156,8 +161,8 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
               ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + context.sheetBottomInset),
+              padding:
+                  EdgeInsets.fromLTRB(16, 8, 16, 16 + context.sheetBottomInset),
               child: LiquidPrimaryButton(
                 label: _applying ? 'Applying...' : 'Apply Coupon',
                 fullWidth: true,

@@ -15,6 +15,7 @@ import '../data/recent_tables.dart';
 import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
 import '../services/socket_service.dart' show SocketState;
+import '../services/trace.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_surface.dart';
 import '../widgets/page_content_clamp.dart';
@@ -44,6 +45,14 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => Trace.mark('tables_visible'));
+    // CC-LAT-009's floor-cache hydrate now fires from
+    // ConnectionBootstrap.start(), before the connect race begins — this
+    // screen only ever mounts once the router sees isAuthenticatedProvider,
+    // which is set after applyInitialSync has already applied live data, so
+    // calling hydrateFromFloorCache() from here would always run after the
+    // real sync and overwrite it with a stale disk snapshot.
     _refreshController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -264,6 +273,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     final query = _query.trim().toLowerCase();
     final isSearching = query.isNotEmpty;
     final floorCounts = ref.watch(floorCountsProvider);
+    // CC-LAT-009: this data came from the on-disk floor cache, not a live
+    // sync. A stale table that looks live is how a waiter seats a party
+    // twice — so this stays visible until the real sync lands and clears it.
+    final floorDataStale = ref.watch(isFloorDataStaleProvider);
 
     return Scaffold(
       backgroundColor: context.palette.paper,
@@ -342,6 +355,29 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                   ),
                 ),
               ),
+              if (floorDataStale)
+                Container(
+                  width: double.infinity,
+                  color: context.palette.warnBg,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.history_toggle_off,
+                          size: 16, color: context.palette.warnText),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Showing last known table layout — syncing…',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: context.palette.warnText,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               if (_searchOpen)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -1302,9 +1338,8 @@ class _TableCard extends ConsumerWidget {
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
                 // A solid wash, not a diagonal two-stop ramp.
-                color: isMine
-                    ? context.palette.mineWash
-                    : context.palette.surface,
+                color:
+                    isMine ? context.palette.mineWash : context.palette.surface,
                 borderRadius: const BorderRadius.all(AppRadii.lg),
                 border: Border.all(
                   color: isMine

@@ -53,6 +53,19 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            // Unshrunk, unminified native code from 11+ plugins was paying
+            // real dex/class-verification cost on every cold launch — the
+            // single highest-payoff lever left on this perf branch. See
+            // proguard-rules.pro's header before touching this: needs a
+            // real-device smoke test (pairing, socket auth, biometric
+            // unlock, QR scan, printing) before shipping a build with this
+            // enabled.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }

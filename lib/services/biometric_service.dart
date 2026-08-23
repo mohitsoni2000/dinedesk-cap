@@ -4,13 +4,6 @@ import 'package:local_auth/local_auth.dart';
 
 import 'log.dart';
 
-/// FaceID / fingerprint unlock.
-///
-/// The operator's PIN is captured once (after a successful server verify,
-/// with consent) into the platform keystore/keychain, released only behind a
-/// biometric prompt, then replayed through the exact same
-/// `operator:verify` path — the desk never knows the difference and every
-/// server-side gate stays intact.
 final biometricServiceProvider =
     Provider<BiometricService>((ref) => BiometricService());
 
@@ -53,11 +46,6 @@ class BiometricService {
     logD(_tag, 'disabled');
   }
 
-  /// Wipes every biometric key, including the "already asked" marker.
-  ///
-  /// Called on unpair and after a PIN change. Without the PIN-change hook the
-  /// stored PIN went stale and every biometric unlock failed server-side with
-  /// no explanation the operator could act on.
   Future<void> forget() async {
     await _store.delete(key: _kPin);
     await _store.delete(key: _kEnabled);
@@ -65,8 +53,6 @@ class BiometricService {
     logD(_tag, 'credentials forgotten');
   }
 
-  /// Shows the system biometric prompt; on success returns the stored PIN
-  /// (to be replayed through the normal verify flow), else null.
   Future<String?> unlock() async {
     if (!await isEnabled() || !await canUse()) return null;
     try {

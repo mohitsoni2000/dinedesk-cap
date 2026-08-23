@@ -43,8 +43,6 @@ void main() {
       );
       cart.addSimple(_item());
 
-      // Old behaviour: one line at qty 2, charging 60 rupees of cheese on a
-      // plain second portion.
       expect(cart.state.length, 2);
       expect(cart.state[0].qty, 1);
       expect(cart.state[1].qty, 1);
@@ -123,14 +121,13 @@ void main() {
         selectedAddons: <SelectedAddonGroup>[_cheese()],
       );
       cart.addSimple(_item());
-      cart.addSimple(_item()); // plain line now at qty 2
+      cart.addSimple(_item());
 
       cart.decrementPlainLine('itm_1');
 
       final configured = cart.state.firstWhere((l) => !l.isPlain);
       final plain = cart.state.firstWhere((l) => l.isPlain);
-      // Old setQty(itemId, ...) set *every* matching line to the same qty,
-      // so the 5-portion add-on line would have collapsed to 1.
+
       expect(configured.qty, 5);
       expect(plain.qty, 1);
     });
@@ -160,8 +157,7 @@ void main() {
   group('AUDIT #8 — weighed items', () {
     test('addSimple refuses a weighed item instead of adding it at zero', () {
       final cart = CartNotifier();
-      // Old path built weight: null, so lineTotal = price * (null ?? 0) = 0
-      // and the kitchen sent out free food.
+
       expect(
         () => cart.addSimple(_item(measureUnit: 'kg')),
         throwsA(isA<AssertionError>()),

@@ -8,11 +8,6 @@ import '../services/connection_bootstrap.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_surface.dart';
 
-/// CC-LAT-010: a pure view over [connectionBootstrapProvider] — every
-/// connect/rediscovery/resume decision lives in `connection_bootstrap.dart`
-/// now, started from `main()` well before this screen ever mounts. This
-/// class owns nothing but the spinner animation and navigating on terminal
-/// outcomes.
 class ConnectingScreen extends ConsumerStatefulWidget {
   const ConnectingScreen({super.key});
   @override
@@ -52,7 +47,6 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
       } else if (next is BootstrapNeedsAuth) {
         context.go('/auth');
       } else if (next is BootstrapNoPairing) {
-        // Cancel-to-scan, or a rejected/failed pairing that was cleared.
         context.go('/scan');
       }
     });
@@ -110,9 +104,6 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
-                                  // A wifi-off glyph beside "Wi-Fi is not the
-                                  // problem" is the same mixed signal this
-                                  // screen is meant to stop sending.
                                   pairingRejected
                                       ? Icons.link_off_rounded
                                       : failed
@@ -239,14 +230,6 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                         ],
                       ),
                       const SizedBox(height: 20),
-                      // This was a bare `Pressable(child: Text('Cancel'))` —
-                      // a tap target the size of 12px of text, roughly
-                      // 60x16pt, against this app's own declared minimum of
-                      // 48. It is also the *only* way out while the connect
-                      // is still spinning: the "Scan new QR / Try again" pair
-                      // above only appears once it has given up. A waiter
-                      // whose Wi-Fi died mid-shift is stuck on this screen
-                      // until they hit it, one-handed, in a hurry.
                       SizedBox(
                         width: double.infinity,
                         child: _CardButton(
@@ -303,8 +286,6 @@ class _CardButton extends StatelessWidget {
     return Pressable(
       onTap: onTap,
       child: Container(
-        // Padding alone left this at ~46px, and it shrinks further at small
-        // text scales. The floor is explicit now.
         constraints: const BoxConstraints(
           minHeight: AppTouchTargets.minimum,
         ),

@@ -1,5 +1,3 @@
-
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -7,12 +5,10 @@ import '../theme/tokens.dart';
 import 'app_surface.dart';
 
 class OrderSubmittingOverlay {
-
   static Future<bool> show(
     BuildContext context, {
     required Completer<bool> completer,
   }) async {
-
     final nav = Navigator.of(context, rootNavigator: true);
 
     final timer = Timer(const Duration(seconds: 15), () {

@@ -7,8 +7,6 @@ import 'package:restro/widgets/numeric_keyboard.dart';
 import 'package:restro/widgets/page_content_clamp.dart';
 import 'package:restro/widgets/pin_pad.dart';
 
-/// Sets the logical size of the test surface, so a widget can be pumped at a
-/// small phone, a tablet, or a short landscape viewport.
 void _useSurface(WidgetTester tester, Size size, {double textScale = 1.0}) {
   tester.view.devicePixelRatio = 1.0;
   tester.view.physicalSize = size;
@@ -20,8 +18,6 @@ void _useSurface(WidgetTester tester, Size size, {double textScale = 1.0}) {
   });
 }
 
-/// The fully merged style Flutter actually paints, rather than the style
-/// handed to the [Text] — the decoration we care about is inherited.
 TextStyle _paintedStyle(WidgetTester tester, String text) {
   final paragraph = tester.renderObject<RenderParagraph>(find.text(text));
   return paragraph.text.style!;
@@ -34,10 +30,6 @@ const _phoneLandscape = Size(800, 360);
 
 void main() {
   group('Material ancestor', () {
-    // Text with no Material above it renders in Flutter's yellow double
-    // underline "you forgot Material" style. Overlay entries are siblings of
-    // the route rather than children of its Scaffold, so they are the easiest
-    // place in the app to lose it — and toasts show up on nearly every screen.
     testWidgets('toast text is not underlined', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -89,7 +81,7 @@ void main() {
       final row = find
           .descendant(of: find.byType(PinPad), matching: find.byType(Row))
           .first;
-      // No wasted margin on the screens that need every pixel.
+
       expect(tester.getSize(row).width, _smallPhone.width);
       expect(tester.takeException(), isNull);
     });
@@ -148,8 +140,6 @@ void main() {
 
     testWidgets('a landscape phone is still below the two-pane bar',
         (tester) async {
-      // 800dp wide is a big phone on its side, not a tablet — it should not
-      // start clamping content or splitting into panes.
       _useSurface(tester, _phoneLandscape);
       await tester.pumpWidget(
         _host(const PageContentClamp(child: SizedBox.expand())),

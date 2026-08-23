@@ -5,19 +5,12 @@ import '../widgets/dynamic_toast.dart';
 import 'socket_service.dart';
 import 'sync_service.dart';
 
-/// Opens [CustomerSheet] and, when linking against an existing order,
-/// pushes the result through the same `customer:link_order` socket contract
-/// and [SyncService] normalization used everywhere else order state changes.
 class CustomerLinkService {
   final SocketService _socket;
   final SyncService _sync;
 
   CustomerLinkService(this._socket, this._sync);
 
-  /// Picks (or creates) a customer via [CustomerSheet]. If [orderId] is
-  /// given, the picked customer is immediately linked to that order on the
-  /// server. Returns the picked customer map, or `null` if the sheet was
-  /// dismissed or the link request failed.
   Future<Map<String, dynamic>?> pickAndLinkCustomer(
     BuildContext context, {
     String? orderId,
@@ -37,8 +30,8 @@ class CustomerLinkService {
     if (response['kind'] == 'error') {
       if (context.mounted) {
         DynamicToast.show(context,
-            message: response['message']?.toString() ??
-                'Could not link customer',
+            message:
+                response['message']?.toString() ?? 'Could not link customer',
             kind: ToastKind.error);
       }
       return null;
@@ -46,5 +39,12 @@ class CustomerLinkService {
 
     _sync.applyOrderAck(response, includeHistory: true);
     return customer;
+  }
+
+  Future<Map<String, dynamic>?> editCustomer(
+    BuildContext context,
+    Map<String, dynamic> customer,
+  ) {
+    return CustomerSheet.showEdit(context, customer);
   }
 }

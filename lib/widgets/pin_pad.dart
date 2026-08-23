@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
@@ -53,9 +51,6 @@ class PinPad extends StatelessWidget {
     ['forgot', '0', 'del'],
   ];
 
-  /// Keys are [Expanded], so without a ceiling the pad grows to whatever width
-  /// it is handed — on a tablet that means single keys hundreds of points
-  /// wide. Clamped here rather than at each call site so every caller gets it.
   static const double maxWidth = 380;
 
   @override

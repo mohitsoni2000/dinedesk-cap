@@ -15,11 +15,6 @@ import '../widgets/pin_pad.dart';
 
 const _tag = '[Recovery]';
 
-/// Employee ID + PIN login for a phone whose pairing died before the
-/// admin's configured session length ran out. Only reachable when this
-/// device still holds a device secret from a prior real pairing — see
-/// [SessionService.hasDeviceSecret] — so a stranger who merely knows the PIN
-/// cannot use this from a phone that was never paired.
 class RecoveryLoginScreen extends ConsumerStatefulWidget {
   const RecoveryLoginScreen({super.key});
   @override
@@ -89,8 +84,6 @@ class _RecoveryLoginScreenState extends ConsumerState<RecoveryLoginScreen>
     final pairing = await SessionService().getSavedPairing();
     final deviceSecret = pairing?.deviceSecret;
     if (pairing == null || deviceSecret == null) {
-      // Shouldn't be reachable — the entry point only shows for a device that
-      // already has one — but fail safely rather than crash on a null secret.
       if (!mounted) return;
       setState(() {
         _submitting = false;

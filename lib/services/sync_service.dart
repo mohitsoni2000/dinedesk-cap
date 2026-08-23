@@ -24,10 +24,6 @@ import 'trace.dart';
 
 const _tag = '[Sync]';
 
-/// [tableOperatorIds] must be index-parallel with the table's operator-name
-/// list wherever this is called from -- both should come from the same
-/// source list (e.g. ServerTable.operatorIds/operatorNames, which are
-/// guaranteed parallel by construction in ServerTable.fromMap).
 TableState mapTableStatus(
     String status, String? currentOperatorId, List<String> tableOperatorIds) {
   switch (status.toLowerCase()) {
@@ -37,10 +33,6 @@ TableState mapTableStatus(
     case 'reserved':
       return TableState.reserved;
     case 'occupied':
-      // An occupied table with nobody attached belongs to somebody else
-      // until the desk says otherwise. The old code fell through to `mine`
-      // when the operator list was empty, so waiters saw other people's
-      // tables as their own.
       if (currentOperatorId == null || tableOperatorIds.isEmpty) {
         return TableState.other;
       }
@@ -61,13 +53,6 @@ class SyncService {
   Map<String, DateTime> _tableTimerCache = {};
   Map<String, dynamic>? _lastFlagsMap;
 
-  // Coalesces a burst of table-affecting broadcasts (a KOT split across
-  // kitchen sections can fire table:updated + order:updated + kot:sent
-  // almost back-to-back) into one provider write instead of one per event —
-  // each write notifies every tablesProvider watcher synchronously. Reads
-  // and writes during the window go through _currentTables/_setTables so
-  // each handler still sees every other handler's change from the same
-  // burst; only the actual provider notification is batched.
   List<RestaurantTable>? _pendingTables;
   Timer? _tablesFlushTimer;
 
@@ -86,32 +71,12 @@ class SyncService {
     });
   }
 
-  /// True once a real `applyInitialSync` has landed live floor/table/room
-  /// data. Distinct from [isFloorDataStaleProvider] on purpose — that flag
-  /// defaults to `false` before anything has ever run, which reads
-  /// identically to "live data has landed" from the outside. This one only
-  /// ever flips one way, so [hydrateFromFloorCache] has an unambiguous
-  /// signal for "don't bother, real data already won" instead of racing a
-  /// slow disk read against the socket and sometimes losing.
   bool _liveSyncApplied = false;
 
-  /// CC-LAT-007: the desk's menu_version (CD-LAT-004) for whatever menu is
-  /// currently applied. A string compare replaces the old approach of
-  /// diffing the entire raw menu map on every sync — cheap regardless of
-  /// catalogue size, and it no longer has to hold the last raw payload in
-  /// memory for the process lifetime just to compare against it.
-  ///
-  /// Null on a desk build that predates menu_version — that's the deliberate
-  /// fallback signal to always re-parse rather than assume unchanged; desk
-  /// and Crew versions diverge at outlets for weeks after a rollout.
   String? _lastMenuVersion;
 
-  /// Guards against an older off-thread menu parse landing after a newer one.
   int _menuParseSeq = 0;
 
-  /// Parses on a background isolate, falling back to this one if it can't be
-  /// spawned. Low-RAM devices — the ones this whole change targets — are also
-  /// the likeliest to refuse an isolate, and a slow menu beats no menu.
   Future<MenuParseResult> _parseMenuOffThread(Map<String, dynamic> raw) async {
     try {
       return await compute(parseMenu, raw);
@@ -121,12 +86,6 @@ class SyncService {
     }
   }
 
-  /// Commits a parse result. [version] is the desk's menu_version this menu
-  /// was built from (CD-LAT-004) — recorded so the next resync can tell the
-  /// desk what it already has (CD-LAT-005). Null when the source push didn't
-  /// carry one (an older desk, or a live menu:updated broadcast rather than
-  /// a resync response), which correctly forces the next resync to fall back
-  /// to "always re-fetch".
   void _applyParsedMenu(MenuParseResult parsed, Map<String, dynamic> raw,
       {String? version}) {
     _ref.read(menuCategoriesProvider.notifier).state = parsed.categories;
@@ -138,16 +97,6 @@ class SyncService {
 
   SyncService(this._socket, this._ref);
 
-  /// Every broadcast this service subscribes to.
-  ///
-  /// `registerListeners` and `unregisterListeners` both walk this one list.
-  /// They used to keep separate hand-maintained lists and the unregister side
-  /// was missing five events — `room:updated`, `offer:applied`,
-  /// `menu:access:updated`, `error:validation` and `error:permission`. Since
-  /// both auth and reconnect do `unregister(); register();` on the same
-  /// socket, those five accumulated a handler per pass, and one
-  /// `menu:access:updated` broadcast then triggered N full resyncs across
-  /// every paired device.
   static const List<String> broadcastEvents = <String>[
     'table:updated',
     'room:updated',
@@ -179,8 +128,6 @@ class SyncService {
   bool _listenersRegistered = false;
 
   void registerListeners() {
-    // Re-entrancy guard: a second call without an intervening unregister used
-    // to leak the previous state subscription and double every handler.
     if (_listenersRegistered) unregisterListeners();
     _listenersRegistered = true;
     logD(_tag, 'Registering real-time listeners');
@@ -198,10 +145,6 @@ class SyncService {
           unawaited(_requestResync());
         }
       } else if (state == SocketState.disconnected) {
-        // Mid-shift the pairing can lapse under the operator's feet — the
-        // token reaches its expiry, or an admin revokes the device. socket.io
-        // then retries every 2s forever and this banner said "Reconnecting…"
-        // indefinitely, which reads as a Wi-Fi problem nobody can find.
         final rejected =
             _socket.lastConnectFailure == ConnectFailure.authRejected;
         _ref.read(connectionProvider.notifier).state = ConnectionStatus(
@@ -213,18 +156,6 @@ class SyncService {
       }
     });
 
-    // A KOT the desk refused must never be invisible.
-    //
-    // The toast that used to be the whole of this is still raised, because it
-    // is the thing that catches the eye in the moment. But it is no longer
-    // the *record*: `rejectedKotsProvider` owns that, it is restored from the
-    // durable dead-letter list on launch, and it drives a banner that stays
-    // up until the operator acknowledges it. A three-second toast was the
-    // only notice for a round the kitchen never received — miss it and the
-    // failure was gone.
-    //
-    // Reading the provider here also constructs the notifier, so the restore
-    // happens even if no banner has been built yet.
     _ref.read(rejectedKotsProvider);
     _kotRejectionSubscription =
         _ref.read(kotQueueProvider).rejections.listen((rejected) {
@@ -241,10 +172,7 @@ class SyncService {
         return;
       }
       final tables = [..._currentTables];
-      // A deactivated table (e.g. a temp table from a table-rename split, freed
-      // once its order settles) drops out of every future full-list push — the
-      // server only tells us about it going away via this single-table event,
-      // so it must be removed here rather than upserted like an active table.
+
       if (!st.isActive) {
         tables.removeWhere((t) => t.serverId == st.id);
         _setTables(tables);
@@ -355,12 +283,7 @@ class SyncService {
     _socket.on('bill:paid', (data) {
       final env = BroadcastEnvelope(asMap(data));
       final id = env.orderId;
-      // An order can carry more than one bill (liquor/beverages billed
-      // separately), and a single bill can itself be paid in partial
-      // installments — BILL_PAID fires after every payment, not just the
-      // one that finally settles the order. Only treat the order as
-      // settled when the server says every bill is paid/credit; otherwise
-      // just let the amounts refresh via the normal order/table sync.
+
       final orderSettled = env.orderSettled;
       if (id != null && orderSettled) {
         _removeActiveOrder(id);
@@ -454,12 +377,6 @@ class SyncService {
           (flagsRaw is Map) ? Map<String, dynamic>.from(flagsRaw) : envelope;
       _ref.read(flagsProvider.notifier).state = FeatureFlags.fromMap(flagsMap);
 
-      // Per-staff permissions: floor/menu access may have changed with the
-      // flags — pull a fresh, freshly-filtered sync right away. But at 15+
-      // online devices, an unconditional resync here means every admin
-      // permissions tweak re-ships the full menu+orders snapshot to every
-      // device — skip it when this push didn't actually change anything
-      // (e.g. a redundant re-broadcast).
       const flagsEquality = DeepCollectionEquality();
       final unchanged = _lastFlagsMap != null &&
           flagsEquality.equals(_lastFlagsMap, flagsMap);
@@ -467,18 +384,10 @@ class SyncService {
       if (!unchanged) unawaited(_requestResync());
     });
 
-    // Fires when an admin edits a menu-access group's contents (not just
-    // whether an operator is assigned one) — without this, crew's menu only
-    // ever refreshed on the next flags:updated or manual resync, leaving it
-    // showing items the operator can no longer sell (or missing newly
-    // granted ones) until then.
     _socket.on('menu:access:updated', (_) {
       unawaited(_requestMenuOnlyResync());
     });
 
-    // Fire-and-forget emits (e.g. quick-settle's print:bill loop) have no
-    // onAck — a server-side rejection previously vanished into these two
-    // events with nothing listening. Surface it instead of failing silently.
     _socket.on('error:validation', (data) {
       final message = asMap(data)['message']?.toString();
       if (message != null && message.isNotEmpty) showAppToast(message);
@@ -494,8 +403,7 @@ class SyncService {
       _ref.read(menuLoadingProvider.notifier).state = true;
       try {
         final parsed = await _parseMenuOffThread(map);
-        // Parsing is off-thread now, so two pushes in quick succession can
-        // finish out of order. Only the newest one may land.
+
         if (seq != _menuParseSeq) return;
         _applyParsedMenu(parsed, map);
       } catch (e, st) {
@@ -586,10 +494,6 @@ class SyncService {
     _socket.on('force:disconnect', (data) {
       final reason = asMap(data)['reason']?.toString();
       if (reason == 'duplicate_login') {
-        // Fires when another socket registers for this operator — a second
-        // phone on the same QR, or our own reconnect after a WiFi blip
-        // beating the old socket to the punch. Not a real logout: socket.io
-        // already has infinite reconnect attempts, so just let it retry.
         logD(_tag,
             'Ignoring force:disconnect (duplicate_login) — socket.io will reconnect');
         return;
@@ -617,10 +521,6 @@ class SyncService {
     });
   }
 
-  /// Best-effort table label for a phone-facing alert — falls back to the
-  /// raw order id if the order/table can't be found locally (e.g. it was
-  /// already cleared from activeOrdersProvider by the time the failure
-  /// notification arrives).
   String _tableLabelForOrder(String? orderId) {
     if (orderId == null) return 'an order';
     final order = _ref
@@ -636,34 +536,12 @@ class SyncService {
     return table != null ? 'Table ${table.id}' : 'order $orderId';
   }
 
-  /// CC-LAT-009: paint the last known floor layout immediately on cold
-  /// start, before the socket has even connected. Marks the data stale so
-  /// the tables screen can warn the operator until a real sync lands.
-  ///
-  /// Called from `ConnectionBootstrap.start()`, not `TablesScreen.initState`
-  /// — the router only ever navigates to `/tables` once `applyInitialSync`
-  /// has already applied live data (`isAuthenticatedProvider` flips *after*
-  /// that), so calling this from the screen ran strictly after the real
-  /// sync and overwrote live state with a stale disk snapshot on every
-  /// connect. Firing it from the bootstrap, before the connect race even
-  /// starts, is what actually gets it painting ahead of the network instead
-  /// of behind it.
-  ///
-  /// Guarded on both sides of the `await`: [FloorCache.load] is a real disk
-  /// read (SharedPreferences), and a fast resync can land and call
-  /// [applyInitialSync] while it's in flight. The check before the read is
-  /// the common case (skip the read entirely once live data exists); the
-  /// one after is load-bearing — without it, a hydrate that started before
-  /// live data landed can still finish after and clobber it.
   Future<void> hydrateFromFloorCache() async {
     if (_liveSyncApplied) return;
     final cached = await FloorCache.load();
     if (cached == null) return;
     if (_liveSyncApplied) return;
-    // _floorMap (id -> name) is left empty here — it's only consulted when
-    // resolving a fresh ServerTable, and _serverTableToLocal already falls
-    // back to the raw floor id if a name isn't cached, so this is harmless
-    // until the next real sync repopulates it.
+
     _ref.read(floorNamesProvider.notifier).state = cached.floorNames;
     _ref.read(tablesProvider.notifier).state = cached.tables;
     _ref.read(roomsProvider.notifier).state = cached.rooms;
@@ -675,11 +553,6 @@ class SyncService {
   }
 
   Future<void> applyInitialSync(Map<String, dynamic> data) async {
-    // Set before anything below runs, not after the floor/table/room block
-    // specifically finishes — a real sync being in progress at all is
-    // reason enough to stop a concurrent hydrateFromFloorCache from writing
-    // stale data over whatever this call is about to produce, not just once
-    // that one section is done.
     _liveSyncApplied = true;
     logD(_tag, '── Applying initial sync ──');
     logD(_tag, '  Keys: ${data.keys.toList()}');
@@ -715,9 +588,7 @@ class SyncService {
         _floorMap[f.id] = f.name;
       }
     }
-    // _floorMap is a LinkedHashMap built by iterating floorsList in the
-    // order the server sent it (ORDER BY display_order ASC) — its values
-    // are already in the right order, just never exposed to the UI before.
+
     _ref.read(floorNamesProvider.notifier).state = _floorMap.values.toList();
     logD(_tag, '  Floors: ${_floorMap.length} → ${_floorMap.values.toList()}');
 
@@ -761,19 +632,13 @@ class SyncService {
       logD(_tag, '  Rooms: ${rooms.length} loaded');
     }
 
-    // CC-LAT-009: this sync's floors/tables/rooms are now live data — clear
-    // the stale flag and persist a fresh snapshot for the next cold start.
-    // Fire-and-forget: a cache write failure must never hold up the sync.
     _ref.read(isFloorDataStaleProvider.notifier).state = false;
     unawaited(FloorCache.save(FloorCacheSnapshot(
       floorNames: _floorMap.values.toList(),
       tables: _ref.read(tablesProvider),
       rooms: _ref.read(roomsProvider),
     )));
-    // Splits the previously-opaque resync_acked -> menu_gate_done leg so
-    // production trace data can actually show whether floor/table/room
-    // parsing (this) or everything after it (offers/discounts/history/etc.)
-    // is the dominant cost, instead of one black-box number.
+
     Trace.mark('floor_table_room_applied');
 
     final offersList = data['offers'];
@@ -798,10 +663,7 @@ class SyncService {
 
     final serverMenuVersion = data['menu_version'] as String?;
     final menuRaw = data['menu'];
-    // CC-LAT-007: a menu_version match means our current menu is still
-    // correct — skip the parse entirely, whether the desk sent the menu
-    // block anyway or omitted it outright (CD-LAT-005). No menu_version at
-    // all is the fallback signal for an older desk build: always re-parse.
+
     final menuVersionMatches =
         serverMenuVersion != null && serverMenuVersion == _lastMenuVersion;
     Trace.mark('menu_gate_done');
@@ -814,16 +676,12 @@ class SyncService {
       final seq = ++_menuParseSeq;
       _ref.read(menuLoadingProvider.notifier).state = true;
       try {
-        // Off the UI thread: this is the heaviest work in a sync, and it
-        // lands right as the operator is waiting on the tables screen.
         final parsed = await _parseMenuOffThread(menuMap);
         if (seq == _menuParseSeq) {
           _applyParsedMenu(parsed, menuMap, version: serverMenuVersion);
           logD(_tag, '  Menu items: ${parsed.items.length}');
         }
       } catch (e, st) {
-        // Never let a menu problem abort the rest of the sync — fast-add,
-        // active orders and the connected status all still need to apply.
         logD(_tag, '  Menu parse failed: $e $st');
       } finally {
         if (seq == _menuParseSeq) {
@@ -832,9 +690,6 @@ class SyncService {
         Trace.mark('menu_parsed');
       }
     } else {
-      // No menu block and no version match — nothing to parse (e.g. this is
-      // the very first sync this session and the desk had nothing to send,
-      // or an edge case with no prior menu_version to compare against).
       Trace.mark('menu_parsed');
     }
 
@@ -900,9 +755,6 @@ class SyncService {
     }
   }
 
-  /// Re-publishes an order the client already holds (e.g. the Tables screen
-  /// re-opening a running table). Takes a parsed [ServerOrder] rather than
-  /// round-tripping a raw map back through the parser.
   void adoptOrder(ServerOrder order) {
     _replaceActiveOrder(order);
     _updateTableForOrder(order);
@@ -927,18 +779,8 @@ class SyncService {
     _setTables(tables);
   }
 
-  /// Public entry point for a user-triggered resync (e.g. the Tables screen
-  /// refresh button) and for silently resuming a still-valid session right
-  /// after connecting (e.g. app relaunch within the server's PIN grace
-  /// window) — see [ConnectingScreen]. Returns true if the operator is now
-  /// fully synced and authenticated, false if PIN re-entry is required.
   Future<bool> requestResync() => _requestResync();
 
-  /// CC-LAT-008: a menu-access edit only ever changes what the menu looks
-  /// like for whoever's in that group — nothing about tables/orders/etc.
-  /// moved. Scoping the request to `sections: ['menu']` means every online
-  /// device reconnecting on this broadcast pays for a menu-only round trip,
-  /// not the full snapshot.
   Future<bool> _requestMenuOnlyResync() =>
       _requestResync(sections: const ['menu']);
 
@@ -949,10 +791,7 @@ class SyncService {
     );
 
     Trace.mark('resync_emitted');
-    // CC-LAT-007: menu_version lets the desk skip re-sending (CD-LAT-005) an
-    // unchanged menu. An older desk build that doesn't recognise either
-    // field just ignores it and sends the full snapshot every time —
-    // harmless, not a breaking request shape.
+
     final resyncPayload = <String, dynamic>{
       if (_lastMenuVersion != null) 'menu_version': _lastMenuVersion,
       if (sections != null) 'sections': sections,
@@ -975,23 +814,12 @@ class SyncService {
             employeeId: om['employeeId']?.toString(),
           );
         }
-        // The server only reports success here if our session is still
-        // pinVerified — restore the transport's verified state (unblocks
-        // KOT sending after any reconnect) and the app-level auth flag
-        // (unblocks a silent resume right after a cold start).
+
         _socket.markVerified();
         _ref.read(isAuthenticatedProvider.notifier).state = true;
         unawaited(_ref.read(kotQueueProvider).flush(_socket));
         return true;
       } else if (res['code'] == 'reauth_required') {
-        // The desktop's PIN-verified flag has genuinely lapsed (grace window
-        // expired, or its process restarted mid-session) — ask for the PIN
-        // in place rather than clearing isAuthenticatedProvider, which would
-        // bounce the operator to the full login screen from wherever they
-        // are. Every other rejection here (a mid-flight disconnect, a
-        // dropped packet) falls through to the transient-failure branch
-        // below and never touches auth state at all — the next automatic
-        // reconnect just retries.
         if (await promptPinReverify()) {
           return await _requestResync();
         }
@@ -1017,7 +845,7 @@ class SyncService {
     _stateSubscription = null;
     _kotRejectionSubscription?.cancel();
     _kotRejectionSubscription = null;
-    // Don't let a debounced table-timer write get dropped on the way out.
+
     if (_timerFlush?.isActive ?? false) {
       _timerFlush!.cancel();
       unawaited(_flushTimerCache());
@@ -1027,23 +855,17 @@ class SyncService {
     }
   }
 
-  /// Called when the provider is torn down.
   void dispose() {
     unregisterListeners();
     _tablesFlushTimer?.cancel();
   }
 
-  /// Legacy per-table keys. Read once at startup for migration, then removed.
   static const _timerKeyPrefix = 'table_timer_';
 
-  /// All table timers in one key. The per-table scheme meant a full sync of N
-  /// tables fired up to N separate `getInstance()` + write round trips.
   static const _timerBlobKey = 'table_timers_v2';
 
   Timer? _timerFlush;
 
-  /// Coalesces a burst of table events into a single write, the same way
-  /// [WidgetSyncService.schedule] does.
   void _scheduleTimerFlush() {
     _timerFlush?.cancel();
     _timerFlush = Timer(
@@ -1061,9 +883,7 @@ class SyncService {
           _tableTimerCache.map((k, v) => MapEntry(k, v.toIso8601String())),
         ),
       );
-    } catch (_) {
-      // A dropped timer only costs a table its "occupied for" readout.
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadTimerCache() async {
@@ -1083,8 +903,6 @@ class SyncService {
         return;
       }
 
-      // One-time migration off the per-table keys, so tables already occupied
-      // at upgrade time keep their running clock.
       final legacy =
           prefs.getKeys().where((k) => k.startsWith(_timerKeyPrefix)).toList();
       for (final key in legacy) {
@@ -1095,9 +913,7 @@ class SyncService {
       }
       if (legacy.isNotEmpty) {
         await _flushTimerCache();
-        // Only hit on a first-launch-after-upgrade, but this list scales
-        // with table count and used to be N sequential awaits sitting on
-        // the sync's render-blocking path — parallelize them.
+
         await Future.wait(legacy.map(prefs.remove));
       }
     } catch (_) {
@@ -1117,16 +933,12 @@ class SyncService {
           .read(tablesProvider)
           .where((t) => t.serverId == st.id)
           .firstOrNull;
-      // The desk's timestamp wins. Falling back to this phone's clock meant
-      // two devices showed two different "occupied for" durations on the
-      // same table.
+
       occupiedSince = st.occupiedSince ??
           existing?.occupiedSince ??
           _tableTimerCache[st.id] ??
           DateTime.now();
-      // Stage in memory and let the debounced flush persist it. Storing the
-      // actual start time rather than "now" also means the clock survives an
-      // app restart instead of restarting on the next table event.
+
       if (_tableTimerCache[st.id] != occupiedSince) {
         _tableTimerCache[st.id] = occupiedSince;
         _scheduleTimerFlush();
@@ -1143,10 +955,6 @@ class SyncService {
       state: tableState,
       joinedOperatorIds: st.operatorIds,
       joinedOperatorNames: st.operatorNames,
-      // A bill exists only when an order does. Tying it to `activeOrderId`
-      // rather than to "is the number greater than zero" keeps both truths:
-      // a free table shows nothing, and a fully comped table still shows the
-      // real amount it is running — which is zero.
       bill: st.activeOrderId == null ? null : (st.orderTotal ?? Money.zero),
       note: st.reservationCustomer,
       activeOrderId: st.activeOrderId,
@@ -1208,8 +1016,6 @@ class SyncService {
       displayId = so.orderNumber;
     }
 
-    // Amounts deliberately not logged — this ran on every broadcast and put
-    // every order total into device logs.
     logD(
         _tag, '  Order $displayId: items=${so.itemCount}, status=${so.status}');
 
@@ -1218,10 +1024,6 @@ class SyncService {
       orderId: so.id,
       tableId: tableDisplay,
       time: _formatTime(so.createdAt),
-      // The desk's business date, never a calendar date derived here. When
-      // the desk hasn't sent one the field stays empty rather than guessing:
-      // an empty date filters to nothing, which is visibly wrong, whereas a
-      // wrong date silently disagrees with the day-end report.
       date: so.businessDate ?? '',
       itemCount: so.itemCount,
       total: so.total,
@@ -1245,9 +1047,6 @@ class SyncService {
       itemId: item.itemId,
       name: item.itemName,
       qty: item.quantity,
-      // Unit price only. The old fallback to `totalPrice` meant a
-      // legitimately free line (comp, package component) rendered as
-      // "total x qty" — the amount multiplied by the quantity twice.
       price: item.unitPrice,
       kitchenSection: item.itemType,
       mods: mods,
@@ -1294,8 +1093,6 @@ class SyncService {
         .toList(growable: false);
   }
 
-  /// Parses one order off a broadcast, or null if it fails validation.
-  /// A single malformed order must not take down a whole sync.
   ServerOrder? _parseOrder(Map<String, dynamic>? map) {
     if (map == null) return null;
     try {
@@ -1306,9 +1103,6 @@ class SyncService {
     }
   }
 
-  /// History is capped. It used to grow without bound across a shift — every
-  /// broadcast prepended an entry and nothing ever trimmed — while each
-  /// upsert did an O(n) scan of the whole list.
   static const int _maxHistoryEntries = 400;
 
   void _setHistory(List<HistoryOrder> entries) {
@@ -1336,9 +1130,7 @@ class SyncService {
     final idx = tables.indexWhere((t) => t.serverId == order.tableId);
     if (idx < 0) return;
     final current = tables[idx];
-    // Zero is a real amount. The old guards ("total > 0 ? total : current")
-    // treated it as "no data", so voiding every line or discounting to zero
-    // left the table tile displaying its previous total indefinitely.
+
     tables[idx] = current.copyWith(
       state: current.state == TableState.free ? TableState.mine : current.state,
       activeOrderId: order.id,
@@ -1351,11 +1143,6 @@ class SyncService {
     _setTables(tables);
   }
 
-  // Upserts by id rather than replacing the whole list — a floor-restricted
-  // operator's initial sync is filtered to their allowed floors, but some
-  // broadcasts (table shift/merge) still carry every table system-wide.
-  // Wholesale-replacing on those would overwrite the filtered set with the
-  // unrestricted universe within seconds of any table activity.
   void _applyTablesFromEnvelope(BroadcastEnvelope env) {
     final tableMaps = env.tablesList;
     if (tableMaps.isEmpty) return;
@@ -1403,13 +1190,9 @@ class SyncService {
     }
   }
 
-  /// Fast-add tiles are resolved against the parsed catalogue, never
-  /// re-parsed from raw maps — see [resolveFastAddItems].
   void _applyFastAddData(Map<String, dynamic> data) {
     final catalogue = _ref.read(menuProvider);
     if (catalogue.isEmpty) {
-      // Menu hasn't landed yet. Stash and apply once it has, rather than
-      // publishing tiles we cannot price.
       _pendingFastAdd = data;
       return;
     }

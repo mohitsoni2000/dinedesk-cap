@@ -3,16 +3,6 @@ import '../data/providers.dart';
 import '../models/server_models.dart';
 import '../models/wire.dart';
 
-/// Menu parsing, extracted from `SyncService` so it can run off the UI thread.
-///
-/// Everything here is top-level and takes only plain decoded JSON — no `Ref`,
-/// no `this` — which is what makes it eligible for `compute()`. The catalogue
-/// carries nested option, variation and addon groups, so this is by far the
-/// heaviest work a sync does; on a low-end device, doing it on the main
-/// isolate stalls whatever is on screen at the time.
-
-/// What a parse produces. [categories] used to be written straight to a
-/// provider mid-parse; it's returned instead so the parse stays pure.
 class MenuParseResult {
   final List<MenuItem> items;
   final List<MenuCategory> categories;
@@ -23,14 +13,10 @@ ServerMenuItem? _tryParseItem(Map<String, dynamic> m) {
   try {
     return ServerMenuItem.fromMap(m);
   } on WireFormatException {
-    // One bad row must not blank the menu. It is dropped rather than
-    // rendered with guessed values — an item with an unknown veg flag
-    // would paint the wrong FSSAI dot.
     return null;
   }
 }
 
-/// Entry point for `compute()`.
 MenuParseResult parseMenu(Map<String, dynamic> data) {
   final rawItems = data['items'];
   final rawCategories = data['categories'];
@@ -62,7 +48,6 @@ MenuParseResult parseMenu(Map<String, dynamic> data) {
       }
     }
   } else if (rawCategories is List) {
-    // Older payload shape: items nested under their category.
     for (final cat in rawCategories) {
       if (cat is Map) {
         final catMap = Map<String, dynamic>.from(cat);
@@ -225,11 +210,6 @@ Map<String, ({String name, String type})> categoryMap(dynamic rawCategories) {
   return map;
 }
 
-/// The price shown on a menu tile.
-///
-/// A zero base price with variations means "priced by variation" — show the
-/// cheapest, and the detail sheet forces a choice before the line is added.
-/// A zero base price with *no* variations is a real zero and stays zero.
 Money effectivePrice(ServerMenuItem si) {
   if (si.basePrice.isPositive) return si.basePrice;
   final priced =
@@ -238,17 +218,6 @@ Money effectivePrice(ServerMenuItem si) {
   return priced.reduce((a, b) => a < b ? a : b);
 }
 
-/// Resolves fast-add ids against the already-parsed catalogue.
-///
-/// Fast-add tiles used to be rebuilt straight from `ServerMenuItem.fromMap`,
-/// which hardcodes empty option/variation/addon lists — those are joined
-/// later, in `parseMenu`. So a Quick Add chip for a Half/Full item reported
-/// no variations, skipped the detail sheet, and was added at the base price
-/// with no portion for the kitchen. If the base price was zero (priced by
-/// variation) it went in at 0 rupees.
-///
-/// Ids the catalogue doesn't know are dropped: a tile we cannot price
-/// correctly must not be tappable.
 List<MenuItem> resolveFastAddItems(
   List<Map<String, dynamic>> rows,
   List<MenuItem> catalogue,

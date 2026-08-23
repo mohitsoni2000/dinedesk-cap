@@ -2,7 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:restro/services/socket_service.dart';
 
 void main() {
-  group('isAuthHandshakeError — structured code first, substring as fallback', () {
+  group('isAuthHandshakeError — structured code first, substring as fallback',
+      () {
     test('recognizes every structured code the desk can send', () {
       for (final code in <String>[
         'MISSING_TOKEN',
@@ -24,8 +25,6 @@ void main() {
     });
 
     test('does not misclassify an unrecognized structured code', () {
-      // A future desk build might send a code this app version doesn't know
-      // about yet. It must not be silently treated as "re-scan your QR".
       expect(
         SocketService.isAuthHandshakeError(<String, dynamic>{
           'code': 'SOME_FUTURE_CODE',
@@ -35,9 +34,12 @@ void main() {
       );
     });
 
-    test('falls back to substring matching for a bare-string error (older desk build)', () {
+    test(
+        'falls back to substring matching for a bare-string error (older desk build)',
+        () {
       expect(
-        SocketService.isAuthHandshakeError(Exception('Token expired or invalid')),
+        SocketService.isAuthHandshakeError(
+            Exception('Token expired or invalid')),
         isTrue,
       );
       expect(
@@ -47,8 +49,10 @@ void main() {
     });
 
     test('does not classify a generic transport failure as an auth error', () {
-      expect(SocketService.isAuthHandshakeError(Exception('xhr poll error')), isFalse);
-      expect(SocketService.isAuthHandshakeError(Exception('websocket error')), isFalse);
+      expect(SocketService.isAuthHandshakeError(Exception('xhr poll error')),
+          isFalse);
+      expect(SocketService.isAuthHandshakeError(Exception('websocket error')),
+          isFalse);
     });
   });
 }

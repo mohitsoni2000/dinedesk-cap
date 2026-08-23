@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import '../data/money.dart';
 import 'package:flutter/services.dart';
@@ -178,7 +176,6 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                     style: AppTypography.title,
                   ),
                   const SizedBox(height: 24),
-
                   if (_hasVariations) ...[
                     Text('SIZE / VARIANT',
                         style:
@@ -224,10 +221,10 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                                           _selectedVariationId == variation.id
                                               ? FontWeight.w600
                                               : FontWeight.w400,
-                                      color: _selectedVariationId ==
-                                              variation.id
-                                          ? AppColors.terraDeep
-                                          : context.palette.ink,
+                                      color:
+                                          _selectedVariationId == variation.id
+                                              ? AppColors.terraDeep
+                                              : context.palette.ink,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -248,7 +245,6 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                     Divider(height: 1, color: context.palette.ink10),
                     const SizedBox(height: 20),
                   ],
-
                   if (_isWeighed) ...[
                     Text(
                       'WEIGHT (${widget.item.measureUnit})',
@@ -266,8 +262,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                       child: TextField(
                         controller: _weightController,
                         cursorColor: AppColors.terra,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
                         decoration: InputDecoration(
                           border: InputBorder.none,
                           hintText: 'e.g. 0.5',
@@ -277,7 +273,6 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                       ),
                     ),
                   ] else ...[
-
                     Row(
                       children: [
                         Text('QUANTITY',
@@ -290,13 +285,11 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                               if (_qty > 1) setState(() => _qty--);
                             }),
                         const SizedBox(width: 16),
-                        // minWidth so a two-digit quantity at a large font
-                        // scale grows the box instead of being clipped.
                         ConstrainedBox(
                             constraints: const BoxConstraints(minWidth: 32),
                             child: Center(
-                              child: Text('$_qty',
-                                  style: AppTypography.headline),
+                              child:
+                                  Text('$_qty', style: AppTypography.headline),
                             )),
                         const SizedBox(width: 16),
                         StepperButton(
@@ -308,7 +301,6 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                   const SizedBox(height: 20),
                   Divider(height: 1, color: context.palette.ink10),
                   const SizedBox(height: 20),
-
                   if (_hasAddonGroups) ...[
                     for (final group in widget.item.addonGroups) ...[
                       Text(
@@ -350,7 +342,6 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                       const SizedBox(height: 20),
                     ],
                   ],
-
                   if (_hasServerOptions) ...[
                     for (final group in widget.item.optionGroups) ...[
                       Text(
@@ -394,7 +385,6 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                       const SizedBox(height: 20),
                     ],
                   ],
-
                   Text('SPECIAL NOTE',
                       style: AppTypography.micro.copyWith(letterSpacing: 1.4)),
                   const SizedBox(height: 8),
@@ -402,8 +392,8 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                     decoration: BoxDecoration(
                       color: context.palette.surface,
                       borderRadius: const BorderRadius.all(AppRadii.sm),
-                      border:
-                          Border.all(color: context.palette.hairline, width: 1.5),
+                      border: Border.all(
+                          color: context.palette.hairline, width: 1.5),
                     ),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -422,10 +412,9 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                 ],
               ),
             ),
-
             Padding(
-              padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + context.sheetBottomInset),
+              padding:
+                  EdgeInsets.fromLTRB(16, 8, 16, 16 + context.sheetBottomInset),
               child: Row(
                 children: [
                   Column(
@@ -529,7 +518,8 @@ class _OptionTile extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: selected ? context.palette.terraSoft : context.palette.surface,
+            color:
+                selected ? context.palette.terraSoft : context.palette.surface,
             borderRadius: const BorderRadius.all(AppRadii.sm),
             border: Border.all(
               color: selected ? AppColors.terra : context.palette.hairline,
@@ -560,9 +550,8 @@ class _OptionTile extends StatelessWidget {
                 child: Text(label,
                     style: AppTypography.bodyMd.copyWith(
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color: selected
-                          ? AppColors.terraDeep
-                          : context.palette.ink,
+                      color:
+                          selected ? AppColors.terraDeep : context.palette.ink,
                     )),
               ),
               if (showPrice)

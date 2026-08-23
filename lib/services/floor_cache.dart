@@ -9,14 +9,6 @@ import 'log.dart';
 const String _tag = '[FloorCache]';
 const String _cacheKey = 'floor_cache_v1';
 
-/// CC-LAT-009: a floors/tables/rooms-only snapshot, persisted so the tables
-/// screen can paint something in tens of milliseconds on cold start instead
-/// of waiting on the network.
-///
-/// Deliberately **not** the menu. The menu is the bulk of any sync payload,
-/// the first screen the operator sees never shows it, and putting megabytes
-/// of menu JSON through SharedPreferences — an XML file read fully into
-/// memory on `getInstance()` — would cost more than this saves.
 class FloorCacheSnapshot {
   final List<String> floorNames;
   final List<RestaurantTable> tables;
@@ -41,15 +33,10 @@ class FloorCache {
       });
       await prefs.setString(_cacheKey, json);
     } catch (e) {
-      // Never let a cache write failure surface to the operator — this is a
-      // paint-speed optimisation, not a source of truth.
       logD(_tag, 'save failed: $e');
     }
   }
 
-  /// Null when there's no cache yet (first-ever launch) or it failed to
-  /// parse (a format change between app versions) — either way the caller
-  /// falls back to waiting for the real sync, exactly as before this existed.
   static Future<FloorCacheSnapshot?> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -67,14 +54,16 @@ class FloorCache {
           .map((e) => _roomFromJson(e as Map<String, dynamic>))
           .whereType<RestaurantRoom>()
           .toList();
-      return FloorCacheSnapshot(floorNames: floorNames, tables: tables, rooms: rooms);
+      return FloorCacheSnapshot(
+          floorNames: floorNames, tables: tables, rooms: rooms);
     } catch (e) {
       logD(_tag, 'load failed (treating as no cache): $e');
       return null;
     }
   }
 
-  static Map<String, dynamic> _tableToJson(RestaurantTable t) => <String, dynamic>{
+  static Map<String, dynamic> _tableToJson(RestaurantTable t) =>
+      <String, dynamic>{
         'id': t.id,
         'server_id': t.serverId,
         'seats': t.seats,
@@ -104,9 +93,11 @@ class FloorCache {
         floor: m['floor'] as String,
         state: TableState.values.byName(m['state'] as String),
         joinedOperatorIds:
-            (m['joined_operator_ids'] as List<dynamic>? ?? const []).cast<String>(),
+            (m['joined_operator_ids'] as List<dynamic>? ?? const [])
+                .cast<String>(),
         joinedOperatorNames:
-            (m['joined_operator_names'] as List<dynamic>? ?? const []).cast<String>(),
+            (m['joined_operator_names'] as List<dynamic>? ?? const [])
+                .cast<String>(),
         coverCount: m['cover_count'] as int?,
         bill: billPaise == null ? null : Money(billPaise),
         note: m['note'] as String?,
@@ -115,7 +106,9 @@ class FloorCache {
         orderItemCount: m['order_item_count'] as int? ?? 0,
         oldestKotMinutes: m['oldest_kot_minutes'] as int? ?? 0,
         kotCount: m['kot_count'] as int? ?? 0,
-        occupiedSince: occupiedSinceRaw == null ? null : DateTime.tryParse(occupiedSinceRaw),
+        occupiedSince: occupiedSinceRaw == null
+            ? null
+            : DateTime.tryParse(occupiedSinceRaw),
       );
     } catch (e) {
       logD(_tag, 'dropping one malformed cached table: $e');
@@ -123,7 +116,8 @@ class FloorCache {
     }
   }
 
-  static Map<String, dynamic> _roomToJson(RestaurantRoom r) => <String, dynamic>{
+  static Map<String, dynamic> _roomToJson(RestaurantRoom r) =>
+      <String, dynamic>{
         'id': r.id,
         'server_id': r.serverId,
         'capacity': r.capacity,

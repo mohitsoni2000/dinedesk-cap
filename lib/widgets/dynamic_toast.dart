@@ -6,18 +6,12 @@ import '../theme/tokens.dart';
 
 enum ToastKind { info, success, error, warning }
 
-/// A floating, pill-shaped notification inspired by iOS's Dynamic Island —
-/// morphs in from a small capsule with a spring overshoot, holds over the
-/// content, then shrinks back out. Lives in the root [Overlay] rather than
-/// a [Scaffold], so it works the same from any screen, sheet, or dialog and
-/// never gets clipped by whatever's underneath.
 class DynamicToast {
   DynamicToast._();
 
   static OverlayEntry? _entry;
   static GlobalKey<_DynamicIslandToastState>? _stateKey;
 
-  /// Shows a toast, replacing any toast currently on screen.
   static void show(
     BuildContext context, {
     required String message,
@@ -55,8 +49,6 @@ class DynamicToast {
     overlay.insert(entry);
   }
 
-  /// Dismisses the current toast immediately (skips the exit animation) —
-  /// used before showing a replacement so two never overlap mid-animation.
   static void _removeCurrent() {
     _stateKey?.currentState?.dismissNow();
     _entry = null;
@@ -145,7 +137,6 @@ class _DynamicIslandToastState extends State<_DynamicIslandToastView>
     widget.onDismissed();
   }
 
-  /// Skips straight to removed — used when a new toast replaces this one.
   void dismissNow() {
     _dismissing = true;
     _autoDismiss?.cancel();
@@ -179,9 +170,6 @@ class _DynamicIslandToastState extends State<_DynamicIslandToastView>
       top: topInset + 10,
       left: 0,
       right: 0,
-      // Material has to sit *inside* the Positioned — the Positioned itself
-      // must stay a direct child of the Overlay's Stack. Without it the
-      // message renders in Flutter's yellow-underline no-Material style.
       child: Material(
         type: MaterialType.transparency,
         child: Center(
@@ -207,8 +195,6 @@ class _DynamicIslandToastState extends State<_DynamicIslandToastView>
                         borderRadius: const BorderRadius.all(AppRadii.pill),
                         border: Border.all(
                             color: Colors.white.withValues(alpha: 0.08)),
-                        // A toast genuinely floats over the page, so it keeps
-                        // a shadow — but the single flat one, not a 24px drop.
                         boxShadow: AppShadows.flat,
                       ),
                       child: Row(

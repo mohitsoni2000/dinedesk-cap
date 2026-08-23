@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -110,9 +108,8 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
             .where((id) => id != widget.origin.serverId)
             .toList()
         : <String>[];
-    final linkedPeers = tables
-        .where((t) => linkedPeerIds.contains(t.serverId))
-        .toList();
+    final linkedPeers =
+        tables.where((t) => linkedPeerIds.contains(t.serverId)).toList();
 
     final candidates = tables
         .where((t) =>
@@ -169,7 +166,6 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
             ),
             const SizedBox(height: 12),
             Divider(height: 1, color: context.palette.hairline),
-
             if (isLinked && linkedPeers.isNotEmpty) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(
@@ -230,7 +226,6 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                 ),
               Divider(height: 1, color: context.palette.hairline),
             ],
-
             Expanded(
               child: candidates.isEmpty && !isLinked
                   ? const Center(
@@ -292,8 +287,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                                                 ? AppColors.terra
                                                 : AppColors.info)
                                             .withValues(alpha: 0.12),
-                                        borderRadius:
-                                            BorderRadius.circular(10),
+                                        borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: Icon(
                                           Icons.table_restaurant_outlined,
@@ -309,15 +303,14 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(t.id,
-                                              style: AppTypography.bodyMd
-                                                  .copyWith(
+                                              style:
+                                                  AppTypography.bodyMd.copyWith(
                                                 color: on
                                                     ? AppColors.terraDeep
                                                     : palette.ink,
                                                 fontWeight: FontWeight.w600,
                                               )),
-                                          Text(
-                                              '${t.seats} seats · ${t.floor}',
+                                          Text('${t.seats} seats · ${t.floor}',
                                               style: AppTypography.caption
                                                   .copyWith(
                                                 color: on
@@ -331,9 +324,8 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                                       on
                                           ? Icons.check_circle
                                           : Icons.radio_button_unchecked,
-                                      color: on
-                                          ? AppColors.terra
-                                          : palette.ink30,
+                                      color:
+                                          on ? AppColors.terra : palette.ink30,
                                     ),
                                   ],
                                 ),
@@ -383,10 +375,9 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                             label: _submitting ? 'Linking…' : 'Link Tables',
                             fullWidth: true,
                             leadingIcon: Icons.link,
-                            onPressed:
-                                (_pickedServerId == null || _submitting)
-                                    ? null
-                                    : _link,
+                            onPressed: (_pickedServerId == null || _submitting)
+                                ? null
+                                : _link,
                           ),
                         ),
                       ],

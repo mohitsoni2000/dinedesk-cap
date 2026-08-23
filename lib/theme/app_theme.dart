@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import '../motion/physics.dart';
 import 'tokens.dart';
@@ -77,8 +75,6 @@ class AppTheme {
       dividerColor: p.ink10,
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
-
-      // 2026 motion language: spring-driven shared-axis page transitions.
       pageTransitionsTheme: PageTransitionsTheme(
         builders: {
           for (final platform in TargetPlatform.values)

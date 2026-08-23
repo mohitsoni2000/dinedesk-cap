@@ -1,25 +1,6 @@
 import '../data/money.dart';
 import 'wire.dart';
 
-/// Wire-shape parsers.
-///
-/// Rewritten against three rules that the previous version broke:
-///
-///  1. **One definition per number.** No field is ever recomputed from other
-///     fields. `total` is `total`; it is not "total, or the sum of the
-///     subtotals if total looks empty". That fallback meant a fully
-///     discounted order rendered at its undiscounted amount, and it is the
-///     same failure mode as the desktop day-end discrepancy.
-///  2. **Zero is a value, absence is not.** Optional amounts are `Money?`.
-///     `null` means the desk did not send it; `Money.zero` means the desk
-///     said zero. Conflating them is why a voided table kept showing its old
-///     bill.
-///  3. **Money never touches `double` past this file.**
-
-// ---------------------------------------------------------------------------
-// Tables
-// ---------------------------------------------------------------------------
-
 class ServerTable {
   final String id;
   final String name;
@@ -27,9 +8,6 @@ class ServerTable {
   final String status;
   final String floorId;
 
-  /// The active order's total, or null when the table has no active order.
-  /// Explicitly nullable: a comped table legitimately totals ₹0 and must
-  /// still read as occupied.
   final Money? orderTotal;
 
   final String? activeOrderId;
@@ -40,13 +18,8 @@ class ServerTable {
   final int oldestKotMinutes;
   final int kotCount;
 
-  /// Server-authoritative occupancy start. The client used to fall back to
-  /// its own `DateTime.now()`, so two phones showed two different "occupied
-  /// for" clocks on the same table.
   final DateTime? occupiedSince;
 
-  /// Must stay index-parallel with [operatorNames] — both are built from the
-  /// same `operators` list in [fromMap], which is what guarantees it.
   final List<String> operatorIds;
   final List<String> operatorNames;
   final bool isActive;
@@ -107,10 +80,6 @@ class ServerTable {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Rooms
-// ---------------------------------------------------------------------------
-
 class ServerRoom {
   final String id;
   final String name;
@@ -170,10 +139,6 @@ class ServerFloor {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Orders
-// ---------------------------------------------------------------------------
-
 class ServerOrder {
   final String id;
   final String tableId;
@@ -181,20 +146,12 @@ class ServerOrder {
   final String orderNumber;
   final String status;
 
-  /// The order total, as the desk computed it — post discount, post tax,
-  /// post charges. Required, and never re-derived here.
   final Money total;
 
-  /// Line count. `null` on the wire means "not sent", in which case the
-  /// parsed item list is used. A sent `0` is respected as zero.
   final int itemCount;
 
   final String createdAt;
 
-  /// The desk's business day for this order (`YYYY-MM-DD`). The client must
-  /// never compute this from `created_at` — a restaurant closing at 2am has
-  /// 1am orders belonging to the previous business day, and deriving it
-  /// locally produced a fourth, disagreeing definition of "today".
   final String? businessDate;
 
   final String? notes;
@@ -207,7 +164,6 @@ class ServerOrder {
 
   bool get isRoom => roomId.isNotEmpty;
 
-  /// True once the desk has generated at least one bill for this order.
   bool get hasBills => bills.isNotEmpty;
 
   const ServerOrder({
@@ -264,9 +220,6 @@ class ServerOrder {
   }
 }
 
-/// A bill attached to an order. An order can carry several — liquor and
-/// beverages are billed separately in most Indian setups — and each can be
-/// settled independently.
 class ServerBill {
   final String id;
   final String billNumber;
@@ -287,9 +240,6 @@ class ServerBill {
     return ServerBill(
       id: requireString(m, 'id', entity),
       billNumber: optionalString(m, 'bill_number') ?? '',
-      // Required: a bill without a total is not a bill, and defaulting it to
-      // zero is what let a ₹0 grand total reach the payment sheet and produce
-      // a NaN split.
       totalAmount: requireMoney(m, 'total_amount', entity),
       billType: stringOr(m, 'bill_type', 'food'),
       isPaid: boolOr(m, 'is_paid', false) ||
@@ -305,10 +255,6 @@ class ServerOrderItem {
   final String itemName;
   final int quantity;
 
-  /// Price of one unit. Required. The old parser fell back to `total_price`
-  /// when this was zero, so a legitimately free line (comp, package
-  /// component) rendered as `total × qty` — the price multiplied by the
-  /// quantity twice over.
   final Money unitPrice;
 
   final Money totalPrice;
@@ -318,9 +264,6 @@ class ServerOrderItem {
   final String? notes;
   final String? kotStatus;
 
-  /// The round this line was fired on. The desk sends it (`SELECT oi.*`) and
-  /// keeps it accurate across round splits, which makes it the one field that
-  /// groups an order's lines back into the rounds the kitchen saw.
   final String? kotNumber;
 
   final String? variationId;
@@ -364,10 +307,6 @@ class ServerOrderItem {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Menu
-// ---------------------------------------------------------------------------
-
 class ServerMenuItem {
   final String id;
   final String name;
@@ -404,14 +343,13 @@ class ServerMenuItem {
     return ServerMenuItem(
       id: requireString(m, 'id', entity),
       name: stringOr(m, 'name', 'Item'),
-      categoryName:
-          optionalStringAny(m, <String>['category_name', 'category', 'section']) ??
-              'Other',
+      categoryName: optionalStringAny(
+              m, <String>['category_name', 'category', 'section']) ??
+          'Other',
       categoryType: stringOr(m, 'category_type', 'food'),
       basePrice: optionalMoney(m, 'base_price') ??
           optionalMoney(m, 'price') ??
           Money.zero,
-      // Required, not defaulted: guessing wrong paints the wrong FSSAI dot.
       isVeg: requireBool(m, 'is_veg', entity),
       isAvailable: optionalBool(m, 'is_available') ??
           optionalBool(m, 'available') ??
@@ -593,10 +531,6 @@ class ServerItemVariation {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Misc
-// ---------------------------------------------------------------------------
-
 class ServerRestaurantInfo {
   final String name;
   final String address;
@@ -648,9 +582,6 @@ class BroadcastEnvelope {
 
   List<Map<String, dynamic>> get roomsList => mapList(raw['rooms']);
 
-  /// Null when absent *or* empty. The old version returned `''` for an empty
-  /// `order_id`, which passed every `id != null` guard downstream and then
-  /// silently matched no order at all.
   String? get orderId =>
       optionalString(raw, 'order_id') ??
       (orderMap == null ? null : optionalString(orderMap!, 'id')) ??

@@ -37,9 +37,6 @@ Map<String, dynamic> _item({
 void main() {
   group('AUDIT #2 — order total has exactly one definition', () {
     test('a genuinely zero total is preserved, not recomputed', () {
-      // A 100%-discounted or fully comped order really does total zero. The
-      // old parser treated 0 as "missing" and summed the subtotals instead,
-      // so the phone displayed and charged the undiscounted amount.
       final order = ServerOrder.fromMap(<String, dynamic>{
         ..._order(total: 0),
         'food_subtotal': 800.0,
@@ -61,7 +58,7 @@ void main() {
       final item = ServerOrderItem.fromMap(
         _item(unitPrice: 0, totalPrice: 300.0, quantity: 3),
       );
-      // Old behaviour: price became 300, rendered as "300 x 3" = 900.
+
       expect(item.unitPrice, Money.zero);
       expect(item.totalPrice, const Money(30000));
     });
@@ -97,8 +94,6 @@ void main() {
     });
 
     test('bool parsing is case-insensitive', () {
-      // is_veg: "True" parsed as false under the old _toBool, painting a red
-      // non-veg dot on a vegetarian item. That is an FSSAI labelling problem.
       expect(optionalBool(<String, dynamic>{'v': 'True'}, 'v'), isTrue);
       expect(optionalBool(<String, dynamic>{'v': 'YES'}, 'v'), isTrue);
       expect(optionalBool(<String, dynamic>{'v': 'False'}, 'v'), isFalse);
@@ -132,8 +127,6 @@ void main() {
 
   group('AUDIT — BroadcastEnvelope', () {
     test('an empty order_id reads as null, not as an empty string', () {
-      // '' passed every `id != null` guard downstream and then matched no
-      // order at all, so the handler silently did nothing.
       final envelope = BroadcastEnvelope(<String, dynamic>{'order_id': ''});
       expect(envelope.orderId, isNull);
     });
@@ -141,7 +134,6 @@ void main() {
 
   group('AUDIT #14 — bills', () {
     test('a bill without a total is rejected', () {
-      // This is what let a zero grand total reach the payment sheet.
       expect(
         () => ServerBill.fromMap(<String, dynamic>{'id': 'b1'}),
         throwsA(isA<WireFormatException>()),

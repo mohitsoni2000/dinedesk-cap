@@ -81,8 +81,8 @@ class SettingsScreen extends ConsumerWidget {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
-          child: PageContentClamp(
-            child: Column(
+            child: PageContentClamp(
+          child: Column(
             children: [
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -96,8 +96,8 @@ class SettingsScreen extends ConsumerWidget {
                   padding: const EdgeInsets.all(AppSpacing.lg),
                   children: [
                     Text('FEEDBACK',
-                        style: AppTypography.micro
-                            .copyWith(letterSpacing: 1.4)),
+                        style:
+                            AppTypography.micro.copyWith(letterSpacing: 1.4)),
                     const SizedBox(height: 8),
                     AppSurface(
                       padding: EdgeInsets.zero,
@@ -105,15 +105,15 @@ class SettingsScreen extends ConsumerWidget {
                         _SettingsRow(
                           icon: Icons.notifications_outlined,
                           title: 'Notifications',
-                          subtitle: settings.soundEnabled &&
-                                  settings.hapticEnabled
-                              ? 'Sound & haptics on'
-                              : !settings.soundEnabled &&
-                                      !settings.hapticEnabled
-                                  ? 'All notifications off'
-                                  : settings.soundEnabled
-                                      ? 'Sound on, haptics off'
-                                      : 'Haptics on, sound off',
+                          subtitle:
+                              settings.soundEnabled && settings.hapticEnabled
+                                  ? 'Sound & haptics on'
+                                  : !settings.soundEnabled &&
+                                          !settings.hapticEnabled
+                                      ? 'All notifications off'
+                                      : settings.soundEnabled
+                                          ? 'Sound on, haptics off'
+                                          : 'Haptics on, sound off',
                           onTap: () =>
                               _showNotificationsSheet(context, ref, settings),
                         ),
@@ -131,10 +131,9 @@ class SettingsScreen extends ConsumerWidget {
                       ]),
                     ),
                     const SizedBox(height: 24),
-
                     Text('DEVICE',
-                        style: AppTypography.micro
-                            .copyWith(letterSpacing: 1.4)),
+                        style:
+                            AppTypography.micro.copyWith(letterSpacing: 1.4)),
                     const SizedBox(height: 8),
                     AppSurface(
                       padding: EdgeInsets.zero,
@@ -151,8 +150,8 @@ class SettingsScreen extends ConsumerWidget {
                         _SettingsRow(
                           icon: Icons.speed_outlined,
                           title: 'Performance mode',
-                          subtitle: switch (ref.watch(
-                              perfStateProvider.select((p) => p.mode))) {
+                          subtitle: switch (ref
+                              .watch(perfStateProvider.select((p) => p.mode))) {
                             PerfMode.auto => AppPerf.reduceEffects(context)
                                 ? 'Auto · effects reduced for this device'
                                 : 'Auto · full effects',
@@ -166,8 +165,7 @@ class SettingsScreen extends ConsumerWidget {
                           icon: Icons.info_outline,
                           title: 'About Command.Crew',
                           subtitle: 'v2.0 · $restaurantName',
-                          onTap: () =>
-                              _showAboutSheet(context, restaurantName),
+                          onTap: () => _showAboutSheet(context, restaurantName),
                         ),
                         Divider(height: 1, color: context.palette.hairline),
                         _SettingsRow(
@@ -178,7 +176,6 @@ class SettingsScreen extends ConsumerWidget {
                         ),
                       ]),
                     ),
-
                     if (kDebugMode) ...[
                       const SizedBox(height: 24),
                       Text('DANGER ZONE',
@@ -358,9 +355,6 @@ class SettingsScreen extends ConsumerWidget {
           children: [
             const Text('Performance mode', style: AppTypography.headline),
             const SizedBox(height: 4),
-            // The blur is gone from the app entirely, so this no longer
-            // offers to turn it off. What's left to govern is motion and how
-            // far ahead long lists prefetch.
             const Text(
                 'Turn off animations and shorten list prefetch to keep older '
                 'devices responsive.',
@@ -465,8 +459,7 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: 4),
             const Text('v2.0', style: AppTypography.caption),
             const SizedBox(height: 2),
-            Text('Paired with: $restaurantName',
-                style: AppTypography.caption),
+            Text('Paired with: $restaurantName', style: AppTypography.caption),
             const SizedBox(height: 20),
             AppCard(
               padding: EdgeInsets.zero,
@@ -507,8 +500,6 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  /// CC-LAT-006: renders Trace.connectBreakdown() — the only production
-  /// timing data this app has, since log.dart compiles out in release.
   void _showDiagnosticsSheet(BuildContext context) {
     final breakdown = Trace.connectBreakdown();
     showModalBottomSheet<void>(
@@ -658,7 +649,9 @@ class _NotificationsSheetState extends State<_NotificationsSheet> {
                       color: context.palette.ink70),
                   onChanged: (v) {
                     setState(() => _sound = v);
-                    widget.ref.read(_settingsProvider.notifier).setSoundEnabled(v);
+                    widget.ref
+                        .read(_settingsProvider.notifier)
+                        .setSoundEnabled(v);
                   },
                 ),
                 Divider(height: 1, color: context.palette.ink10),
@@ -714,8 +707,8 @@ class _AboutRow extends StatelessWidget {
           Text(label, style: AppTypography.caption),
           const Spacer(),
           Text(value,
-              style: AppTypography.caption
-                  .copyWith(fontWeight: FontWeight.w600, color: context.palette.ink)),
+              style: AppTypography.caption.copyWith(
+                  fontWeight: FontWeight.w600, color: context.palette.ink)),
         ],
       ),
     );

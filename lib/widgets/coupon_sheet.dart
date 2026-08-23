@@ -58,10 +58,6 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
           'order_id': widget.orderId,
           'coupon_code': code,
         },
-        // Money event — SocketService.emit refuses to guess a timeout for
-        // one of these. Same generous window as bill:payment: a discount
-        // apply that times out early and gets retried risks the discount
-        // landing twice, not just a slower retry.
         timeout: const Duration(seconds: 15), onAck: (response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {

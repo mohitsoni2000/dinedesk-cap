@@ -164,10 +164,6 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
           child: Column(
             children: [
               _ChangePinHeader(onBack: () => context.pop()),
-              // The keypad below is a fixed-size sibling, so on a short
-              // viewport this region gets squeezed toward zero — scrolling
-              // lets it give way instead of overflowing, while minHeight
-              // keeps the content centred whenever there is room.
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) => SingleChildScrollView(

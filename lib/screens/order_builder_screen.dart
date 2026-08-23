@@ -3,8 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-// ScrollCacheExtent lives in the rendering layer; widgets.dart doesn't
-// re-export it.
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -42,9 +41,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   Timer? _searchDebounce;
   bool _searchOpen = false;
 
-  /// Drives the collapse-on-scroll of the running-order + quick-add zone.
-  /// 0 = fully open, 1 = tucked away. Updated straight from list offset
-  /// (rAF-free, no rebuild of the list itself — only the small zone).
   final ScrollController _menuScroll = ScrollController();
   final ValueNotifier<double> _scrollCollapse = ValueNotifier<double>(0);
   String? _activeSection;
@@ -147,9 +143,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
   ServerOrder? _runningOrder() {
     final activeOrderId = _activeOrderIdForSlot();
-    // Already parsed upstream — activeOrdersProvider holds ServerOrders, so
-    // this no longer re-parses (and no longer re-parses a malformed one into
-    // an exception on every build).
+
     return ref.read(activeOrdersProvider).where((order) {
       final slotId = widget.isRoom ? order.roomId : order.tableId;
       return (activeOrderId != null && order.id == activeOrderId) ||
@@ -336,9 +330,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
       return;
     }
     ref.read(feedbackServiceProvider).fire(const FeedbackLight());
-    // addSimple, not add: merging is by full configuration now, so tapping a
-    // plain tile can no longer land on a line carrying paid add-ons and
-    // charge them a second time.
+
     ref.read(cartProvider.notifier).addSimple(item);
     if (track) ref.read(recentItemsProvider.notifier).track(item);
   }
@@ -358,8 +350,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(item.name, style: AppTypography.headline),
-            Text(formatRupeesCompact(item.price),
-                style: AppTypography.caption),
+            Text(formatRupeesCompact(item.price), style: AppTypography.caption),
             const SizedBox(height: 20),
             Row(
               children: [
@@ -406,23 +397,15 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Grouping, sorting and category ordering are memoized upstream — they
-    // depend only on the menu, so a cart tap can no longer trigger a re-sort
-    // of the whole catalogue.
     final sortedBySection = ref.watch(sortedMenuBySectionProvider);
     final allSections = ref.watch(orderedCategoryNamesProvider);
-    // Flat list, only for the fast-add chip fallback below.
+
     final menu = ref.watch(menuProvider);
-    // Only the empty/non-empty transition is used below — watching the
-    // whole cart here rebuilt this entire screen (including every menu
-    // tile's Builder) on every quantity tap. Per-item quantities are
-    // watched by each _ItemRow itself, via plainCartQtyProvider.
+
     final cartIsEmpty = ref.watch(cartProvider.select((c) => c.isEmpty));
     final orderNotes = ref.watch(orderNotesProvider);
     final flags = ref.watch(flagsProvider);
 
-    // Filter the pre-sorted catalogue. Section insertion order still follows
-    // first appearance in the menu, matching what the list below renders.
     final query = _query.trim().toLowerCase();
     final sections = <String, List<MenuItem>>{};
     for (final entry in sortedBySection.entries) {
@@ -435,9 +418,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
       if (items.isNotEmpty) sections[entry.key] = items;
     }
 
-    // Scoped to this screen's own slot: sync preserves the object identity of
-    // untouched entries, so an event about somebody else's table no longer
-    // rebuilds this screen.
     final table = widget.isRoom
         ? null
         : ref.watch(tablesProvider.select(
@@ -542,7 +522,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               _leaveOrder();
                             }
                           },
-                          // Painted at 40 to match the header, hit at 48.
                           child: SizedBox(
                             width: AppTouchTargets.minimum,
                             height: AppTouchTargets.minimum,
@@ -644,9 +623,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           ),
                         ),
                         IconButton(
-                          // The other two IconButtons in this row carry a
-                          // tooltip, which is also what supplies their
-                          // screen-reader label. This one had neither.
                           tooltip: _searchOpen ? 'Close search' : 'Search menu',
                           icon: Icon(_searchOpen ? Icons.close : Icons.search,
                               color: context.palette.ink70),
@@ -1122,11 +1098,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                                   item: menuItem,
                                                   onAdd: () => _addOrConfigure(
                                                       context, menuItem),
-                                                  // Only ever touches plain
-                                                  // lines — the old setQty
-                                                  // rewrote every line for
-                                                  // this item id, including
-                                                  // configured ones.
                                                   onDecrement: () => ref
                                                       .read(
                                                           cartProvider.notifier)
@@ -1196,12 +1167,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                               ),
                             ),
                             GestureDetector(
-                              // This chip is explicitly labeled "send KOT now"
-                              // — it should fire immediately rather than
-                              // detouring through the cart-review screen.
-                              // autoSend fires the same Send-to-Kitchen flow
-                              // the review screen's primary button uses, with
-                              // no interactive step in between.
                               onTap: _readOnly
                                   ? null
                                   : () => context.push(
@@ -1249,13 +1214,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     final String actionLabel;
                     final Money barTotal;
                     final VoidCallback? onBarTap;
-                    // Direct-send: only meaningful when there's a cart to
-                    // send (not the "Running" / view-bill state) and the
-                    // waiter isn't view-only on this table. Pushes the review
-                    // route with autoSend so it reuses the exact Send-to-
-                    // Kitchen flow (PIN guard, request_id, offline queue,
-                    // error toasts) instead of a second implementation — see
-                    // OrderReviewScreen.autoSend.
+
                     final VoidCallback? onSendKotTap;
                     if (count > 0) {
                       label = _readOnly
@@ -1312,10 +1271,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                         ),
                                         child: Row(
                                           children: [
-                                            // Flexible so the new Send KOT chip
-                                            // always has room — this label was
-                                            // previously the only flexible-width
-                                            // content on the bar.
                                             Flexible(
                                               child: Text(
                                                 label,
@@ -1342,11 +1297,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                               ),
                                             ],
                                             const Spacer(),
-                                            // Direct-send action, balanced
-                                            // alongside — not instead of —
-                                            // Review. Tapping it is captured
-                                            // here and doesn't fall through to
-                                            // the bar's own onTap (Review).
                                             if (onSendKotTap != null) ...[
                                               GestureDetector(
                                                 onTap: onSendKotTap,
@@ -1426,11 +1376,6 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       runningOrder: runningOrder,
                       readOnly: _readOnly,
                       reviewRoute: _reviewRoute,
-                      // Direct-send: same guard as the mobile bar (no-op
-                      // when view-only or the cart has nothing to send) and
-                      // the same autoSend plumbing — reuses the review
-                      // screen's Send-to-Kitchen flow instead of a second
-                      // implementation.
                       onSendKot: (_readOnly || cartIsEmpty)
                           ? null
                           : () => context.push(_reviewRoute, extra: true),
@@ -1881,11 +1826,6 @@ class _ItemRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watches only this item's own cart quantity — a tap on any other row
-    // no longer rebuilds this one. Previously the parent screen computed
-    // every item's quantity in one pass and passed it down, which meant
-    // watching the whole cart at the screen level and rebuilding the full
-    // catalogue on every tap.
     final simpleQty = ref.watch(plainCartQtyProvider(item.id));
     final unavailable = !item.available;
     final hasVariations = item.variations.isNotEmpty;
@@ -1963,9 +1903,6 @@ class _ItemRow extends ConsumerWidget {
               ),
               if (!unavailable)
                 if (needsSheet || simpleQty <= 0)
-                  // This one already expanded its target past its 32px pill —
-                  // it just did it to 44 rather than to the 48 the token
-                  // declares, and it announced nothing.
                   Semantics(
                     button: true,
                     label: 'Add to order',
@@ -2031,7 +1968,6 @@ class _StepperButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
 
-  /// Required — the button is a bare glyph, so nothing else describes it.
   final String label;
   const _StepperButton({
     required this.icon,
@@ -2041,13 +1977,6 @@ class _StepperButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The pill stays 28 so the menu row looks the same; the hit area is 48.
-    //
-    // These are the quantity +/- controls — the single most-tapped pair of
-    // buttons in the product — and they were 28x28 with no padding around
-    // them, barely half the minimum this app itself declares. Adjusting a
-    // quantity is exactly the action a waiter performs while walking, so a
-    // miss here is a wrong order rather than a cosmetic annoyance.
     return Semantics(
       button: true,
       label: label,
@@ -2144,10 +2073,6 @@ class _SkeletonRowState extends State<_SkeletonRow>
         return Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            // A flat placeholder block. This was a three-stop gradient whose
-            // begin/end alignments were driven by `_anim` — a sweeping
-            // shimmer, rebuilt and re-shaded every frame while the menu
-            // loaded.
             color: context.palette.ink05,
           ),
           padding: const EdgeInsets.all(AppSpacing.md),
@@ -2202,13 +2127,6 @@ class _SkeletonRowState extends State<_SkeletonRow>
   }
 }
 
-/// Collapses its child with spring physics when [visible] flips false
-/// (search open, cart in progress, wide-mode rail) AND tracks the menu
-/// list's [scroll] progress so the zone tucks away 1:1 as you scroll —
-/// the heroine-style "header collapse" from the design prototype.
-///
-/// Cheap by construction: only this small zone rebuilds on scroll; the
-/// menu list itself never re-lays out.
 class _ZoneReveal extends StatelessWidget {
   final bool visible;
   final ValueListenable<double>? scroll;
@@ -2260,17 +2178,11 @@ class _ZoneReveal extends StatelessWidget {
   }
 }
 
-/// Wide-screen (tablet / desktop) right rail: running order at a glance,
-/// live cart lines, notes and the review CTA — so the bottom bar retires
-/// and the menu keeps full height. Pure presentation over existing
-/// providers; no new order logic.
 class _OrderSideRail extends ConsumerWidget {
   final ServerOrder? runningOrder;
   final bool readOnly;
   final String reviewRoute;
 
-  /// Null when there's nothing to send (view-only, or an empty cart) —
-  /// see the call site in [_OrderBuilderScreenState.build] for the guard.
   final VoidCallback? onSendKot;
   final VoidCallback? onViewBill;
   final VoidCallback? onPrintSummary;
@@ -2448,10 +2360,6 @@ class _OrderSideRail extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 10),
-          // Direct-send, balanced alongside "Review & send" — only shown
-          // when there's actually something to send (mirrors the mobile
-          // bar's guard). "Review & send" keeps its exact prior behaviour
-          // and, with onSendKot present, simply narrows to share the row.
           if (onSendKot != null) ...[
             Row(
               children: [
@@ -2475,9 +2383,6 @@ class _OrderSideRail extends ConsumerWidget {
                 Expanded(
                   child: Pressable(
                     onTap: () => context.push(reviewRoute),
-                    // Shortened from "Review & send" to "Review" only in
-                    // this side-by-side layout so both pills stay balanced
-                    // in the rail's width — same route, same behaviour.
                     child: const _ReviewAndSendButton(label: 'Review'),
                   ),
                 ),
@@ -2503,9 +2408,6 @@ class _OrderSideRail extends ConsumerWidget {
   }
 }
 
-/// The rail's primary terra CTA — pulled out so it can sit either full
-/// width on its own (the pre-existing look) or side by side with the new
-/// Send KOT button, without duplicating the pill's styling.
 class _ReviewAndSendButton extends StatelessWidget {
   final String label;
   const _ReviewAndSendButton({required this.label});

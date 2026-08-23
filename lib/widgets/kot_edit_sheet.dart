@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -170,8 +168,8 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
               ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + context.sheetBottomInset),
+              padding:
+                  EdgeInsets.fromLTRB(16, 8, 16, 16 + context.sheetBottomInset),
               child: LiquidPrimaryButton(
                 label: _submitting ? 'Updating...' : 'Save Changes',
                 fullWidth: true,

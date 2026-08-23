@@ -1,5 +1,3 @@
-
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -14,7 +12,6 @@ import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
 class CustomerSheet {
-
   static Future<Map<String, dynamic>?> show(BuildContext context) {
     return showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -24,10 +21,25 @@ class CustomerSheet {
       builder: (_) => const _CustomerSheet(),
     );
   }
+
+  static Future<Map<String, dynamic>?> showEdit(
+    BuildContext context,
+    Map<String, dynamic> customer,
+  ) {
+    return showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.32),
+      builder: (_) => _CustomerSheet(editCustomer: customer),
+    );
+  }
 }
 
 class _CustomerSheet extends ConsumerStatefulWidget {
-  const _CustomerSheet();
+  final Map<String, dynamic>? editCustomer;
+
+  const _CustomerSheet({this.editCustomer});
   @override
   ConsumerState<_CustomerSheet> createState() => _CustomerSheetState();
 }
@@ -44,8 +56,36 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
   final TextEditingController _email = TextEditingController();
   final TextEditingController _address = TextEditingController();
   final TextEditingController _notes = TextEditingController();
+
+  final TextEditingController _companyName = TextEditingController();
+  final TextEditingController _gstin = TextEditingController();
+  final TextEditingController _state = TextEditingController();
+  bool _addGstDetails = false;
+
   bool _creating = false;
   String? _createError;
+
+  bool get _isEditing => widget.editCustomer != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final customer = widget.editCustomer;
+    if (customer == null) return;
+
+    _showCreate = true;
+    _name.text = customer['name']?.toString() ?? '';
+    _phone.text = customer['phone']?.toString() ?? '';
+    _email.text = customer['email']?.toString() ?? '';
+    _address.text = customer['address']?.toString() ?? '';
+    _notes.text = customer['notes']?.toString() ?? '';
+    _companyName.text = customer['company_name']?.toString() ?? '';
+    _gstin.text = customer['gstin']?.toString() ?? '';
+    _state.text = customer['state']?.toString() ?? '';
+    _addGstDetails = _companyName.text.isNotEmpty ||
+        _gstin.text.isNotEmpty ||
+        _state.text.isNotEmpty;
+  }
 
   @override
   void dispose() {
@@ -56,6 +96,9 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
     _email.dispose();
     _address.dispose();
     _notes.dispose();
+    _companyName.dispose();
+    _gstin.dispose();
+    _state.dispose();
     super.dispose();
   }
 
@@ -101,6 +144,14 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
     });
   }
 
+  void _handleBack() {
+    if (_isEditing) {
+      Navigator.of(context).pop(null);
+      return;
+    }
+    _toggleCreateForm();
+  }
+
   void _submitCreate() {
     final name = _name.text.trim();
     if (name.isEmpty) {
@@ -120,6 +171,12 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
       if (_email.text.trim().isNotEmpty) 'email': _email.text.trim(),
       if (_address.text.trim().isNotEmpty) 'address': _address.text.trim(),
       if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
+      if (_addGstDetails && _companyName.text.trim().isNotEmpty)
+        'company_name': _companyName.text.trim(),
+      if (_addGstDetails && _gstin.text.trim().isNotEmpty)
+        'gstin': _gstin.text.trim(),
+      if (_addGstDetails && _state.text.trim().isNotEmpty)
+        'state': _state.text.trim(),
     };
 
     final socket = ref.read(socketServiceProvider);
@@ -137,7 +194,59 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
       if (customer != null) {
         Navigator.of(context).pop(Map<String, dynamic>.from(customer));
       } else {
+        Navigator.of(context).pop(Map<String, dynamic>.from(response));
+      }
+    });
+  }
 
+  void _submitEdit() {
+    final customerId = widget.editCustomer?['id']?.toString();
+    final name = _name.text.trim();
+    if (name.isEmpty) {
+      setState(() => _createError = 'Name is required');
+      return;
+    }
+    if (customerId == null || customerId.isEmpty) {
+      setState(() => _createError = 'Missing customer id');
+      return;
+    }
+
+    setState(() {
+      _creating = true;
+      _createError = null;
+    });
+    HapticFeedback.mediumImpact();
+
+    final data = <String, dynamic>{
+      'customer_id': customerId,
+      'name': name,
+      if (_phone.text.trim().isNotEmpty) 'phone': _phone.text.trim(),
+      if (_email.text.trim().isNotEmpty) 'email': _email.text.trim(),
+      if (_address.text.trim().isNotEmpty) 'address': _address.text.trim(),
+      if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
+      if (_addGstDetails && _companyName.text.trim().isNotEmpty)
+        'company_name': _companyName.text.trim(),
+      if (_addGstDetails && _gstin.text.trim().isNotEmpty)
+        'gstin': _gstin.text.trim(),
+      if (_addGstDetails && _state.text.trim().isNotEmpty)
+        'state': _state.text.trim(),
+    };
+
+    final socket = ref.read(socketServiceProvider);
+    socket.emit('customer:update', data, onAck: (response) {
+      if (!mounted) return;
+      if (response['kind'] == 'error') {
+        setState(() {
+          _creating = false;
+          _createError = response['message']?.toString() ?? 'Update failed';
+        });
+        return;
+      }
+
+      final customer = response['customer'] as Map?;
+      if (customer != null) {
+        Navigator.of(context).pop(Map<String, dynamic>.from(customer));
+      } else {
         Navigator.of(context).pop(Map<String, dynamic>.from(response));
       }
     });
@@ -158,43 +267,44 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
             const SizedBox(height: 8),
             const SheetHandle(),
             const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Find Customer', style: AppTypography.sheetTitle),
-                  const SizedBox(height: 4),
-                  const Text('Search by name or phone',
-                      style: AppTypography.caption),
-                  const SizedBox(height: 12),
-
-                  Container(
-                    decoration: BoxDecoration(
-                      color: context.palette.surface,
-                      borderRadius: const BorderRadius.all(AppRadii.sm),
-                      border: Border.all(
-                          color: context.palette.hairline, width: 1.5),
-                    ),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                    child: TextField(
-                      controller: _search,
-                      cursorColor: AppColors.terra,
-                      textInputAction: TextInputAction.search,
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Name or phone number...',
-                        icon: Icon(Icons.search,
-                            color: context.palette.ink50, size: 20),
-                        isDense: true,
+            if (!_isEditing)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Find Customer',
+                        style: AppTypography.sheetTitle),
+                    const SizedBox(height: 4),
+                    const Text('Search by name or phone',
+                        style: AppTypography.caption),
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: context.palette.surface,
+                        borderRadius: const BorderRadius.all(AppRadii.sm),
+                        border: Border.all(
+                            color: context.palette.hairline, width: 1.5),
                       ),
-                      onChanged: _onSearchChanged,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 4),
+                      child: TextField(
+                        controller: _search,
+                        cursorColor: AppColors.terra,
+                        textInputAction: TextInputAction.search,
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+                          hintText: 'Name or phone number...',
+                          icon: Icon(Icons.search,
+                              color: context.palette.ink50, size: 20),
+                          isDense: true,
+                        ),
+                        onChanged: _onSearchChanged,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
             const SizedBox(height: 12),
             Divider(height: 1, color: context.palette.hairline),
             Expanded(
@@ -214,18 +324,21 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
                       children: [
                         Expanded(
                           child: LiquidSecondaryButton(
-                            label: 'Back',
-                            leadingIcon: Icons.arrow_back,
-                            onPressed: _toggleCreateForm,
+                            label: _isEditing ? 'Cancel' : 'Back',
+                            leadingIcon:
+                                _isEditing ? Icons.close : Icons.arrow_back,
+                            onPressed: _handleBack,
                           ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: LiquidPrimaryButton(
-                            label: 'Save',
+                            label: _isEditing ? 'Save Changes' : 'Save',
                             fullWidth: true,
                             leadingIcon: Icons.check,
-                            onPressed: _creating ? null : _submitCreate,
+                            onPressed: _creating
+                                ? null
+                                : (_isEditing ? _submitEdit : _submitCreate),
                           ),
                         ),
                       ],
@@ -269,8 +382,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
               Icon(Icons.person_search_outlined,
                   color: context.palette.ink30, size: 40),
               const SizedBox(height: 12),
-              const Text('Search for a customer',
-                  style: AppTypography.caption),
+              const Text('Search for a customer', style: AppTypography.caption),
             ],
           ),
         ),
@@ -371,9 +483,13 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg, vertical: AppSpacing.md),
       children: [
-        const Text('New Customer', style: AppTypography.title),
+        Text(_isEditing ? 'Edit Customer' : 'New Customer',
+            style: AppTypography.title),
         const SizedBox(height: 4),
-        const Text('Fill in the details to create a customer',
+        Text(
+            _isEditing
+                ? "Update this customer's details"
+                : 'Fill in the details to create a customer',
             style: AppTypography.caption),
         const SizedBox(height: 16),
         _FormField(
@@ -401,6 +517,44 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
             label: 'Notes',
             icon: Icons.sticky_note_2_outlined,
             maxLines: 2),
+        const SizedBox(height: 16),
+        GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() => _addGstDetails = !_addGstDetails);
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Row(
+            children: [
+              Icon(
+                  _addGstDetails
+                      ? Icons.check_box
+                      : Icons.check_box_outline_blank,
+                  size: 20,
+                  color:
+                      _addGstDetails ? AppColors.terra : context.palette.ink30),
+              const SizedBox(width: 10),
+              const Text('Add GST invoice details',
+                  style: AppTypography.bodyMd),
+            ],
+          ),
+        ),
+        if (_addGstDetails) ...[
+          const SizedBox(height: 12),
+          _FormField(
+              controller: _companyName,
+              label: 'Company name',
+              icon: Icons.business_outlined),
+          const SizedBox(height: 12),
+          _FormField(
+              controller: _gstin,
+              label: 'GSTIN',
+              icon: Icons.badge_outlined,
+              textCapitalization: TextCapitalization.characters),
+          const SizedBox(height: 12),
+          _FormField(
+              controller: _state, label: 'State', icon: Icons.map_outlined),
+        ],
         if (_createError != null) ...[
           const SizedBox(height: 12),
           Text(_createError!,
@@ -428,6 +582,7 @@ class _FormField extends StatelessWidget {
   final IconData icon;
   final TextInputType keyboardType;
   final int maxLines;
+  final TextCapitalization textCapitalization;
 
   const _FormField({
     required this.controller,
@@ -435,6 +590,7 @@ class _FormField extends StatelessWidget {
     required this.icon,
     this.keyboardType = TextInputType.text,
     this.maxLines = 1,
+    this.textCapitalization = TextCapitalization.none,
   });
 
   @override
@@ -451,6 +607,7 @@ class _FormField extends StatelessWidget {
         cursorColor: AppColors.terra,
         keyboardType: keyboardType,
         maxLines: maxLines,
+        textCapitalization: textCapitalization,
         decoration: InputDecoration(
           border: InputBorder.none,
           hintText: label,

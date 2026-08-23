@@ -7,12 +7,6 @@ import 'package:restro/theme/tokens.dart';
 import 'package:restro/widgets/app_card.dart';
 import 'package:restro/widgets/app_surface.dart';
 
-/// WCAG 2.1 contrast ratio of [fg] over [bg].
-///
-/// The foreground is flattened onto the background first — every ink token in
-/// this app is translucent, and an alpha colour has no contrast ratio until
-/// you know what is behind it. Measuring the token in isolation is exactly
-/// how a 1.96:1 value survived in the palette.
 double contrastRatio(Color fg, Color bg) {
   double channel(double v) =>
       v <= 0.03928 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
@@ -51,9 +45,6 @@ void main() {
       });
 
       test('$name: ink50 reaches AA', () {
-        // Was 0x80 — 3.40:1 on light paper, a fail. It carries captions and
-        // secondary labels across every screen, including the one-and-only
-        // way off the connecting screen.
         for (final bg in <Color>[p.paper, p.surface]) {
           expect(contrastRatio(p.ink50, bg), greaterThanOrEqualTo(4.5),
               reason: 'ink50 on $name');
@@ -61,8 +52,6 @@ void main() {
       });
 
       test('$name: ink30 clears the 3:1 floor for UI and large text', () {
-        // Disabled controls and placeholders only — but at 0x4D it measured
-        // 1.96:1, which is not "low contrast", it is not visible.
         for (final bg in <Color>[p.paper, p.surface]) {
           expect(contrastRatio(p.ink30, bg), greaterThanOrEqualTo(3.0),
               reason: 'ink30 on $name');
@@ -73,10 +62,6 @@ void main() {
 
   group('type scale', () {
     test('status badges are not the smallest text in the app', () {
-      // `pill` styles FREE / MINE / DIRTY / RESERVED / READY — the state a
-      // waiter scans the floor for, and what they do NOT already know. It was
-      // 9.5px, smaller than every body style, while the table name they do
-      // know was 27px.
       expect(AppTypography.pill.fontSize, greaterThanOrEqualTo(12));
       expect(
         AppTypography.pill.fontSize,
@@ -87,8 +72,6 @@ void main() {
 
   group('touch targets', () {
     test('the declared minimum meets platform guidance', () {
-      // Apple says 44, Material says 48. Controls are expected to honour
-      // AppTouchTargets.minimum rather than their own painted size.
       expect(AppTouchTargets.minimum, greaterThanOrEqualTo(44));
     });
   });
@@ -109,12 +92,6 @@ void main() {
         ),
       );
 
-      // Pressable was a bare GestureDetector: no button flag, no label. An
-      // icon-only control therefore announced nothing usable, and Pressable
-      // backs nearly every control in the product.
-      //
-      // `isSemantics` rather than `matchesSemantics` — this asserts the
-      // properties that matter without pinning every unrelated flag.
       expect(
         tester.getSemantics(find.byType(Pressable)),
         isSemantics(
@@ -152,18 +129,12 @@ void main() {
   });
 
   group('card surfaces give a ListTile a Material to splash onto', () {
-    // Both of these painted their fill with a plain Container, so a ListTile
-    // inside found only the Scaffold's Material — behind the opaque card —
-    // and its ink splash was invisible. Flutter asserts on exactly this, so a
-    // regression fails the pump rather than merely looking wrong.
-    //
-    // Parameterised over both on purpose. The first pass at this fixed only
-    // AppCard, and the assertion kept firing 18 times a build because the
-    // settings rows the operator actually taps are AppSurface.
     for (final entry in <(String, Widget Function(Widget))>[
       ('AppCard', (child) => AppCard(padding: EdgeInsets.zero, child: child)),
-      ('AppSurface',
-          (child) => AppSurface(padding: EdgeInsets.zero, child: child)),
+      (
+        'AppSurface',
+        (child) => AppSurface(padding: EdgeInsets.zero, child: child)
+      ),
     ]) {
       final (name, wrap) = entry;
 
@@ -180,8 +151,6 @@ void main() {
 
         expect(tester.takeException(), isNull, reason: '$name asserted');
 
-        // The nearest Material above the tile must be the surface's own,
-        // carrying its colour — not the Scaffold's, underneath it.
         final material = tester.widget<Material>(
           find
               .ancestor(

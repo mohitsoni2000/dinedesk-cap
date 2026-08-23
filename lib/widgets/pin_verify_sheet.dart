@@ -104,9 +104,6 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
     return AppSurface(
       borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
       padding: EdgeInsets.zero,
-      // The keypad alone is ~270px, so on a short viewport this content can
-      // outgrow the sheet. Scrolling costs nothing at normal heights — the
-      // content simply doesn't reach the scroll threshold.
       child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottomPad),
         child: Column(

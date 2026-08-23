@@ -2,9 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:restro/data/money.dart';
 import 'package:restro/services/menu_parser.dart';
 
-/// Pins the behaviour of the menu parse after it was lifted out of
-/// SyncService to run under `compute()`. The nested option / variation /
-/// addon flattening is the part most likely to drift in an extraction.
 void main() {
   group('parseMenu', () {
     final payload = <String, dynamic>{
@@ -25,7 +22,6 @@ void main() {
           'id': 'i2',
           'name': 'Butter Chicken',
           'category_id': 'c2',
-          // No base price — should fall back to the cheapest variation.
           'price': 0,
           'is_veg': 0,
         },
@@ -75,8 +71,7 @@ void main() {
     });
 
     test('attaches option groups with their options', () {
-      final item =
-          parseMenu(payload).items.firstWhere((i) => i.id == 'i1');
+      final item = parseMenu(payload).items.firstWhere((i) => i.id == 'i1');
 
       expect(item.optionGroups, hasLength(1));
       final group = item.optionGroups.single;
@@ -86,8 +81,7 @@ void main() {
     });
 
     test('attaches addon groups with their choices and link limits', () {
-      final item =
-          parseMenu(payload).items.firstWhere((i) => i.id == 'i1');
+      final item = parseMenu(payload).items.firstWhere((i) => i.id == 'i1');
 
       expect(item.addonGroups, hasLength(1));
       final group = item.addonGroups.single;
@@ -99,16 +93,14 @@ void main() {
     });
 
     test('falls back to the cheapest variation when base price is zero', () {
-      final item =
-          parseMenu(payload).items.firstWhere((i) => i.id == 'i2');
+      final item = parseMenu(payload).items.firstWhere((i) => i.id == 'i2');
 
       expect(item.variations.map((v) => v.name), ['Half', 'Full']);
       expect(item.price, const Money.rupees(320));
     });
 
     test('keeps an explicit base price over the variations', () {
-      final item =
-          parseMenu(payload).items.firstWhere((i) => i.id == 'i1');
+      final item = parseMenu(payload).items.firstWhere((i) => i.id == 'i1');
       expect(item.price, const Money.rupees(250));
     });
 

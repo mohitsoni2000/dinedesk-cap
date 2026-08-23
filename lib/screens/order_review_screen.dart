@@ -25,19 +25,6 @@ class OrderReviewScreen extends ConsumerStatefulWidget {
 
   final bool isRoom;
 
-  /// Skips the interactive cart-review UI and fires the same "Send to
-  /// Kitchen" flow the primary button would, the moment this screen mounts —
-  /// used by tap targets in [OrderBuilderScreen] that are explicitly a
-  /// direct-send action (not a "review my order" action) so the waiter never
-  /// has to look at this screen and tap Send again. Falls back to the normal
-  /// interactive screen if the auto-fired send doesn't succeed (PIN
-  /// cancelled, validation failure, network error, etc.) so nothing is lost
-  /// on failure — the waiter lands somewhere they can see what happened and
-  /// retry or edit.
-  ///
-  /// This does not change the ordinary "Review" entry point, which stays a
-  /// full cart editor and action hub (Hold / Only KOT / KOT + Bill / Quick
-  /// Settle, quantity & note editing, customer link, order type).
   final bool autoSend;
   const OrderReviewScreen(
       {super.key,
@@ -73,14 +60,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   _OrderType _orderType = _OrderType.dineIn;
   StateController<String>? _notesNotifier;
 
-  /// Quick-settle idempotency keys, keyed **per bill** — same pattern as
-  /// `payment_sheet.dart`'s `_requestIds`. An order can carry more than one
-  /// bill, so a single shared id would be wrong two different ways: a retry
-  /// of bill 1's payment needs the *same* key it used before (so the desk
-  /// can collapse it), but bill 2's payment needs a *different* key from
-  /// bill 1's, or the desk sees it as a duplicate of bill 1 and never
-  /// settles it. Stable per bill, per screen instance, is the only shape
-  /// that gets both right.
   final Map<String, String> _quickSettleRequestIds = <String, String>{};
 
   String _quickSettleRequestIdFor(String billId) =>
@@ -92,23 +71,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     _notes.text = ref.read(orderNotesProvider);
     _notesNotifier = ref.read(orderNotesProvider.notifier);
     if (widget.autoSend) {
-      // Interactive UI is skipped entirely (see build()) while this is in
-      // flight, so there's no cart to preview totals for yet.
       WidgetsBinding.instance.addPostFrameCallback((_) => _runAutoSend());
     } else {
       _scheduleTotalsPreview(ref.read(cartProvider));
     }
   }
 
-  // Guards against the post-frame callback firing twice (e.g. a hot-reload
-  // or a rebuild before the frame callback runs).
   bool _autoSendKicked = false;
 
-  // Flips once the auto-fired send didn't end in leaving this screen (PIN
-  // cancelled, empty cart, or the flow itself failed) — build() then falls
-  // back to the normal interactive review UI instead of an empty spinner
-  // forever, and the failure toast from _submitWithFlow is already on
-  // screen explaining why.
   bool _autoSendFailed = false;
 
   Future<void> _runAutoSend() async {
@@ -119,9 +89,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       return;
     }
     await _submit();
-    // _submit() only returns without navigating away when it didn't
-    // succeed — success routes to _successRoute/_builderRoute and unmounts
-    // this screen.
+
     if (mounted) setState(() => _autoSendFailed = true);
   }
 
@@ -129,26 +97,25 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
   String? _kotSentOrderId;
 
-  // Reused across retries of the *same* order create/update attempt so a
-  // lost ack followed by a user-initiated retry replays the server's cached
-  // response instead of creating a second order. Cleared once that attempt
-  // actually succeeds (_kotSentOrderId gets set) or the flow resets.
   String? _pendingOrderRequestId;
 
-  // Same contract as [_pendingOrderRequestId], but for the kot:send that
-  // follows it. KotQueueService no longer mints this id itself — a retry tap
-  // after a timeout used to produce a fresh one, which the desk could not
-  // recognise as a duplicate, so the kitchen got the round twice.
   String? _pendingKotRequestId;
 
   bool _running = false;
 
-  // Server-authoritative totals (GST/service-charge/discount) for the current
-  // cart — never derived locally. Debounced on cart changes; keeps the last
-  // good value while a fresh preview is in flight so the total doesn't blank
-  // out between keystrokes/taps.
   Map<String, dynamic>? _serverTotals;
   Timer? _totalsDebounce;
+
+  Future<void> _editCustomer() async {
+    final current = _customer;
+    if (current == null) return;
+    final updated = await ref
+        .read(customerLinkServiceProvider)
+        .editCustomer(context, current);
+    if (updated != null && mounted) {
+      setState(() => _customer = updated);
+    }
+  }
 
   @override
   void dispose() {
@@ -163,9 +130,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   void _scheduleTotalsPreview(List<CartLine> cart) {
     _totalsDebounce?.cancel();
     if (cart.isEmpty) {
-      // Guards against calling setState() synchronously from initState()'s
-      // first call (cart is usually empty then); nothing to clear if it's
-      // already null.
       if (_serverTotals != null) {
         setState(() => _serverTotals = null);
       }
@@ -280,9 +244,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final label = order is Map
         ? (order['kot_number']?.toString() ?? order['order_number']?.toString())
         : null;
-    // No client-side fallback. generateKotId() used to mint "K-1" here, so the
-    // success screen showed the waiter a KOT number that existed nowhere on
-    // the desk. Null renders as "pending" instead.
+
     ref.read(lastKotIdProvider.notifier).state = label;
   }
 
@@ -365,8 +327,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               clientRequestId: kotRequestId,
             );
       } catch (_) {
-        // Not sent, not queued — leave _kotSentOrderId unset so a retry tap
-        // actually resends the KOT instead of silently treating it as done.
         ref.read(cartProvider.notifier).setSyncStatusFailed();
         return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.kotSend,
@@ -374,10 +334,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         );
       }
       if (kotResponse.isQueued) {
-        // Durably queued on-device for auto-flush on reconnect — mark this
-        // order's KOT as handled so a retry tap doesn't queue a duplicate
-        // (of either the KOT itself or, via a fresh client_request_id, the
-        // order's line items).
         _kotSentOrderId = orderId;
         _pendingOrderRequestId = null;
         _pendingKotRequestId = null;
@@ -389,9 +345,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         );
       }
       if (kotResponse.isRejected) {
-        // The desk understood us and said no. Nothing was sent or queued, and
-        // the queue has quarantined it rather than dropping it — show the
-        // desk's own reason instead of a generic retry prompt.
         ref.read(cartProvider.notifier).setSyncStatusFailed();
         return _OrderFlowStepResult(
           failedStep: _OrderFlowStep.kotSend,
@@ -410,7 +363,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
       _rememberKotLabel(kotResponse.ack);
 
-      // Lock-screen / Dynamic Island: "Preparing" card for this order.
       String liveName = widget.tableId;
       for (final t in ref.read(tablesProvider)) {
         if (t.serverId == widget.tableId) {
@@ -445,10 +397,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final billResponse = await socketService.emitAck(
       'bill:generate',
       <String, dynamic>{'order_id': orderId},
-      // Money event — SocketService.emitAck refuses to guess a timeout for
-      // one of these. Same generous window as bill:payment: a bill-generate
-      // that times out early and gets retried is a duplicate-bill risk, not
-      // just a slower retry.
       timeout: const Duration(seconds: 15),
     );
     if (billResponse['kind'] == 'error') {
@@ -474,9 +422,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       );
     }
 
-    // An order can carry more than one bill (liquor/beverages billed
-    // separately) — quick-settle must pay every one of them, not just the
-    // first, or the desk is left showing the table as unsettled.
     for (final bill in bills) {
       final billId = bill['id']?.toString();
       if (billId == null || billId.isEmpty) {
@@ -502,10 +447,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           ],
           'client_request_id': _quickSettleRequestIdFor(billId),
         },
-        // Money event — must not fall back to SocketService's LAN-tuned
-        // default. A settle call that times out early and gets retried is
-        // a duplicate-payment path (see the id comment above); this stays
-        // the same 15s payment_sheet.dart uses for the same reason.
         timeout: const Duration(seconds: 15),
       );
       if (paymentResponse['kind'] == 'error') {
@@ -865,10 +806,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   @override
   Widget build(BuildContext context) {
     if (widget.autoSend && !_autoSendFailed) {
-      // Skip the cart UI entirely — _runAutoSend() (kicked off from
-      // initState) is about to show the same "Sending to kitchen…" overlay
-      // the manual Send button uses. Keeping this frame visually minimal
-      // avoids flashing the full interactive review screen first.
       return ColoredBox(
         color: context.palette.paper,
         child: const Scaffold(backgroundColor: Colors.transparent),
@@ -940,8 +877,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
             0);
     final billAlreadyGenerated = activeBillCount > 0;
 
-    // Order-type toggle + submit. Rendered under the cart on a phone, or
-    // as a persistent side rail on a tablet — same widget either way.
     final Widget actionControls = Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Column(
@@ -1047,8 +982,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
             ),
             const SizedBox(height: 12),
           ],
-          // The wrapping Container existed only to cast a terra glow under
-          // the button.
           LiquidPrimaryButton(
             label: 'Send to Kitchen',
             fullWidth: true,
@@ -1121,8 +1054,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         backgroundColor: Colors.transparent,
         body: SafeArea(
           child: LayoutBuilder(builder: (context, box) {
-            // Two-pane only once there's something to review — an empty cart
-            // on a wide screen would otherwise show a dead rail.
             final bool wide = box.isTwoPane && cart.isNotEmpty;
             final Widget mainColumn = Column(
               children: [
@@ -1282,7 +1213,20 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                               style: AppTypography.bodyMd,
                                             ),
                                     ),
-                                    if (_customer != null)
+                                    if (_customer != null) ...[
+                                      if (flags.customerEdit)
+                                        GestureDetector(
+                                          onTap: _editCustomer,
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(
+                                                right: 12),
+                                            child: Icon(
+                                              Icons.edit_outlined,
+                                              color: context.palette.ink50,
+                                              size: 18,
+                                            ),
+                                          ),
+                                        ),
                                       GestureDetector(
                                         onTap: () =>
                                             setState(() => _customer = null),
@@ -1291,8 +1235,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                           color: context.palette.ink50,
                                           size: 18,
                                         ),
-                                      )
-                                    else
+                                      ),
+                                    ] else
                                       Icon(
                                         Icons.chevron_right,
                                         color: context.palette.ink30,
@@ -1559,8 +1503,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
             if (!wide) return mainColumn;
 
-            // Same shape as the order builder's rail so the two screens in
-            // the order flow read as one system on a tablet.
             return Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

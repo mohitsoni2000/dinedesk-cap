@@ -3,13 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/device_tier.dart';
 
-/// What the operator asked for. [PerfMode.auto] defers to the detected
-/// [PerfTier]; the other two override it in either direction.
 enum PerfMode { auto, performance, full }
 
-/// What the hardware actually is. Resolved once per install — RAM doesn't
-/// change at runtime — and cached, so this never costs more than a prefs read
-/// after the first cold start.
 enum PerfTier { capable, low }
 
 class PerfState {
@@ -21,9 +16,6 @@ class PerfState {
       PerfState(mode: mode ?? this.mode, tier: tier ?? this.tier);
 }
 
-/// Owns the persisted preference and the detected device tier. Deliberately
-/// does *not* carry the OS `disableAnimations` flag — that's live MediaQuery
-/// state, folded in at the [PerfScope] bridge rather than cached here.
 final perfStateProvider =
     StateNotifierProvider<PerfNotifier, PerfState>((ref) => PerfNotifier());
 

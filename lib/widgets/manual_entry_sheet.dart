@@ -29,8 +29,7 @@ class _ManualEntrySheetBody extends ConsumerStatefulWidget {
       _ManualEntrySheetBodyState();
 }
 
-class _ManualEntrySheetBodyState
-    extends ConsumerState<_ManualEntrySheetBody> {
+class _ManualEntrySheetBodyState extends ConsumerState<_ManualEntrySheetBody> {
   final _hostCtrl = TextEditingController();
   final _portCtrl = TextEditingController(text: '8080');
   final _codeCtrl = TextEditingController();

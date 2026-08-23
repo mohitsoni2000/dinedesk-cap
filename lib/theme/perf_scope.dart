@@ -3,12 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'perf_mode.dart';
 
-/// The resolved answer, published down the tree.
 class PerfProfile {
   final PerfMode mode;
   final PerfTier tier;
 
-  /// The single question every ambient effect asks before painting.
   final bool reduceEffects;
 
   const PerfProfile({
@@ -18,12 +16,6 @@ class PerfProfile {
   });
 }
 
-/// Bridges the Riverpod-owned [perfStateProvider] into an [InheritedWidget].
-///
-/// Effects consult this through `AppPerf.reduceEffects(context)`, which reads
-/// like `Theme.of(context)` and works from plain [StatelessWidget]/[State] —
-/// including [PageTransitionsBuilder] and the static `CartFlight.fly()`
-/// helper, neither of which can hold a `WidgetRef`.
 class PerfScope extends ConsumerWidget {
   const PerfScope({required this.child, super.key});
 
@@ -32,7 +24,7 @@ class PerfScope extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final perf = ref.watch(perfStateProvider);
-    // OS accessibility always wins, whatever the operator picked.
+
     final reduce = MediaQuery.of(context).disableAnimations ||
         perf.mode == PerfMode.performance ||
         (perf.mode == PerfMode.auto && perf.tier == PerfTier.low);
@@ -57,9 +49,8 @@ class PerfInheritedScope extends InheritedWidget {
 
   final PerfProfile profile;
 
-  static PerfProfile? maybeOf(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<PerfInheritedScope>()
-      ?.profile;
+  static PerfProfile? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<PerfInheritedScope>()?.profile;
 
   @override
   bool updateShouldNotify(PerfInheritedScope old) =>

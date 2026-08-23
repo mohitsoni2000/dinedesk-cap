@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,8 +68,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
     final tables = ref.watch(tablesProvider);
     final candidates = tables
         .where((t) =>
-            t.serverId != widget.origin.serverId &&
-            t.state == TableState.free)
+            t.serverId != widget.origin.serverId && t.state == TableState.free)
         .toList();
 
     return DraggableScrollableSheet(
@@ -88,8 +85,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
             const SheetHandle(),
             const SizedBox(height: 12),
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
               child: Row(
                 children: [
                   Expanded(
@@ -130,8 +126,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                       controller: scroll,
                       padding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.lg, vertical: 8),
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(height: 8),
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
                       itemCount: candidates.length,
                       itemBuilder: (_, i) {
                         final t = candidates[i];
@@ -139,8 +134,8 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                         return GestureDetector(
                           onTap: () {
                             HapticFeedback.selectionClick();
-                            setState(() =>
-                                _pickedServerId = on ? null : t.serverId);
+                            setState(
+                                () => _pickedServerId = on ? null : t.serverId);
                           },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 180),
@@ -150,8 +145,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                               color: on
                                   ? context.palette.terraSoft
                                   : palette.surface,
-                              borderRadius:
-                                  const BorderRadius.all(AppRadii.md),
+                              borderRadius: const BorderRadius.all(AppRadii.md),
                               border: Border.all(
                                   color: on
                                       ? AppColors.terra
@@ -166,13 +160,10 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                   decoration: BoxDecoration(
                                     color: AppColors.success
                                         .withValues(alpha: 0.12),
-                                    borderRadius:
-                                        BorderRadius.circular(10),
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                  child: Icon(
-                                      Icons.table_restaurant_outlined,
-                                      size: 18,
-                                      color: AppColors.success),
+                                  child: Icon(Icons.table_restaurant_outlined,
+                                      size: 18, color: AppColors.success),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
@@ -181,17 +172,14 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(t.id,
-                                          style: AppTypography.bodyMd
-                                              .copyWith(
+                                          style: AppTypography.bodyMd.copyWith(
                                             color: on
                                                 ? AppColors.terraDeep
                                                 : palette.ink,
                                             fontWeight: FontWeight.w600,
                                           )),
-                                      Text(
-                                          '${t.seats} seats · ${t.floor}',
-                                          style: AppTypography.caption
-                                              .copyWith(
+                                      Text('${t.seats} seats · ${t.floor}',
+                                          style: AppTypography.caption.copyWith(
                                             color: on
                                                 ? AppColors.terraInk
                                                 : palette.ink70,
@@ -203,8 +191,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                   on
                                       ? Icons.check_circle
                                       : Icons.radio_button_unchecked,
-                                  color:
-                                      on ? AppColors.terra : palette.ink30,
+                                  color: on ? AppColors.terra : palette.ink30,
                                 ),
                               ],
                             ),
@@ -234,10 +221,9 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                       label: _submitting ? 'Shifting…' : 'Shift Table',
                       fullWidth: true,
                       leadingIcon: Icons.swap_horiz,
-                      onPressed:
-                          (_pickedServerId == null || _submitting)
-                              ? null
-                              : _shift,
+                      onPressed: (_pickedServerId == null || _submitting)
+                          ? null
+                          : _shift,
                     ),
                   ),
                 ],

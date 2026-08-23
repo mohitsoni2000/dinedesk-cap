@@ -4,30 +4,10 @@ import 'package:flutter/physics.dart';
 import 'physics.dart';
 import 'springs.dart';
 
-/// ============================================================
-/// DRAG TO DISMISS — Instagram/Telegram style route pull-away,
-/// built natively on RestroSprings (no draggable_route package,
-/// no imperative Navigator: plays clean with go_router).
-///
-/// Two flavors:
-///  • [DragToDismiss.gesture]   — for non-scroll screens (e.g.
-///    the KOT success screen): drag anywhere, page follows your
-///    finger, rounds its corners, scales down; flick or pass the
-///    threshold → it flies off with a heavy spring and pops.
-///  • [DragToDismiss.overscroll] — for scrollable screens (e.g.
-///    order detail): pull past the top of the list (the bouncy
-///    overscroll region) and the whole page comes with you.
-///    Zero gesture-arena conflict: it only *listens* to scroll
-///    notifications, never competes with the list.
-///
-/// Pair with a transparent route (liquidPage fromBottom) so the
-/// previous screen is revealed behind while dragging.
-/// ============================================================
 class DragToDismiss extends StatefulWidget {
   final Widget child;
   final VoidCallback onDismiss;
 
-  /// Pull distance (logical px) beyond which release = dismiss.
   final double threshold;
   final bool _useOverscroll;
 
@@ -78,28 +58,23 @@ class _DragToDismissState extends State<DragToDismiss>
     _dismissing = true;
     final double h = MediaQuery.sizeOf(context).height;
     _y
-        .animateWith(SpringSimulation(RestroSprings.heavy, _y.value,
-            h * 1.05, velocity.clamp(500.0, 4200.0)))
+        .animateWith(SpringSimulation(RestroSprings.heavy, _y.value, h * 1.05,
+            velocity.clamp(500.0, 4200.0)))
         .whenCompleteOrCancel(() {
       if (mounted && _dismissing) widget.onDismiss();
     });
   }
 
-  // ---------------------------------------------------- gesture flavor --
   void _dragUpdate(DragUpdateDetails d) {
     if (_dismissing) return;
     final double next = _y.value + d.delta.dy;
-    _y.value = next < 0 ? next * 0.24 : next; // resist upward
+    _y.value = next < 0 ? next * 0.24 : next;
   }
 
-  void _dragEnd(DragEndDetails d) =>
-      _settle(d.velocity.pixelsPerSecond.dy);
+  void _dragEnd(DragEndDetails d) => _settle(d.velocity.pixelsPerSecond.dy);
 
-  // ------------------------------------------------- overscroll flavor --
   bool _onScroll(ScrollNotification n) {
-    if (_dismissing ||
-        n.depth != 0 ||
-        n.metrics.axis != Axis.vertical) {
+    if (_dismissing || n.depth != 0 || n.metrics.axis != Axis.vertical) {
       return false;
     }
     if (n is ScrollUpdateNotification) {
@@ -107,12 +82,11 @@ class _DragToDismissState extends State<DragToDismiss>
       if (n.dragDetails != null) {
         _fingerDrag = true;
         if (px < 0) {
-          _y.value = -px * 1.12; // ride the bouncy overscroll
+          _y.value = -px * 1.12;
         } else if (_y.value != 0) {
           _y.value = 0;
         }
       } else {
-        // First ballistic frame after the finger lifts → decide once.
         if (_fingerDrag) {
           _fingerDrag = false;
           if (_y.value > widget.threshold) {
@@ -121,7 +95,7 @@ class _DragToDismissState extends State<DragToDismiss>
           }
         }
         if (px < 0) {
-          _y.value = -px * 1.12; // follow the bounce back home
+          _y.value = -px * 1.12;
         } else if (_y.value != 0) {
           _y.value = 0;
         }

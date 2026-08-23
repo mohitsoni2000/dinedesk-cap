@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-// ScrollCacheExtent lives in the rendering layer; widgets.dart doesn't
-// re-export it.
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -25,7 +24,6 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
   bool _searchOpen = false;
   bool _openingRoom = false;
 
-  /// Set by the first real scroll; gates the entrance stagger.
   bool _hasScrolled = false;
   String? _openingRoomId;
 
@@ -225,46 +223,43 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
                                 return false;
                               },
                               child: GridView.builder(
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                              scrollCacheExtent: ScrollCacheExtent.pixels(
-                                  AppPerf.gridCacheExtentFor(context)),
-                              gridDelegate:
-                                  SliverGridDelegateWithMaxCrossAxisExtent(
-                                maxCrossAxisExtent: context.tableTileExtent,
-                                mainAxisSpacing: 12,
-                                crossAxisSpacing: 12,
-                                childAspectRatio: 1.05,
-                              ),
-                              itemCount: filtered.length,
-                              itemBuilder: (context, i) {
-                                final r = filtered[i];
-                                final card = _RoomCard(
-                                  room: r,
-                                  isLoading: _openingRoom &&
-                                      _openingRoomId == r.serverId,
-                                  onTap: () => _onRoomTap(r),
-                                );
-                                // Same as the tables grid: itemBuilder runs
-                                // again for every tile recycled during a
-                                // scroll, so wrapping all of them replayed
-                                // the fade and allocated a fresh controller
-                                // each time.
-                                if (i >= 12 ||
-                                    _hasScrolled ||
-                                    AppPerf.reduceEffects(context)) {
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                scrollCacheExtent: ScrollCacheExtent.pixels(
+                                    AppPerf.gridCacheExtentFor(context)),
+                                gridDelegate:
+                                    SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: context.tableTileExtent,
+                                  mainAxisSpacing: 12,
+                                  crossAxisSpacing: 12,
+                                  childAspectRatio: 1.05,
+                                ),
+                                itemCount: filtered.length,
+                                itemBuilder: (context, i) {
+                                  final r = filtered[i];
+                                  final card = _RoomCard(
+                                    room: r,
+                                    isLoading: _openingRoom &&
+                                        _openingRoomId == r.serverId,
+                                    onTap: () => _onRoomTap(r),
+                                  );
+
+                                  if (i >= 12 ||
+                                      _hasScrolled ||
+                                      AppPerf.reduceEffects(context)) {
+                                    return KeyedSubtree(
+                                        key: ValueKey(r.serverId), child: card);
+                                  }
                                   return KeyedSubtree(
-                                      key: ValueKey(r.serverId), child: card);
-                                }
-                                return KeyedSubtree(
-                                  key: ValueKey(r.serverId),
-                                  child: Entrance(
-                                    delay: Duration(milliseconds: 35 * i),
-                                    offsetY: 10,
-                                    child: card,
-                                  ),
-                                );
-                              },
-                            ),
+                                    key: ValueKey(r.serverId),
+                                    child: Entrance(
+                                      delay: Duration(milliseconds: 35 * i),
+                                      offsetY: 10,
+                                      child: card,
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                 ),
               ],
@@ -332,8 +327,6 @@ class _RoomCard extends StatelessWidget {
               color: _bg(context),
               borderRadius: const BorderRadius.all(AppRadii.lg),
               border: Border.all(color: _border(), width: 1),
-              // The room you're serving is marked by [_bg] and [_border], not
-              // by a terra glow behind the tile.
               boxShadow: AppShadows.none,
             ),
             child: Column(

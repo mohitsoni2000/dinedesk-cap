@@ -38,9 +38,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
   void _navigate(BootstrapOutcome outcome) {
     if (!mounted) return;
-    // Everything but "no pairing at all" belongs on /connecting — that
-    // screen is itself just a view over the same outcome, so there's
-    // nothing left here to hand it.
+
     if (outcome is BootstrapNoPairing) {
       context.go('/scan');
     } else {
@@ -50,10 +48,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // CC-LAT-010: the pairing read + connect race started in main(), before
-    // this screen even existed. React to whatever it has already resolved
-    // to (the common case — main() had a full frame's head start) or
-    // whatever it resolves to next.
     ref.listen<BootstrapOutcome>(connectionBootstrapProvider, (_, next) {
       if (next is! BootstrapIdle) _navigate(next);
     });
@@ -61,150 +55,137 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     if (outcome is! BootstrapIdle) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _navigate(outcome));
     }
-    // The only screen with no Scaffold of its own — its text needs a Material
-    // ancestor like everything else.
+
     return Material(
       type: MaterialType.transparency,
-      // Always the dark brand colour, whatever the operator's theme — the
-      // launch screen is the same for everyone. `SizedBox.expand` keeps the
-      // Stack filling the screen; a bare ColoredBox would let it shrink-wrap.
       child: ColoredBox(
         color: AppColors.night,
         child: SizedBox.expand(
           child: Stack(
-          children: [
-            // Two full-screen overlays used to sit here: an animated film
-            // grain (800 drawRects every 80ms) and a radial vignette. Both
-            // are gone — the launch screen is the background colour, the
-            // logo, and the wordmark.
-            DepthParallaxStack(
-              maxOffset: 8,
-              layers: [
-                const DepthLayer(depth: 0.0, child: SizedBox.expand()),
-                DepthLayer(
-                  depth: 0.6,
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // The logo used to sit inside a 110px circle breathing
-                        // a terra halo on a 1.8s loop — an animated blur
-                        // radius and spread, so a fresh blurred draw every
-                        // frame of the launch screen. The entry spring below
-                        // is the whole of the animation now.
-                        SpringBuilder(
-                          from: 0.0,
-                          to: _showLogo ? 1.0 : 0.0,
-                          spring: RestroSprings.bouncy,
-                          builder: (_, t, child) => Opacity(
-                            opacity: t.clamp(0.0, 1.0),
-                            child: Transform.scale(
-                              scale: 0.75 + 0.25 * t,
-                              child: child,
-                            ),
-                          ),
-                          child: Hero(
-                            tag: HeroTags.appLogo,
-                            child: Container(
-                              width: 88,
-                              height: 88,
-                              decoration: const BoxDecoration(
-                                color: AppColors.logoBg,
-                                borderRadius: BorderRadius.all(AppRadii.lg),
+            children: [
+              DepthParallaxStack(
+                maxOffset: 8,
+                layers: [
+                  const DepthLayer(depth: 0.0, child: SizedBox.expand()),
+                  DepthLayer(
+                    depth: 0.6,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SpringBuilder(
+                            from: 0.0,
+                            to: _showLogo ? 1.0 : 0.0,
+                            spring: RestroSprings.bouncy,
+                            builder: (_, t, child) => Opacity(
+                              opacity: t.clamp(0.0, 1.0),
+                              child: Transform.scale(
+                                scale: 0.75 + 0.25 * t,
+                                child: child,
                               ),
-                              clipBehavior: Clip.antiAlias,
-                              child: Padding(
-                                padding: const EdgeInsets.all(10),
-                                child: Image.asset(
-                                  'assets/images/appicon_cream.png',
-                                  fit: BoxFit.contain,
+                            ),
+                            child: Hero(
+                              tag: HeroTags.appLogo,
+                              child: Container(
+                                width: 88,
+                                height: 88,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.logoBg,
+                                  borderRadius: BorderRadius.all(AppRadii.lg),
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Image.asset(
+                                    'assets/images/appicon_cream.png',
+                                    fit: BoxFit.contain,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 28),
-                        SpringBuilder(
-                          from: 0.0,
-                          to: _showWordmark ? 1.0 : 0.0,
-                          spring: RestroSprings.soft,
-                          builder: (_, t, child) => Opacity(
-                            opacity: t.clamp(0.0, 1.0),
-                            child: Transform.translate(
-                              offset: Offset(0, 12 * (1 - t)),
-                              child: child,
+                          const SizedBox(height: 28),
+                          SpringBuilder(
+                            from: 0.0,
+                            to: _showWordmark ? 1.0 : 0.0,
+                            spring: RestroSprings.soft,
+                            builder: (_, t, child) => Opacity(
+                              opacity: t.clamp(0.0, 1.0),
+                              child: Transform.translate(
+                                offset: Offset(0, 12 * (1 - t)),
+                                child: child,
+                              ),
+                            ),
+                            child: Image.asset(
+                              'assets/images/lockup_ink_cream.png',
+                              height: 26,
+                              fit: BoxFit.contain,
                             ),
                           ),
-                          child: Image.asset(
-                            'assets/images/lockup_ink_cream.png',
-                            height: 26,
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        SpringBuilder(
-                          from: 0.0,
-                          to: _showOperator ? 1.0 : 0.0,
-                          spring: RestroSprings.soft,
-                          builder: (_, t, child) => Opacity(
-                            opacity: t.clamp(0.0, 1.0),
-                            child: child,
-                          ),
-                          child: Column(
-                            children: [
-                              Container(
-                                width: 120,
-                                height: 0.5,
-                                color: Colors.white.withValues(alpha: 0.15),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'O P E R A T O R',
-                                style: TextStyle(
-                                  fontFamily: AppTypography.inter,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 10,
-                                  letterSpacing: 6,
-                                  color: Colors.white.withValues(alpha: 0.45),
+                          const SizedBox(height: 14),
+                          SpringBuilder(
+                            from: 0.0,
+                            to: _showOperator ? 1.0 : 0.0,
+                            spring: RestroSprings.soft,
+                            builder: (_, t, child) => Opacity(
+                              opacity: t.clamp(0.0, 1.0),
+                              child: child,
+                            ),
+                            child: Column(
+                              children: [
+                                Container(
+                                  width: 120,
+                                  height: 0.5,
+                                  color: Colors.white.withValues(alpha: 0.15),
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              Container(
-                                width: 120,
-                                height: 0.5,
-                                color: Colors.white.withValues(alpha: 0.15),
-                              ),
-                            ],
+                                const SizedBox(height: 8),
+                                Text(
+                                  'O P E R A T O R',
+                                  style: TextStyle(
+                                    fontFamily: AppTypography.inter,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 10,
+                                    letterSpacing: 6,
+                                    color: Colors.white.withValues(alpha: 0.45),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Container(
+                                  width: 120,
+                                  height: 0.5,
+                                  color: Colors.white.withValues(alpha: 0.15),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            Positioned(
-              right: 20,
-              bottom: 20,
-              child: SafeArea(
-                child: SpringBuilder(
-                  from: 0.0,
-                  to: _showVersion ? 1.0 : 0.0,
-                  spring: RestroSprings.soft,
-                  builder: (_, t, __) => Opacity(
-                    opacity: t.clamp(0.0, 1.0),
-                    child: Text(
-                      'v2.0',
-                      style: AppTypography.micro.copyWith(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        fontSize: 9,
-                        letterSpacing: 1.2,
+                ],
+              ),
+              Positioned(
+                right: 20,
+                bottom: 20,
+                child: SafeArea(
+                  child: SpringBuilder(
+                    from: 0.0,
+                    to: _showVersion ? 1.0 : 0.0,
+                    spring: RestroSprings.soft,
+                    builder: (_, t, __) => Opacity(
+                      opacity: t.clamp(0.0, 1.0),
+                      child: Text(
+                        'v2.0',
+                        style: AppTypography.micro.copyWith(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          fontSize: 9,
+                          letterSpacing: 1.2,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
             ],
           ),
         ),

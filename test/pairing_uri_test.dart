@@ -12,18 +12,12 @@ void main() {
     });
 
     test('rejects a public host', () {
-      // The attack: print this, tape it over the real sticker at the POS
-      // station, collect operator PINs.
       for (final host in <String>[
         'evil.example.com',
         '8.8.8.8',
         '203.0.113.9',
-        '172.32.0.1', // just outside 172.16/12
+        '172.32.0.1',
       ]) {
-        // Port must be a *valid* one, or the port check short-circuits and
-        // this never reaches the host rule it exists to test. 443 is below
-        // minPairingPort, so it returned PairingUriInvalid for every host —
-        // including a legitimate LAN address.
         expect(
           parsePairingUri('restroapp://pair?host=$host&port=8080&token=abc'),
           isA<PairingUriOffNetwork>(),
@@ -49,7 +43,6 @@ void main() {
     });
 
     test('malformed input returns a result instead of throwing', () {
-      // Uri.parse threw FormatException into an unhandled async gap here.
       expect(
         parsePairingUri('restroapp://pair?host=[bad&port=1'),
         isA<PairingUriResult>(),
@@ -85,7 +78,8 @@ void main() {
       expect((result as PairingUriOk).pairing.deskInstanceId, 'desk-abc-123');
     });
 
-    test('leaves desk_instance_id null for a QR without one (older Desk build)', () {
+    test('leaves desk_instance_id null for a QR without one (older Desk build)',
+        () {
       final result = parsePairingUri(
         'restroapp://pair?host=192.168.1.42&port=8080&token=abc',
       );

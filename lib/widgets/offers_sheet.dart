@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import '../data/money.dart';
 import 'package:flutter/services.dart';
@@ -38,7 +36,6 @@ class _AppliedOffer {
 }
 
 class OffersSheet {
-
   static Future<Map<String, dynamic>?> show(
     BuildContext context, {
     required String orderId,
@@ -127,7 +124,8 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
             ..clear()
             ..addAll((rawOffers is List ? rawOffers : const [])
                 .whereType<Map>()
-                .map((m) => _AppliedOffer.fromMap(Map<String, dynamic>.from(m))));
+                .map((m) =>
+                    _AppliedOffer.fromMap(Map<String, dynamic>.from(m))));
         }
       });
     });
@@ -176,8 +174,7 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
       maxChildSize: 0.9,
       builder: (_, scrollCtrl) => AppSurface(
         borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
-        padding: EdgeInsets.fromLTRB(
-            20, 12, 20, 16 + context.sheetBottomInset),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + context.sheetBottomInset),
         child: ListView(
           controller: scrollCtrl,
           children: [
@@ -191,13 +188,13 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
                 const Text('Offers', style: AppTypography.sheetTitle),
                 const Spacer(),
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(_resultForCaller()),
+                  onPressed: () =>
+                      Navigator.of(context).pop(_resultForCaller()),
                   child: const Text('Done'),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-
             if (_applied.isNotEmpty) ...[
               Text('APPLIED',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
@@ -212,7 +209,6 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
               ],
               const SizedBox(height: 12),
             ],
-
             if (manualOffers.isNotEmpty) ...[
               Text('AVAILABLE OFFERS',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
@@ -228,7 +224,6 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
               ],
               const SizedBox(height: 12),
             ],
-
             if (autoOffers.isNotEmpty) ...[
               Text('AUTO-APPLIED WHEN ELIGIBLE',
                   style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
@@ -248,7 +243,6 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
               ),
               const SizedBox(height: 16),
             ],
-
             if (manualOffers.isEmpty && autoOffers.isEmpty) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
@@ -257,7 +251,6 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
               ),
               const SizedBox(height: 8),
             ],
-
             Text('HAVE A COUPON CODE?',
                 style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
             const SizedBox(height: 8),
@@ -321,8 +314,8 @@ class _OfferTile extends StatelessWidget {
         children: [
           Expanded(
             child: Text(offer.name,
-                style: AppTypography.bodyMd
-                    .copyWith(fontWeight: FontWeight.w600)),
+                style:
+                    AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w600)),
           ),
           const SizedBox(width: 8),
           if (applied)

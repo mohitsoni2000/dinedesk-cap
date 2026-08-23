@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
@@ -27,19 +26,7 @@ class AppCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    // The fill is a [Material], not a third [Container].
-    //
-    // A ListTile paints its background and ink splash onto the nearest
-    // Material ancestor. With the fill painted by a plain Container, that
-    // ancestor sat *behind* the opaque card colour, so every tap on a
-    // ListTile inside an AppCard produced no ripple at all — Flutter asserts
-    // this in debug ("ListTile background color or ink splashes may be
-    // invisible"). The operator taps a settings row, sees nothing happen,
-    // and taps again.
-    //
-    // Material carries the colour and the clip, so splashes land on top of
-    // it. The border stays on an inner Container because Material has no
-    // border of its own.
+
     final box = Container(
       decoration: BoxDecoration(
         borderRadius: borderRadius,

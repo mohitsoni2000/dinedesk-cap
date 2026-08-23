@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import '../data/money.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -91,16 +89,15 @@ class PackageSheet extends ConsumerWidget {
                           _addPackageToCart(ref, packages[i]);
                           Navigator.of(context).pop();
                           DynamicToast.show(context,
-                              message:
-                                  '${packages[i]['name']} added to cart',
+                              message: '${packages[i]['name']} added to cart',
                               kind: ToastKind.success);
                         },
                       ),
                     ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + context.sheetBottomInset),
+              padding:
+                  EdgeInsets.fromLTRB(16, 8, 16, 16 + context.sheetBottomInset),
               child: LiquidSecondaryButton(
                 label: 'Close',
                 onPressed: () => Navigator.of(context).pop(),

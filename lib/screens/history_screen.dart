@@ -23,22 +23,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   OrderStatus? _statusFilter;
   _DateScope _dateScope = _DateScope.today;
 
-  /// Only ever set in two-pane mode. On a phone, tapping an order pushes the
-  /// detail route instead, exactly as before.
   String? _selectedOrderId;
 
-  /// Set by the first real scroll; gates the entrance stagger.
   bool _hasScrolled = false;
 
-  /// Scopes by the desk's **business day**, not this phone's calendar date.
-  ///
-  /// The old version built `targetDate` from `DateTime.now()` and compared it
-  /// against a date the client had itself derived from `created_at`. In a
-  /// kitchen that closes at 2am, a 1am order is booked to the previous
-  /// business day on the desk but read as "today" here — so a waiter's
-  /// history and their KPI card could never reconcile with the day-end
-  /// report. Business dates now come from the desk on each order; "today" is
-  /// simply the newest one it has sent, and "yesterday" the one before it.
   List<HistoryOrder> _dateScoped(List<HistoryOrder> orders) {
     final businessDates = orders
         .map((o) => o.date)
@@ -107,10 +95,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Widget build(BuildContext context) {
     final orders = ref.watch(historyProvider);
 
-    // Same rule as operatorStatsProvider: an order whose creator the desk
-    // didn't name is *not* assumed to be this waiter's. The old
-    // `createdBy == null || createdBy == myId` swept everyone else's unnamed
-    // orders into this list.
     final myId = ref.watch(operatorProvider)?.id ?? '';
     final myOrders = myId.isEmpty
         ? orders
@@ -129,8 +113,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         body: SafeArea(
           child: LayoutBuilder(builder: (context, box) {
             final bool wide = box.isTwoPane;
-            // Selection is meaningless on a phone, and leaving it set would
-            // resurface a stale highlight if the tablet rotates back.
+
             if (!wide && _selectedOrderId != null) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) setState(() => _selectedOrderId = null);
@@ -222,51 +205,47 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                               return false;
                             },
                             child: ListView.separated(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                            itemCount: filtered.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 10),
-                            itemBuilder: (context, i) {
-                              final o = filtered[i];
-                              // Stagger the first screenful once. Wrapping
-                              // every row meant a fresh AnimationController
-                              // and a replayed fade for each row recycled
-                              // during a scroll.
-                              if (i >= 10 ||
-                                  _hasScrolled ||
-                                  AppPerf.reduceEffects(context)) {
-                                return _OrderTile(
-                                  order: o,
-                                  selected: wide && o.id == _selectedOrderId,
-                                  onTap: () {
-                                    HapticFeedback.selectionClick();
-                                    // On a tablet the detail lives in the pane
-                                    // beside the list; on a phone it's a route.
-                                    if (wide) {
-                                      setState(() => _selectedOrderId = o.id);
-                                    } else {
-                                      context.push('/history/${o.id}');
-                                    }
-                                  },
+                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 10),
+                              itemBuilder: (context, i) {
+                                final o = filtered[i];
+
+                                if (i >= 10 ||
+                                    _hasScrolled ||
+                                    AppPerf.reduceEffects(context)) {
+                                  return _OrderTile(
+                                    order: o,
+                                    selected: wide && o.id == _selectedOrderId,
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+
+                                      if (wide) {
+                                        setState(() => _selectedOrderId = o.id);
+                                      } else {
+                                        context.push('/history/${o.id}');
+                                      }
+                                    },
+                                  );
+                                }
+                                return Entrance(
+                                  delay: Duration(milliseconds: 45 * i),
+                                  child: _OrderTile(
+                                    order: o,
+                                    selected: wide && o.id == _selectedOrderId,
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      if (wide) {
+                                        setState(() => _selectedOrderId = o.id);
+                                      } else {
+                                        context.push('/history/${o.id}');
+                                      }
+                                    },
+                                  ),
                                 );
-                              }
-                              return Entrance(
-                                delay: Duration(milliseconds: 45 * i),
-                                child: _OrderTile(
-                                  order: o,
-                                  selected: wide && o.id == _selectedOrderId,
-                                  onTap: () {
-                                    HapticFeedback.selectionClick();
-                                    if (wide) {
-                                      setState(() => _selectedOrderId = o.id);
-                                    } else {
-                                      context.push('/history/${o.id}');
-                                    }
-                                  },
-                                ),
-                              );
-                            },
-                          ),
+                              },
+                            ),
                           ),
                   ),
                 ],
@@ -285,9 +264,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                   child: _selectedOrderId == null
                       ? const _NoOrderSelected()
                       : OrderDetailScreen(
-                          // Keyed so switching rows rebuilds the detail state
-                          // rather than carrying the previous order's bill
-                          // and payment flags across.
                           key: ValueKey(_selectedOrderId),
                           orderId: _selectedOrderId!,
                           embedded: true,
@@ -304,8 +280,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 }
 
-/// Placeholder for the detail pane before a row is picked — an empty rail on
-/// a wide screen reads as a bug.
 class _NoOrderSelected extends StatelessWidget {
   const _NoOrderSelected();
 
@@ -428,7 +402,6 @@ class _OrderTile extends StatelessWidget {
   final HistoryOrder order;
   final VoidCallback onTap;
 
-  /// Marks the row whose detail is showing in the pane beside it.
   final bool selected;
   const _OrderTile({
     required this.order,

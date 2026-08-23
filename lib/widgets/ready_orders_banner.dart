@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -58,7 +56,6 @@ class _ReadyCard extends StatefulWidget {
 
 class _ReadyCardState extends State<_ReadyCard>
     with SingleTickerProviderStateMixin {
-
   late final AnimationController _wiggle = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
@@ -85,8 +82,6 @@ class _ReadyCardState extends State<_ReadyCard>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        // The banner sits inline in the page, so it needs no shadow at all —
-        // its own fill already separates it.
         color: context.palette.alertDeep,
         borderRadius: BorderRadius.all(AppRadii.md),
       ),

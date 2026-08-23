@@ -1,5 +1,3 @@
-
-
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
@@ -98,7 +96,6 @@ class _ConfettiPainter extends CustomPainter {
     const gravity = 720.0;
 
     for (final p in particles) {
-
       final time = t * 1.6;
       final dx = p.vx * time;
       final dy = p.vy * time + 0.5 * gravity * time * time;

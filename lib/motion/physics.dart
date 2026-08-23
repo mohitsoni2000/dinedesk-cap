@@ -1,25 +1,3 @@
-// physics.dart — playful, physics-driven micro-interactions.
-//
-// 2026 motion language in one file: squash-&-stretch, decaying-oscillation
-// wobbles, gravity drops, rubber-band drags, 3D tilt, spring page
-// transitions, and a lightweight shimmer. Zero packages; everything runs on
-// [SpringSimulation] and respects `MediaQuery.disableAnimations`.
-//
-// Quick map:
-//   JellyTap        → tap targets (cards, chips, keys): squash on press,
-//                     jelly overshoot on release
-//   Boing           → programmatic pop for badges / stat bumps
-//                     (BoingController.fire())
-//   Wiggle          → attention wobble when `trigger` changes (READY chip)
-//   GravityDrop     → entrance that falls in and bounces (success check,
-//                     empty states)
-//   RubberBand      → drag-me-and-I-snap-back toy physics (logo, paired chip)
-//   TiltOnTouch     → subtle 3D tilt following the finger
-//   Shimmer         → skeleton loading sweep
-//   AttentionPulse  → soft repeating scale+glow (READY chips)
-//   SpringPageTransitionsBuilder → shared-axis spring route transition
-//   SpringCurve / springTo()     → helpers to spring anything
-
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -28,11 +6,8 @@ import 'package:flutter/physics.dart';
 import '../theme/tokens.dart';
 import 'springs.dart';
 
-/// True when heavy motion should be skipped — performance mode, a detected
-/// low-tier device, or OS reduce-motion. Every widget here honours it.
 bool reduceMotion(BuildContext context) => AppPerf.reduceEffects(context);
 
-/// Drive any [AnimationController] with a real spring.
 extension SpringRun on AnimationController {
   TickerFuture springTo(
     double target, {
@@ -42,8 +17,6 @@ extension SpringRun on AnimationController {
       animateWith(SpringSimulation(spring, value, target, velocity));
 }
 
-/// A [Curve] sampled from a real [SpringSimulation] — gives Tween/implicit
-/// animations a natural overshoot. Values may exceed 1.0; clamp for opacity.
 class SpringCurve extends Curve {
   SpringCurve({SpringDescription spring = RestroSprings.snappy})
       : _sim = SpringSimulation(spring, 0, 1, 0);
@@ -55,10 +28,6 @@ class SpringCurve extends Curve {
   double transformInternal(double t) => _sim.x(t * _settleSeconds);
 }
 
-// ─────────────────────────────────────────────────────────────── JellyTap ──
-
-/// Squash-and-stretch tap target: presses squish (wider + shorter), release
-/// springs back with a jelly wobble. Wrap cards, chips, pin keys, nav icons.
 class JellyTap extends StatefulWidget {
   const JellyTap({
     required this.child,
@@ -74,11 +43,9 @@ class JellyTap extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
-  /// Max squash as a fraction of scale (0.07 ⇒ 1.07× wide, 0.93× tall).
   final double amount;
   final bool enabled;
 
-  /// Hook your haptics/audio here (e.g. feedbackService.fire(...)).
   final VoidCallback? onPressFeedback;
 
   @override
@@ -87,22 +54,13 @@ class JellyTap extends StatefulWidget {
 
 class _JellyTapState extends State<JellyTap>
     with SingleTickerProviderStateMixin {
-  /// Created on first press, not on mount.
-  ///
-  /// The tables floor puts one JellyTap per tile. With `late final ... =`
-  /// the controller was constructed the first time `build` touched it, which
-  /// is immediately — so a 60-tile floor allocated 60 controllers and 60
-  /// ticker registrations, and churned them on every scroll recycle. Nothing
-  /// squashes until a finger lands, so nothing needs to exist until then.
   AnimationController? _c;
 
   AnimationController _ensure() {
     final existing = _c;
     if (existing != null) return existing;
     final created = AnimationController.unbounded(vsync: this, value: 0);
-    // The rebuild is driven by setState rather than an always-mounted
-    // AnimatedBuilder, so an untouched tile carries no listener and no
-    // extra element in the tree.
+
     created.addListener(_onTick);
     _c = created;
     return created;
@@ -124,7 +82,6 @@ class _JellyTapState extends State<JellyTap>
     if (reduceMotion(context)) {
       _c?.value = 0;
     } else {
-      // Negative velocity throws the spring past 0 → the jelly wobble.
       _ensure().springTo(0, spring: RestroSprings.bouncy, velocity: -9);
     }
     if (!cancelled) widget.onTap?.call();
@@ -139,9 +96,7 @@ class _JellyTapState extends State<JellyTap>
   @override
   Widget build(BuildContext context) {
     final controller = _c;
-    // At rest — which is every tile except the one under a thumb — the child
-    // is returned untransformed. No AnimatedBuilder, no Matrix4 allocation,
-    // no extra render object.
+
     final Widget body = controller == null || controller.value == 0
         ? widget.child
         : Transform(
@@ -167,11 +122,6 @@ class _JellyTapState extends State<JellyTap>
   }
 }
 
-// ────────────────────────────────────────────────────────────────── Boing ──
-
-/// Programmatic pop: `controller.fire()` makes the child boing (scale
-/// overshoot with a decaying wobble). Perfect for a ₹ stat that just changed
-/// or a badge count bump.
 class BoingController {
   _BoingState? _state;
   void fire([double power = 1.0]) => _state?._fire(power);
@@ -228,11 +178,6 @@ class _BoingState extends State<Boing> with SingleTickerProviderStateMixin {
       );
 }
 
-// ───────────────────────────────────────────────────────────────── Wiggle ──
-
-/// Decaying-oscillation attention wobble. Bump [trigger] (any changing int)
-/// and the child rings like a struck bell — a spring launched with pure
-/// velocity around its rest point.
 class Wiggle extends StatefulWidget {
   const Wiggle({
     required this.trigger,
@@ -279,11 +224,6 @@ class _WiggleState extends State<Wiggle> with SingleTickerProviderStateMixin {
       );
 }
 
-// ──────────────────────────────────────────────────────────── GravityDrop ──
-
-/// Entrance that FALLS into place and bounces — stiff, under-damped spring
-/// reads as gravity + landing. Use on the KOT success check, empty states,
-/// or the demo confetti moment.
 class GravityDrop extends StatefulWidget {
   const GravityDrop({
     required this.child,
@@ -350,11 +290,6 @@ class _GravityDropState extends State<GravityDrop>
       );
 }
 
-// ───────────────────────────────────────────────────────────── RubberBand ──
-
-/// Toy physics: drag the child anywhere (with resistance), let go and it
-/// snaps home with your fling velocity feeding the spring. Delightful on the
-/// auth logo or the paired chip; harmless everywhere.
 class RubberBand extends StatefulWidget {
   const RubberBand({
     required this.child,
@@ -365,7 +300,6 @@ class RubberBand extends StatefulWidget {
 
   final Widget child;
 
-  /// 0..1 — how much of the finger travel the child follows.
   final double resistance;
   final double maxDrag;
 
@@ -377,7 +311,7 @@ class _RubberBandState extends State<RubberBand>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c =
       AnimationController.unbounded(vsync: this, value: 0);
-  Offset _dir = Offset.zero; // unit-ish direction of current stretch
+  Offset _dir = Offset.zero;
   Offset _drag = Offset.zero;
 
   void _update(DragUpdateDetails d) {
@@ -396,7 +330,8 @@ class _RubberBandState extends State<RubberBand>
   void _end(DragEndDetails d) {
     _drag = Offset.zero;
     final v = d.velocity.pixelsPerSecond.distance / 40;
-    _c.springTo(0, spring: RestroSprings.bouncy, velocity: -v.clamp(0, 40).toDouble());
+    _c.springTo(0,
+        spring: RestroSprings.bouncy, velocity: -v.clamp(0, 40).toDouble());
   }
 
   @override
@@ -421,9 +356,6 @@ class _RubberBandState extends State<RubberBand>
       );
 }
 
-// ──────────────────────────────────────────────────────────── TiltOnTouch ──
-
-/// Subtle 3D card tilt that follows the finger; springs flat on release.
 class TiltOnTouch extends StatefulWidget {
   const TiltOnTouch({
     required this.child,
@@ -432,7 +364,7 @@ class TiltOnTouch extends StatefulWidget {
   });
 
   final Widget child;
-  final double maxTilt; // radians
+  final double maxTilt;
 
   @override
   State<TiltOnTouch> createState() => _TiltOnTouchState();
@@ -442,7 +374,7 @@ class _TiltOnTouchState extends State<TiltOnTouch>
     with SingleTickerProviderStateMixin {
   late final AnimationController _release =
       AnimationController.unbounded(vsync: this, value: 1);
-  Offset _tilt = Offset.zero; // x: rotY, y: rotX — normalized -1..1
+  Offset _tilt = Offset.zero;
   Offset _from = Offset.zero;
 
   void _move(Offset local, Size size) {
@@ -475,9 +407,7 @@ class _TiltOnTouchState extends State<TiltOnTouch>
   Widget build(BuildContext context) => LayoutBuilder(
         builder: (context, constraints) {
           final size = constraints.biggest;
-          // Raw pointer events: never enters the gesture arena, so taps,
-          // long-presses and scrollables above/below keep working — the
-          // tilt is purely observational.
+
           return Listener(
             behavior: HitTestBehavior.translucent,
             onPointerDown: (e) => _move(e.localPosition, size),
@@ -506,18 +436,6 @@ class _TiltOnTouchState extends State<TiltOnTouch>
       );
 }
 
-// ──────────────────────────────────────────────────────────────── Shimmer ──
-
-/// Flat skeleton tint. Wrap grey placeholder shapes.
-///
-/// This was a sweeping shimmer: a [ShaderMask] over a three-stop
-/// [LinearGradient] whose transform was driven by a repeating controller, so
-/// a new shader was built and uploaded on every frame for every placeholder
-/// on screen. It already had a flat fallback for reduced motion — that
-/// fallback is now the only path, and the ticker is gone with it.
-///
-/// [highlightColor] and [period] are retained so the call sites keep reading
-/// the way they did; there is no highlight to sweep and nothing to time.
 class Shimmer extends StatelessWidget {
   const Shimmer({
     required this.child,
@@ -535,8 +453,8 @@ class Shimmer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final base = baseColor ??
-        (dark ? const Color(0x14F5EEE3) : const Color(0x0D1A130C));
+    final base =
+        baseColor ?? (dark ? const Color(0x14F5EEE3) : const Color(0x0D1A130C));
     return ColorFiltered(
       colorFilter: ColorFilter.mode(base, BlendMode.srcATop),
       child: child,
@@ -544,9 +462,6 @@ class Shimmer extends StatelessWidget {
   }
 }
 
-// ───────────────────────────────────────────────────────── AttentionPulse ──
-
-/// Soft repeating scale + glow — for READY chips and live badges.
 class AttentionPulse extends StatefulWidget {
   const AttentionPulse({
     required this.child,
@@ -589,16 +504,12 @@ class _AttentionPulseState extends State<AttentionPulse>
 
   @override
   Widget build(BuildContext context) {
-    // `glowColor` is retained on the widget for source compatibility with the
-    // call sites that still pass it; there is no glow to colour.
     return AnimatedBuilder(
       animation: _c,
       child: widget.child,
       builder: (context, child) {
         final t = Curves.easeInOut.transform(_c.value);
-        // The pulse is a scale now. It used to also breathe a coloured glow
-        // (a BoxShadow whose blur and spread both animated, so the shadow was
-        // re-blurred every frame); the scale alone reads as "look here".
+
         return Transform.scale(
           scale: 1 + (widget.scale - 1) * t,
           child: child,
@@ -608,11 +519,6 @@ class _AttentionPulseState extends State<AttentionPulse>
   }
 }
 
-// ─────────────────────────────────────────────── Spring page transitions ──
-
-/// Shared-axis route transition on a real spring: incoming page rises 14px,
-/// scales .985 → 1 with a hint of overshoot, and fades in; outgoing page
-/// drifts back. Wired app-wide from [AppTheme] via [PageTransitionsTheme].
 class SpringPageTransitionsBuilder extends PageTransitionsBuilder {
   const SpringPageTransitionsBuilder();
 
@@ -624,8 +530,6 @@ class SpringPageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // A plain fade still reads as a transition but costs one opacity layer
-    // instead of a spring-driven transform stack.
     if (reduceMotion(context)) {
       return FadeTransition(opacity: animation, child: child);
     }
@@ -648,7 +552,7 @@ class SpringPageTransitionsBuilder extends PageTransitionsBuilder {
       animation: Listenable.merge([spring, fade, drift]),
       child: child,
       builder: (context, child) {
-        final v = spring.value; // may slightly overshoot 1 — that's the charm
+        final v = spring.value;
         return Opacity(
           opacity: fade.value.clamp(0.0, 1.0),
           child: Transform.translate(

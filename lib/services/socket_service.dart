@@ -10,15 +10,11 @@ enum SocketState { disconnected, connecting, connected, verified }
 
 enum ProbeResult { ok, authRejected, unreachable }
 
-/// Result of an unauthenticated `GET /ping` probe — cheap enough to fan out
-/// to every rediscovery candidate without the auth-socket cost `probe()`
-/// pays (see CREW_NETWORK_DESIGN.md §5.2/§9).
 sealed class PingResult {
   const PingResult();
 }
 
 final class PingOk extends PingResult {
-  /// The Desk's stable identity, if this Desk build sends one.
   final String? id;
   const PingOk(this.id);
 }
@@ -27,11 +23,6 @@ final class PingFailed extends PingResult {
   const PingFailed();
 }
 
-/// Result of a device-secret recovery attempt (employee ID + PIN login,
-/// no QR). A one-shot, disposable connection — same shape as [probe] — since
-/// the credentials it carries are only good for this single handshake; the
-/// real ongoing connection is a normal [SocketService.connect] using the
-/// fresh token this returns.
 sealed class RecoveryResult {
   const RecoveryResult();
 }
@@ -43,25 +34,15 @@ final class RecoverySuccess extends RecoveryResult {
 }
 
 final class RecoveryFailed extends RecoveryResult {
-  /// 'RECOVERY_DISABLED' or 'RECOVERY_FAILED' from the desk, null for a
-  /// network-level failure (unreachable, timeout, malformed response).
   final String? code;
   final String message;
   const RecoveryFailed(this.code, this.message);
 }
 
-/// Why the last live connect attempt failed, when it failed during the
-/// handshake and never reached `connected`.
-///
-/// `authRejected` is worth telling apart because retrying cannot fix it: an
-/// expired, revoked or deactivated pairing needs a fresh QR, and a screen that
-/// says "check your Wi-Fi" sends the waiter chasing the wrong problem.
 enum ConnectFailure { none, authRejected, unreachable }
 
 const String _tag = '[Socket]';
 
-/// Every ack the app produces internally uses these codes, so callers branch
-/// on a value rather than on substrings of an English message.
 abstract final class AckCode {
   static const String connectionLost = 'connection_lost';
   static const String timeout = 'timeout';
@@ -71,63 +52,23 @@ abstract final class AckCode {
 Map<String, dynamic> _errorAck(String code, String message) =>
     <String, dynamic>{'kind': 'error', 'code': code, 'message': message};
 
-/// True when an ack represents a *transport* failure rather than the desk
-/// deliberately rejecting the request.
-///
-/// The KOT queue depends on this distinction: a rejected KOT must be
-/// surfaced and quarantined, but a KOT that never reached the desk must be
-/// retried. The old code could not tell them apart, so it deleted both.
 bool isTransportFailure(Map<String, dynamic> ack) {
   final code = ack['code'];
   return code == AckCode.connectionLost || code == AckCode.timeout;
 }
 
 class SocketService {
-  /// Default ack timeout. Every ack path now has one — `emit(onAck:)`
-  /// previously had none at all, so a desk that accepted a packet and never
-  /// replied left the calling screen spinning forever.
-  ///
-  /// CC-LAT-004: dropped from 12s to a LAN-appropriate 4s. `bill:payment`
-  /// keeps its own explicit 15s — a settle call that times out early and
-  /// gets retried is a duplicate-payment path, so no money event may ever
-  /// fall back to this default. See [_moneyEvents]: `emitAck` throws rather
-  /// than silently inheriting it for one of these events.
   static const Duration ackTimeout = Duration(seconds: 4);
 
-  /// Events for which a silently-inherited [ackTimeout] is a
-  /// duplicate-payment/duplicate-charge risk, not just a slower retry.
-  /// `order_review_screen.dart`'s quick-settle path once relied on the
-  /// default here — a payment that legitimately took 5–14s was treated as
-  /// failed and retried, and the retry's fresh `client_request_id` couldn't
-  /// dedupe against the original. `emitAck` below refuses to guess for any
-  /// event in this set; the caller must say what it means. Add an event here
-  /// the moment it touches money — do not wait for it to also grow a bug.
   static const Set<String> _moneyEvents = {
     'bill:payment',
     'bill:generate',
     'discount:apply',
   };
 
-  /// Builds the namespace URL.
-  ///
-  /// `useTls` exists so the desk can move to a self-signed certificate whose
-  /// fingerprint travels in the pairing QR, without another client release.
-  /// Until then this is plain HTTP on the LAN and the pairing token and
-  /// operator PIN are sniffable by anyone on the same WiFi — see
-  /// CREW_FLUTTER_AUDIT.md #6.
   static String namespaceUrl(String host, int port, {bool useTls = false}) =>
       '${useTls ? 'https' : 'http'}://$host:$port/operator';
 
-  /// True when the desk turned the handshake away over the pairing itself
-  /// rather than the network failing.
-  ///
-  /// The desk sends a structured `{code, message}` payload on every
-  /// handshake rejection now (see `authError()` in the desk's
-  /// session-manager.ts) — checked first, and authoritative when present.
-  /// Substring matching on a bare message is kept only as a fallback for a
-  /// Desk build that predates the structured codes; a restaurant's phones
-  /// and Desk software can be on different versions for a while after an
-  /// update, so this can't be removed outright yet.
   static const Set<String> _authErrorCodes = <String>{
     'MISSING_TOKEN',
     'TOKEN_EXPIRED',
@@ -151,8 +92,6 @@ class SocketService {
         message.contains('deactivated');
   }
 
-  /// Validates a host/port/token against the desk BEFORE it is persisted.
-  /// Opens a disposable socket; never touches this instance's state.
   static Future<ProbeResult> probe(
     String host,
     int port,
@@ -203,15 +142,6 @@ class SocketService {
     return completer.future;
   }
 
-  /// Hits the Desk's unauthenticated `GET /ping` — no socket, no token, no
-  /// session mutation. Used to verify a rediscovery candidate is reachable
-  /// (and, when the caller has a stored desk_instance_id, that it's the
-  /// *same* Desk) without paying for a real authenticated socket per
-  /// candidate the way [probe] does.
-  ///
-  /// [timeout] bounds the whole call, matching [probe]/[recover] — not just
-  /// one of its internal awaits — so a caller racing several candidates gets
-  /// the ceiling it asked for rather than up to 3x it.
   static Future<PingResult> ping(
     String host,
     int port, {
@@ -255,9 +185,6 @@ class SocketService {
     }
   }
 
-  /// Attempts a device-secret recovery login (employee ID + PIN, no QR).
-  /// Never touches this instance's state — on success the caller persists
-  /// the returned credentials and opens the real connection via [connect].
   static Future<RecoveryResult> recover(
     String host,
     int port,
@@ -335,8 +262,6 @@ class SocketService {
       StreamController<SocketState>.broadcast();
   SocketState _state = SocketState.disconnected;
 
-  /// Handlers registered per event, so [off] can remove exactly what was
-  /// added instead of clearing every listener for that event.
   final Map<String, List<void Function(dynamic)>> _handlers =
       <String, List<void Function(dynamic)>>{};
 
@@ -346,18 +271,10 @@ class SocketService {
   SocketState get state => _state;
   io.Socket? get socket => _socket;
 
-  /// Why the most recent connect attempt failed. Read alongside a
-  /// `disconnected` state transition — the state alone cannot say whether
-  /// retrying is worth anything.
   ConnectFailure get lastConnectFailure => _lastConnectFailure;
 
   bool get isUsable => _socket != null && _state != SocketState.disconnected;
 
-  /// Nudges an already-configured socket that is sitting disconnected. The OS
-  /// can freeze background networking, so engine.io's heartbeat may not have
-  /// noticed a dead connection by the time the app is back in front of the
-  /// user. No-op if we are already connecting/connected, or if connect() was
-  /// never called this session.
   void reconnectIfNeeded() {
     if (_state == SocketState.disconnected && _socket != null) {
       logD(_tag, 'app resumed while disconnected — nudging reconnect');
@@ -370,10 +287,7 @@ class SocketService {
     _lastConnectFailure = ConnectFailure.none;
     _setState(SocketState.connecting);
     final url = namespaceUrl(host, port, useTls: useTls);
-    // The token is never logged, not even a prefix. `debugPrint` survives
-    // release builds, so the old "Token: ${token.substring(0, 20)}..." line
-    // was writing the JWT header and the start of its payload to logcat on
-    // every production connect.
+
     logD(_tag, 'connecting to $url (token ${redact(token)})');
 
     final socket = io.io(
@@ -382,14 +296,9 @@ class SocketService {
           .setTransports(<String>['websocket'])
           .setAuth(<String, dynamic>{'token': token})
           .enableReconnection()
-          // A dead LAN IP black-holes the SYN (ARP never resolves), so
-          // without an explicit connect timeout the default 20s turns the
-          // "retry every 2s" loop into a pile of hung sockets.
           .setTimeout(3000)
           .setReconnectionDelay(400)
           .setReconnectionDelayMax(3000)
-          // Stops every phone on the floor retrying in lockstep after a
-          // shared-router blip.
           .setRandomizationFactor(0.3)
           .setReconnectionAttempts(double.maxFinite.toInt())
           .build(),
@@ -407,8 +316,7 @@ class SocketService {
     });
     socket.onConnectError((Object? err) {
       logE(_tag, 'connection error', err);
-      // Classified before the state change, so a listener reacting to
-      // `disconnected` already sees why.
+
       _lastConnectFailure = isAuthHandshakeError(err)
           ? ConnectFailure.authRejected
           : ConnectFailure.unreachable;
@@ -426,26 +334,10 @@ class SocketService {
     return response;
   }
 
-  /// Restores `verified` after a successful resync has confirmed the desk
-  /// still trusts our prior PIN verification. Without this a reconnect leaves
-  /// the transport stuck at `connected`, which silently blocks KOT sending.
-  ///
-  /// This is a *transport* state, not an authorization decision — the desk
-  /// re-checks the session on every mutating handler regardless.
   void markVerified() {
     if (_state != SocketState.disconnected) _setState(SocketState.verified);
   }
 
-  /// Fire-and-forget, or callback-with-ack. The ack path now carries the same
-  /// timeout as [emitAck] — including the same refusal to guess for a money
-  /// event. [timeout] has no default for the same reason it has none on
-  /// [emitAck]: `bill:generate`/`discount:apply` were both being called
-  /// through this method with no [timeout] argument, silently inheriting
-  /// [ackTimeout] before this existed.
-  ///
-  /// A money event with no [onAck] at all is refused outright, not just an
-  /// unspecified timeout — true fire-and-forget means the caller has no way
-  /// to know a money mutation failed, which is its own silent-failure risk.
   void emit(
     String event,
     Map<String, dynamic> data, {
@@ -472,11 +364,6 @@ class SocketService {
     unawaited(emitAck(event, data, timeout: timeout).then(onAck));
   }
 
-  /// [timeout] has no default on purpose. A money event (see
-  /// [_moneyEvents]) must pass one explicitly — falling through to
-  /// [ackTimeout] here is exactly the bug this parameter shape exists to
-  /// make impossible. Every non-money call site keeps working unchanged by
-  /// passing `null` (or nothing), which still resolves to [ackTimeout] below.
   Future<Map<String, dynamic>> emitAck(
     String event,
     Map<String, dynamic> data, {
@@ -495,13 +382,6 @@ class SocketService {
       return _errorAck(AckCode.connectionLost, 'Connection lost');
     }
     try {
-      // socket.timeout(ms) — not Future.timeout() on the returned Dart
-      // Future — so the library's own ack registry drops the callback and
-      // prunes the send-buffer entry when it fires. A Future-level timeout
-      // only abandons *our* wait; the library keeps the ack closure in
-      // `acks` forever (the same long-lived Socket survives every
-      // reconnect), leaking one per timed-out call for the life of the
-      // connection.
       final raw = await socket
           .timeout(effectiveTimeout.inMilliseconds)
           .emitWithAckAsync(event, data);
@@ -513,9 +393,6 @@ class SocketService {
       logD(_tag, '<- $event ack kind=${response['kind']}');
       return response;
     } catch (err, stack) {
-      // socket.timeout() completes with a plain Exception("operation has
-      // timed out"), not a Dart TimeoutException — string-match is the
-      // library's own contract here, not a workaround.
       if (err.toString().contains('timed out')) {
         logE(_tag, '$event ack timed out');
         return _errorAck(
@@ -543,7 +420,6 @@ class SocketService {
     socket.on(event, wrapped);
   }
 
-  /// Removes only the handlers this service registered for [event].
   void off(String event) {
     final registered = _handlers.remove(event);
     final socket = _socket;

@@ -11,14 +11,6 @@ import '../data/money.dart';
 import '../data/providers.dart';
 import 'log.dart';
 
-/// ─────────────────────────────────────────────────────────────────────────
-/// Platform surfaces: home-screen widgets (iOS WidgetKit + Android),
-/// Live Activities / Dynamic Island (iOS), and ready-to-serve alerts that
-/// mirror to Apple Watch & bridge to Wear OS via system notifications.
-/// All best-effort: every call is guarded so a missing native piece can
-/// never break the ordering flow.
-/// ─────────────────────────────────────────────────────────────────────────
-
 const kAppGroupId = 'group.com.command.crew';
 
 final readyAlertsProvider =
@@ -28,9 +20,6 @@ final liveActivityProvider =
 final widgetSyncProvider =
     Provider<WidgetSyncService>((ref) => WidgetSyncService());
 
-/// Ready-to-serve alerts. High-priority local notifications appear on the
-/// lock screen, **mirror to Apple Watch automatically** (phone locked) and
-/// **bridge to Wear OS automatically** — watch coverage with zero watch app.
 class ReadyAlertsService {
   static const _tag = '[ReadyAlerts]';
   final _plugin = FlutterLocalNotificationsPlugin();
@@ -87,8 +76,6 @@ class ReadyAlertsService {
   }
 }
 
-/// Live Activity / Dynamic Island bridge (iOS 16.1+). No-op elsewhere and
-/// fully silent until the CrewWidgets extension is added in Xcode.
 class LiveActivityService {
   static const _tag = '[LiveActivity]';
   static const _ch = MethodChannel('crew/surfaces');
@@ -120,11 +107,10 @@ class LiveActivityService {
         'status': 'ready',
       });
 
-  Future<void> end(String orderId) => _call('endActivity', {'orderId': orderId});
+  Future<void> end(String orderId) =>
+      _call('endActivity', {'orderId': orderId});
 }
 
-/// Pushes a compact floor snapshot to the home-screen widgets
-/// (throttled — call `schedule` freely from sync handlers).
 class WidgetSyncService {
   static const _tag = '[WidgetSync]';
   Timer? _debounce;
@@ -146,13 +132,10 @@ class WidgetSyncService {
     try {
       final tables = ref.read(tablesProvider);
       final ready = ref.read(readyOrdersProvider);
-      final mine =
-          tables.where((t) => t.state == TableState.mine).length;
-      final free =
-          tables.where((t) => t.state == TableState.free).length;
-      // Summed in paise so the widget total can't drift from the floor.
-      final revenue =
-          tables.map((t) => t.bill ?? Money.zero).sumMoney();
+      final mine = tables.where((t) => t.state == TableState.mine).length;
+      final free = tables.where((t) => t.state == TableState.free).length;
+
+      final revenue = tables.map((t) => t.bill ?? Money.zero).sumMoney();
       await HomeWidget.saveWidgetData<int>('w_mine', mine);
       await HomeWidget.saveWidgetData<int>('w_free', free);
       await HomeWidget.saveWidgetData<int>('w_ready', ready.length);

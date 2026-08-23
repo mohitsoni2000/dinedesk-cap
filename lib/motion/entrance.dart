@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/widgets.dart';
 
 class Entrance extends StatefulWidget {
@@ -28,9 +26,7 @@ class Entrance extends StatefulWidget {
     return [
       for (int i = 0; i < children.length; i++)
         Entrance(
-
-          delay: initialDelay +
-              step * (i < maxStaggered ? i : maxStaggered),
+          delay: initialDelay + step * (i < maxStaggered ? i : maxStaggered),
           offsetY: offsetY,
           child: children[i],
         ),

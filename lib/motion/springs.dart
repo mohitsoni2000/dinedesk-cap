@@ -51,32 +51,18 @@ class _SpringBuilderState extends State<SpringBuilder>
   void initState() {
     super.initState();
     _currentValue = widget.from;
-    // The initial value goes through the constructor, not a `..value =`
-    // cascade. Setting it via the cascade notifies listeners, and _onTick
-    // reads `_controller` — which the cascade has not yet assigned to this
-    // `late final` field, so every SpringBuilder in the tree threw
-    // LateInitializationError on mount.
+
     _controller = AnimationController.unbounded(
       vsync: this,
       value: widget.from,
     )..addListener(_onTick);
 
-    // Only run a simulation when there is actually somewhere to travel.
-    //
-    // This used to call `animateWith` unconditionally on mount. A `Pressable`
-    // at rest is `from == to == 1.0` — a spring from a value to itself — but
-    // starting it still spun up the ticker and scheduled a frame. Pressable
-    // wraps buttons, cards and glass chrome in 21 places, so every row that
-    // mounted during a scroll scheduled a frame it had no intention of
-    // painting differently. That is a direct contribution to scroll jank on
-    // slow devices, for zero visible motion.
     if (widget.from != widget.to || widget.velocity != 0) {
       _simulation = SpringSimulation(
           widget.spring, widget.from, widget.to, widget.velocity);
       _controller.animateWith(_simulation);
     } else {
-      _simulation =
-          SpringSimulation(widget.spring, widget.from, widget.to, 0);
+      _simulation = SpringSimulation(widget.spring, widget.from, widget.to, 0);
     }
   }
 

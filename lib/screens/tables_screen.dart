@@ -1,8 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-// ScrollCacheExtent lives in the rendering layer; widgets.dart doesn't
-// re-export it.
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -39,13 +38,8 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   bool _refreshing = false;
   late final AnimationController _refreshController;
 
-  // Same reasoning as rooms_screen.dart's _RoomsScreenState: itemBuilder
-  // runs again for every tile recycled during a scroll, so leaving Entrance
-  // ungated here replayed the fade and allocated a fresh AnimationController
-  // per recycle — on the app's single busiest, most-scrolled screen.
   bool _hasScrolled = false;
 
-  /// Coast pager: floors become horizontally swipeable "beaches".
   final PageController _floorPager = PageController();
 
   @override
@@ -53,12 +47,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     super.initState();
     WidgetsBinding.instance
         .addPostFrameCallback((_) => Trace.mark('tables_visible'));
-    // CC-LAT-009's floor-cache hydrate now fires from
-    // ConnectionBootstrap.start(), before the connect race begins — this
-    // screen only ever mounts once the router sees isAuthenticatedProvider,
-    // which is set after applyInitialSync has already applied live data, so
-    // calling hydrateFromFloorCache() from here would always run after the
-    // real sync and overwrite it with a stale disk snapshot.
+
     _refreshController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -133,12 +122,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
             maxCrossAxisExtent: context.tableTileExtent,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            // A tile's contents (27pt name, badges, footer) grow with the
-            // system font scale, but childAspectRatio alone would keep the
-            // tile height pinned to its width and overflow. Same height as
-            // the old 1.05 ratio at default scale; taller only when the
-            // text demands it, plus headroom for the badge row wrapping to
-            // a second line.
             mainAxisExtent: context.tableTileExtent /
                     1.05 *
                     context.effectiveTextScale.clamp(1.0, 1.55) +
@@ -160,9 +143,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                   : null,
               occupiedSince: t.occupiedSince,
             );
-            // itemBuilder runs again for every tile recycled during a
-            // scroll, so wrapping all of them replayed the fade and
-            // allocated a fresh AnimationController each time.
+
             if (i >= 12 || _hasScrolled || AppPerf.reduceEffects(context)) {
               return KeyedSubtree(key: ValueKey(t.serverId), child: card);
             }
@@ -231,9 +212,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
           .where((tbl) => tbl.serverId == t.serverId)
           .firstOrNull;
       final activeOrderId = tableData?.activeOrderId;
-      // activeOrdersProvider holds parsed ServerOrders now, not raw maps —
-      // adoptOrder takes the parsed order directly rather than re-wrapping it
-      // in an ack envelope just to have it re-parsed.
+
       final active = activeOrders.where((o) {
         return (activeOrderId != null && o.id == activeOrderId) ||
             o.tableId == t.serverId;
@@ -256,10 +235,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
 
   Future<void> _refresh() async {
     if (_refreshing) return;
-    // `connected` (transport up, PIN re-verification still landing after a
-    // resume) is not a disconnected state — only reject while the socket is
-    // actually down, so a refresh tap doesn't falsely claim "not connected"
-    // during that narrow race.
+
     final socketState = ref.read(socketServiceProvider).state;
     if (socketState != SocketState.connected &&
         socketState != SocketState.verified) {
@@ -305,9 +281,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     final query = _query.trim().toLowerCase();
     final isSearching = query.isNotEmpty;
     final floorCounts = ref.watch(floorCountsProvider);
-    // CC-LAT-009: this data came from the on-disk floor cache, not a live
-    // sync. A stale table that looks live is how a waiter seats a party
-    // twice — so this stays visible until the real sync lands and clears it.
+
     final floorDataStale = ref.watch(isFloorDataStaleProvider);
 
     return Scaffold(
@@ -513,14 +487,6 @@ class _HeaderIconTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The painted tile stays 40x40 — the header would look clumsy at 48 —
-    // but the *touch target* is 48, the app's own declared minimum. These are
-    // refresh and search on the busiest screen in the product, and they were
-    // 40 square, which is what Apple and Material both call too small.
-    //
-    // `label` is required rather than optional: this widget renders nothing
-    // but an icon, so there is no text for a screen reader to fall back on,
-    // and a caller who forgets would ship a silent button.
     return Pressable(
       onTap: onTap,
       semanticLabel: label,
@@ -710,7 +676,7 @@ class _StatsStrip extends ConsumerWidget {
     final freeCount = ref.watch(tablesProvider.select(
       (list) => list.where((t) => t.state == TableState.free).length,
     ));
-    // Summed in paise, converted to a double only for the counter animation.
+
     final billSum = ref.watch(tablesProvider.select(
       (list) => list.map((t) => t.bill ?? Money.zero).sumMoney(),
     ));
@@ -736,11 +702,6 @@ class _StatsStrip extends ConsumerWidget {
         Expanded(
           child: _StatMiniCard(
             label: 'On tables',
-            // Matches the two counters beside it: 17px w800 Inter, not 16px
-            // italic Cormorant. Three stats sat in one row and this one used
-            // a different family, a different slant and a different size —
-            // and it was the money, the value that most needs to be read
-            // fastest.
             value: Text(
               formatRupeesCompact(billSum),
               style: AppTypography.title.copyWith(fontWeight: FontWeight.w800),
@@ -1018,8 +979,6 @@ String _pillLabel(TableState state, List<String> operatorNames) {
   }
 }
 
-/// Full roster for the pill's long-press tooltip — the pill itself only ever
-/// shows the first joined operator's name (see _pillLabel).
 String? _pillTooltip(TableState state, List<String> operatorNames) {
   if (state != TableState.other || operatorNames.length < 2) return null;
   return '${operatorNames.join(', ')} are working here';
@@ -1041,10 +1000,26 @@ Widget _applySpotlight(BuildContext context, Widget card, TableState state,
     opacity: 0.3,
     child: ColorFiltered(
       colorFilter: const ColorFilter.matrix(<double>[
-        0.2126, 0.7152, 0.0722, 0, 0, //
-        0.2126, 0.7152, 0.0722, 0, 0, //
-        0.2126, 0.7152, 0.0722, 0, 0, //
-        0, 0, 0, 1, 0, //
+        0.2126,
+        0.7152,
+        0.0722,
+        0,
+        0,
+        0.2126,
+        0.7152,
+        0.0722,
+        0,
+        0,
+        0.2126,
+        0.7152,
+        0.0722,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
       ]),
       child: card,
     ),
@@ -1160,11 +1135,6 @@ class _FloorTag extends StatelessWidget {
   }
 }
 
-/// A static chip. This was a [StatefulWidget] whose entire reason to exist was
-/// a 1.6s [AnimationController] breathing a green glow behind it — a
-/// [BoxShadow] whose colour, blur and spread all animated, so it re-blurred
-/// every frame, once per ready table, on the tables floor. The green fill says
-/// "ready" on its own.
 class _ReadyChip extends StatelessWidget {
   const _ReadyChip();
 
@@ -1320,8 +1290,8 @@ class _TableCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isLinked = ref.watch(linkedTableIdsProvider
-        .select((ids) => ids.contains(table.serverId)));
+    final isLinked = ref.watch(
+        linkedTableIdsProvider.select((ids) => ids.contains(table.serverId)));
     final isReady = ref.watch(
         readyTableIdsProvider.select((ids) => ids.contains(table.serverId)));
     final isMine = table.state == TableState.mine;
@@ -1367,7 +1337,6 @@ class _TableCard extends ConsumerWidget {
             child: Container(
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
-                // A solid wash, not a diagonal two-stop ramp.
                 color:
                     isMine ? context.palette.mineWash : context.palette.surface,
                 borderRadius: const BorderRadius.all(AppRadii.lg),
@@ -1413,13 +1382,6 @@ class _TableCard extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  // Wrap, not Row: a tile is only ~90-134px wide on a small
-                  // phone, and a table that is somebody else's *and* has a bill
-                  // *and* a named customer *and* is linked runs past that. Wrap
-                  // keeps each badge its natural size and pushes the overflow
-                  // onto a second line instead of clipping — Flexible would
-                  // shrink every badge, including ones that fit fine, and
-                  // _CustomerTag already ellipsizes its own name.
                   Wrap(
                     spacing: 6,
                     runSpacing: 4,
@@ -1494,9 +1456,6 @@ class _TableCard extends ConsumerWidget {
   }
 }
 
-/// Horizontal strip of recently opened tables — one-tap jump back to a
-/// table you were just serving. Fed by [recentTablesProvider]; hidden
-/// until at least one table has been opened this shift.
 class _RecentTablesRow extends ConsumerWidget {
   final ValueChanged<RestaurantTable> onOpen;
   const _RecentTablesRow({required this.onOpen});
@@ -1595,9 +1554,6 @@ class _RecentTablesRow extends ConsumerWidget {
   }
 }
 
-/// Smoothly collapses its child to zero height (with fade) when hidden —
-/// used to tuck the legend / stats / presence strips away while searching
-/// so the grid gets the room.
 class _CollapseSection extends StatelessWidget {
   final bool hidden;
   final Widget child;
@@ -1624,12 +1580,6 @@ class _CollapseSection extends StatelessWidget {
   }
 }
 
-/// Owns the `tablesProvider` subscription on behalf of the grid.
-///
-/// The screen's own `build()` deliberately does *not* watch the table list —
-/// if it did, every `table:updated` push would rebuild the header, connection
-/// rail, online strip, legend, stats and floor tabs alongside the grid. Here
-/// the watch is scoped to the only subtree that actually reflects it.
 class _TablesGridSlot extends ConsumerWidget {
   const _TablesGridSlot({
     this.floor,
@@ -1638,7 +1588,6 @@ class _TablesGridSlot extends ConsumerWidget {
     required this.builder,
   });
 
-  /// A single floor's beach. Null while searching — the query spans all floors.
   final String? floor;
   final String query;
   final bool showFloorTags;
@@ -1660,14 +1609,6 @@ class _TablesGridSlot extends ConsumerWidget {
   }
 }
 
-/// ============================================================
-/// FLOOR COAST — coast-package style swipeable floor "beaches".
-/// Swipe horizontally between floors; content parallax-lags and
-/// crossfades between pages while the header, tabs and stats act
-/// as the persistent shore. Tabs animate the pager; swiping the
-/// pager updates the tabs. Native PageView — no package, snappy
-/// PageScrollPhysics riding the app's bouncy scroll behavior.
-/// ============================================================
 class _FloorCoast extends StatefulWidget {
   final PageController controller;
   final List<String> floors;
@@ -1690,8 +1631,7 @@ class _FloorCoastState extends State<_FloorCoast> {
   @override
   void initState() {
     super.initState();
-    // Re-attached (e.g. after closing search) → jump back to the
-    // active floor without animation so tabs and pager agree.
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !widget.controller.hasClients) return;
       final int want = widget.floors.indexOf(widget.activeFloor);
@@ -1726,7 +1666,7 @@ class _FloorCoastState extends State<_FloorCoast> {
             }
             final double a = off.abs().clamp(0.0, 1.0);
             return Transform.translate(
-              offset: Offset(off * -26, 0), // content lags → coast feel
+              offset: Offset(off * -26, 0),
               child: Opacity(opacity: 1 - a * 0.28, child: child),
             );
           },

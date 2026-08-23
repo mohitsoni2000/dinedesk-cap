@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -38,8 +36,8 @@ class ForceDisconnectedScreen extends ConsumerWidget {
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.06),
                     borderRadius: const BorderRadius.all(AppRadii.lg),
-                    border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.12)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.12)),
                   ),
                   padding: const EdgeInsets.all(28),
                   child: Column(

@@ -49,15 +49,12 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
 
   bool _showCustom = false;
 
-  /// The typed value. For a percentage this is a plain number; for a flat
-  /// discount it is rupees, converted to paise at the boundary below.
   double? get _customValue => double.tryParse(_valueController.text.trim());
 
   Money get _customDiscountAmount {
     final v = _customValue;
     if (v == null || v <= 0) return Money.zero;
     if (_customType == _DiscountType.percent) {
-      // Percentage of an integer amount, rounded once to the nearest paisa.
       final computed = Money((widget.orderTotal.paise * v / 100).round());
       if (computed.isNegative) return Money.zero;
       return computed > widget.orderTotal ? widget.orderTotal : computed;
@@ -109,10 +106,6 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
     }
 
     socketService.emit('discount:apply', payload,
-        // Money event — SocketService.emit refuses to guess a timeout for
-        // one of these. Same generous window as bill:payment: a discount
-        // apply that times out early and gets retried risks the discount
-        // landing twice, not just a slower retry.
         timeout: const Duration(seconds: 15), onAck: (response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {

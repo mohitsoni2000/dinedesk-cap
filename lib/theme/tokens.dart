@@ -17,28 +17,11 @@ class AppColors {
   static const terra600 = Color(0xFFD4501F);
   static const terra700 = Color(0xFFB23E15);
 
-  // "Light" design system terracotta — same ramp, named per the token spec.
   static const terra = Color(0xFFE05D38);
   static const terraDeep = Color(0xFFB23E15);
   static const terraInk = Color(0xFF8A3212);
   static const terraSoft = Color(0xFFFFE3D6);
 
-  // The numbers in these names are tiers, not literal alpha percentages any
-  // more. They are tuned for contrast against `paper` (#F9F5EE) and `card`
-  // (#FFFFFF), measured with the WCAG 2.1 formula:
-  //
-  //   ink    16.92:1 / 18.38:1   AA + AAA
-  //   ink70   6.56:1 /  6.82:1   AA + AAA
-  //   ink50   4.70:1 /  4.82:1   AA        (was 0x80 → 3.40:1, failed)
-  //   ink30   3.40:1 /  3.48:1   AA-large + UI components
-  //                              (was 0x4D → 1.96:1, effectively invisible)
-  //
-  // ink30 is for disabled controls and placeholders only — it does not carry
-  // body text. ink10/ink05 are fills and hairlines, never text.
-  //
-  // This matters more here than in an office app: the operator is reading a
-  // cheap phone at arm's length under restaurant lighting, often with glare,
-  // and may well be over 40 — contrast sensitivity drops with age.
   static const ink = Color(0xFF1A130C);
   static const ink70 = Color(0xB31A130C);
   static const ink50 = Color(0x991A130C);
@@ -120,14 +103,13 @@ class AppPalette {
   final Color readOnlyBannerBg;
   final Color readOnlyBannerText;
 
-  // ---- v2 semantic tokens (theme-aware; prefer these over AppColors) ----
-  final Color paper; // scaffold / app background
-  final Color paperHint; // subtle warm hint surface
-  final Color elevated; // sheets, dialogs, popovers
-  final Color hairline; // 1px borders
-  final Color scrim; // modal barrier
-  final Color terraSoft; // brand tint chip bg
-  final Color onTerraSoft; // text on terraSoft
+  final Color paper;
+  final Color paperHint;
+  final Color elevated;
+  final Color hairline;
+  final Color scrim;
+  final Color terraSoft;
+  final Color onTerraSoft;
   final Color tableMineWashStart;
   final Color tableMineWashEnd;
   final Color tableMineBorder;
@@ -150,12 +132,12 @@ class AppPalette {
   final Color timerBadBg;
   final Color timerBadText;
   final Color paidBg;
-  final Color paidText; // history PAID pill
+  final Color paidText;
   final Color alertDeep;
-  final Color onAlertDeep; // ready-to-serve banner
+  final Color onAlertDeep;
   final Color navBar;
-  final Color navHairline; // bottom nav surface
-  final Color selectedPill; // solid 'active' pill fill (white text on top)
+  final Color navHairline;
+  final Color selectedPill;
 
   const AppPalette._({
     required this.brightness,
@@ -214,15 +196,10 @@ class AppPalette {
 
   bool get isDark => brightness == Brightness.dark;
 
-  /// Both of these used to be two-layer, per-brightness drops — the dark one
-  /// a 26px spread-inset black, the "mine" one a terra glow. They are the
-  /// single neutral shadow and no shadow respectively now.
   List<BoxShadow> get cardShadow => AppShadows.flat;
 
   List<BoxShadow> get mineShadow => AppShadows.none;
 
-  /// The wash behind a table you're serving is a solid fill, not a diagonal
-  /// two-stop gradient. [tableMineWashStart] is the colour it settles on.
   Color get mineWash => tableMineWashStart;
 
   TextStyle get caption => AppTypography.caption.copyWith(color: ink70);
@@ -285,9 +262,6 @@ class AppPalette {
 
   static const dark = AppPalette._(
     brightness: Brightness.dark,
-    // Same tiers as light, same alphas. Against dark `paper` (#17110B) and
-    // `surface` (#281E14): ink70 8.31/7.61, ink50 6.39/5.95, ink30 4.79/4.55
-    // — all AA. Dark mode was already passing at ink50; ink30 was 2.48:1.
     ink: Color(0xFFF5EEE3),
     ink70: Color(0xB3F5EEE3),
     ink50: Color(0x99F5EEE3),
@@ -452,14 +426,6 @@ class AppTypography {
     letterSpacing: 0.6,
   );
 
-  /// Status badges: FREE / MINE / DIRTY / RESERVED / READY, and the floor
-  /// filter chips.
-  ///
-  /// This was 9.5px, which put the most safety-critical, most-glanced-at
-  /// information in the app at its smallest size — smaller than any body
-  /// text. The waiter already knows the table is called T-01 (27px); what
-  /// they are scanning the floor *for* is the state. 12px with the existing
-  /// w700 and wide tracking still reads as a badge, not as body copy.
   static const TextStyle pill = TextStyle(
     fontFamily: inter,
     fontWeight: FontWeight.w700,
@@ -486,21 +452,12 @@ class AppTypography {
 class AppShadows {
   AppShadows._();
 
-  /// No shadow at all. Surfaces that used to be separated by a coloured glow
-  /// are separated by their fill and their hairline border instead.
   static const List<BoxShadow> none = <BoxShadow>[];
 
-  /// The only shadow in the app: one soft, neutral drop, used where a surface
-  /// genuinely floats over another (sheets, cards, the nav bar). Each
-  /// [BoxShadow] is its own blurred draw, so there is never more than one.
   static const List<BoxShadow> flat = [
     BoxShadow(color: Color(0x1F140E08), blurRadius: 8, offset: Offset(0, 3)),
   ];
 
-  // The stacked and coloured shadows below are retained as names so call
-  // sites keep compiling, but they are all [flat] or [none] now. The multi-
-  // layer drops (2/24px, 4/28/64px, 1/8/28/56px) and the terra glows are
-  // gone — they were the "depth" half of the old glass look.
   static const List<BoxShadow> card = flat;
   static const List<BoxShadow> elevated = flat;
   static const List<BoxShadow> glass = flat;
@@ -509,17 +466,12 @@ class AppShadows {
   static const List<BoxShadow> terraGlow = none;
   static const List<BoxShadow> logoGlow = none;
 
-  /// These four used to branch on [AppPerf.reduceEffects]. There is nothing
-  /// left to branch to — the rich variants no longer exist — so they are now
-  /// constant. They stay as functions because ~10 call sites pass a context.
   static List<BoxShadow> glassFor(BuildContext context) => flat;
 
   static List<BoxShadow> elevatedFor(BuildContext context) => flat;
 
   static List<BoxShadow> cardFor(BuildContext context) => flat;
 
-  /// The table you're serving is marked by its fill and border, not by a
-  /// coloured glow behind the tile.
   static List<BoxShadow> mineFor(BuildContext context) => none;
 }
 
@@ -681,20 +633,11 @@ class AppChipPadding {
       EdgeInsets.symmetric(horizontal: 14, vertical: 8);
 }
 
-/// ============================================================
-/// ADAPTIVE DESIGN — single source of truth for every screen.
-/// Phone · tablet · desktop follow the same tokens, so layouts
-/// scale without per-screen magic numbers.
-/// ============================================================
 class AppBreakpoints {
   AppBreakpoints._();
 
-  /// Phone vs tablet. Below this is a handset in either orientation.
   static const double tablet = 600;
 
-  /// Enough room for two panes — a side nav rail, an order rail, a
-  /// master/detail split. A 10" tablet lands here in landscape and in the
-  /// [tablet] bucket in portrait.
   static const double tabletWide = 920;
 }
 
@@ -712,62 +655,33 @@ extension AdaptiveContext on BuildContext {
   bool get isPhone => sizeClass == AppSizeClass.phone;
   bool get isTabletUp => _w >= AppBreakpoints.tablet;
 
-  /// Whole-window signal — right for page-level decisions like content
-  /// clamping. For a two-pane split use [AdaptiveConstraints.isTwoPane] on a
-  /// local [LayoutBuilder] instead: inside a Row that has already given away
-  /// width to a rail, the window width no longer describes the space left.
   bool get isTabletWide => _w >= AppBreakpoints.tabletWide;
 
-  /// Pick a value per size class: `context.adaptive(phone: 16, tablet: 24)`.
   T adaptive<T>({required T phone, T? tablet}) => switch (sizeClass) {
         AppSizeClass.phone => phone,
         AppSizeClass.tablet || AppSizeClass.tabletWide => tablet ?? phone,
       };
 
-  /// Grid tile sizing for the tables floor — wider screens get roomier
-  /// tiles while the max-extent delegate keeps column count fluid.
   double get tableTileExtent => adaptive(phone: 200, tablet: 212);
 
-  /// Space to leave at the bottom of a bottom sheet.
-  ///
-  /// Sheets shown with `isScrollControlled: true` get no automatic keyboard
-  /// padding, so they have to account for it themselves. Whichever of the two
-  /// insets is larger is the right answer, and they are never added: with the
-  /// keyboard open its height already spans the gesture-bar area, so summing
-  /// them double-counts; with it closed the keyboard inset is zero and only
-  /// the safe area remains.
   double get sheetBottomInset => math.max(
         MediaQuery.viewInsetsOf(this).bottom,
         MediaQuery.viewPaddingOf(this).bottom,
       );
 
-  /// A linear stand-in for the system font scale, for sizing math that has to
-  /// grow with text. Android's curve flattens at the top end, so this is an
-  /// upper bound rather than exact.
   double get effectiveTextScale =>
       (MediaQuery.textScalerOf(this).scale(100) / 100).clamp(1.0, 2.0);
 
-  /// Honors performance mode and OS "reduce motion" — heavy ambient effects
-  /// switch off.
   bool get reduceMotion => AppPerf.reduceEffects(this);
 }
 
 extension AdaptiveConstraints on BoxConstraints {
-  /// Whether the space actually available here fits two panes. Measured from
-  /// a local [LayoutBuilder] rather than the window, so a pane nested inside
-  /// another split sees its own width.
   bool get isTwoPane => maxWidth >= AppBreakpoints.tabletWide;
 }
 
-/// Performance guardrails for low-end devices. Ambient effects consult
-/// this before painting; interactions stay spring-driven everywhere.
 class AppPerf {
   AppPerf._();
 
-  /// True when heavy ambient effects should be skipped — either the operator
-  /// asked for it, the device was detected as low-tier, or the OS wants
-  /// reduced motion. Resolved by [PerfScope]; the [MediaQuery] fallback keeps
-  /// widget tests that pump a subtree without a [PerfScope] ancestor working.
   static bool reduceEffects(BuildContext context) =>
       PerfInheritedScope.maybeOf(context)?.reduceEffects ??
       MediaQuery.of(context).disableAnimations;
@@ -778,14 +692,10 @@ class AppPerf {
   static PerfTier tier(BuildContext context) =>
       PerfInheritedScope.maybeOf(context)?.tier ?? PerfTier.capable;
 
-  /// List prefetch window — enough to hide jank, small enough for RAM.
   static const double listCacheExtent = 500;
 
-  /// Grid prefetch window for the tables floor.
   static const double gridCacheExtent = 400;
 
-  /// Prefetch is a RAM trade. A constant window meant the device least able
-  /// to hold offscreen rows kept exactly as many alive as a flagship.
   static double listCacheExtentFor(BuildContext context) =>
       tier(context) == PerfTier.low ? 220 : listCacheExtent;
 

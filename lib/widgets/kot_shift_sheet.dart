@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,11 +12,6 @@ import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
-/// One fired KOT round, reassembled from the order's lines.
-///
-/// [HistoryOrder] covers a whole order rather than a round, so rounds are
-/// rebuilt here by grouping on `kot_number` — the field the desk keeps
-/// accurate across splits.
 class _Round {
   final String kotNumber;
   final List<HistoryOrderLine> lines;
@@ -32,12 +25,6 @@ class _Round {
   int get itemCount => lines.fold(0, (sum, l) => sum + l.qty);
 }
 
-/// Moves fired KOT lines to another table, leaving the rest of the order in
-/// place. Distinct from `TableShiftSheet`, which moves the whole order.
-///
-/// An occupied destination is valid — the desk appends the moved lines to that
-/// table's existing order rather than refusing — so unlike the whole-table
-/// shift this picker does not filter down to free tables.
 class KotShiftSheet extends ConsumerStatefulWidget {
   final HistoryOrder order;
   final String originServerId;
@@ -51,9 +38,6 @@ class KotShiftSheet extends ConsumerStatefulWidget {
   @override
   ConsumerState<KotShiftSheet> createState() => _KotShiftSheetState();
 
-  /// Rounds available to shift, newest first. Lines never sent to the kitchen
-  /// carry no round number and are left out — there is no round to move them
-  /// with, and the desk would file them under the destination's next KOT.
   static List<_Round> roundsOf(HistoryOrder order) {
     final grouped = <String, List<HistoryOrderLine>>{};
     for (final line in order.lines) {
@@ -94,12 +78,8 @@ enum _Step { pickItems, pickTable }
 class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
   late final List<_Round> _rounds;
 
-  /// Which round is expanded. Only one at a time, so a shift can never span
-  /// two rounds by accident.
   String? _openKot;
 
-  /// Selected `orderItemId`s within [_openKot]. Cleared whenever the open
-  /// round changes, so the selection can only ever describe one round.
   final Set<String> _picked = <String>{};
 
   _Step _step = _Step.pickItems;
@@ -174,8 +154,6 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
   }
 
   List<RestaurantTable> _candidates() {
-    // Free and occupied both qualify; a table awaiting cleaning or held for a
-    // reservation is not somewhere a round should land.
     final tables = ref.watch(tablesProvider);
     return tables
         .where((t) =>
@@ -237,8 +215,7 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Shift KOT Round',
-                    style: AppTypography.sheetTitle),
+                const Text('Shift KOT Round', style: AppTypography.sheetTitle),
                 const SizedBox(height: 2),
                 Text(subtitle, style: AppTypography.caption),
               ],
@@ -270,8 +247,8 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
 
     return ListView.separated(
       controller: scroll,
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: 8),
+      padding:
+          const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 8),
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemCount: _rounds.length,
       itemBuilder: (_, i) => _roundCard(_rounds[i]),
@@ -297,13 +274,11 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
             onTap: () => _toggleRound(round),
             behavior: HitTestBehavior.opaque,
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
                   Icon(open ? Icons.expand_more : Icons.chevron_right,
-                      size: 20,
-                      color: open ? AppColors.terra : palette.ink30),
+                      size: 20, color: open ? AppColors.terra : palette.ink30),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -362,8 +337,8 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
                       overflow: TextOverflow.ellipsis),
                   if (line.mods.isNotEmpty)
                     Text(line.mods.join(' · '),
-                        style: AppTypography.micro
-                            .copyWith(color: palette.ink70),
+                        style:
+                            AppTypography.micro.copyWith(color: palette.ink70),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                 ],
@@ -394,8 +369,8 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
 
     return ListView.separated(
       controller: scroll,
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: 8),
+      padding:
+          const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 8),
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemCount: candidates.length,
       itemBuilder: (_, i) {
@@ -453,8 +428,7 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color:
-                                    AppColors.warn.withValues(alpha: 0.14),
+                                color: AppColors.warn.withValues(alpha: 0.14),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text('HAS ORDER',
@@ -532,10 +506,9 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
                         label: _submitting ? 'Shifting…' : 'Shift',
                         fullWidth: true,
                         leadingIcon: Icons.swap_horiz,
-                        onPressed:
-                            (_pickedTableServerId == null || _submitting)
-                                ? null
-                                : _shift,
+                        onPressed: (_pickedTableServerId == null || _submitting)
+                            ? null
+                            : _shift,
                       ),
               ),
             ],

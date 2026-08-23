@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,8 +29,7 @@ class KotHistorySheet extends ConsumerWidget {
     final allOrders = ref.watch(historyProvider);
     final tables = ref.watch(tablesProvider);
 
-    final table =
-        tables.where((t) => t.serverId == tableServerId).firstOrNull;
+    final table = tables.where((t) => t.serverId == tableServerId).firstOrNull;
     final tableDisplay = table?.id ?? tableServerId;
     final activeOrderId = table?.activeOrderId;
 
@@ -46,7 +43,6 @@ class KotHistorySheet extends ConsumerWidget {
       return false;
     }).toList()
       ..sort((a, b) {
-
         final aKey = '${a.date}T${a.time}';
         final bKey = '${b.date}T${b.time}';
         return bKey.compareTo(aKey);
@@ -111,8 +107,8 @@ class KotHistorySheet extends ConsumerWidget {
                     ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + context.sheetBottomInset),
+              padding:
+                  EdgeInsets.fromLTRB(16, 8, 16, 16 + context.sheetBottomInset),
               child: LiquidPrimaryButton(
                 label: 'Close',
                 fullWidth: true,
@@ -155,12 +151,9 @@ class _KotCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-
     final flags = ref.watch(flagsProvider);
     final canEdit = flags.kotEdit && _isEditable;
-    // A shift moves fired lines by id. This card covers a whole order, so the
-    // sheet regroups its lines into rounds — with no fired round there is
-    // nothing to move and the action stays hidden.
+
     final canShift = flags.kotShift &&
         _isEditable &&
         KotShiftSheet.hasShiftableRounds(order);
@@ -216,12 +209,11 @@ class _KotCard extends ConsumerWidget {
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: context.palette.terraSoft,
-                              borderRadius:
-                                  BorderRadius.all(AppRadii.pill),
+                              borderRadius: BorderRadius.all(AppRadii.pill),
                             ),
                             child: Text('YOU',
-                                style: AppTypography.pill.copyWith(
-                                    color: AppColors.terraDeep)),
+                                style: AppTypography.pill
+                                    .copyWith(color: AppColors.terraDeep)),
                           ),
                         ],
                       ],

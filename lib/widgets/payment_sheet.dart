@@ -1,5 +1,3 @@
-
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -60,7 +58,6 @@ IconData _modeIcon(PaymentMode m) => switch (m) {
     };
 
 class PaymentSheet {
-
   static Future<bool?> show(
     BuildContext context, {
     required List<ServerBill> bills,
@@ -108,8 +105,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
   Money get _paidSoFar => _splits.map((e) => e.amount).sumMoney();
   Money get _remaining => widget.grandTotal - _paidSoFar;
 
-  /// Parsed from the tendered-cash field. This is the only place a typed
-  /// rupee string becomes money, and it becomes paise immediately.
   Money get _tendered =>
       Money.fromWire(_tenderedController.text.trim()) ?? Money.zero;
 
@@ -126,9 +121,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
   bool get _isCreditBlocked =>
       _selectedMode == PaymentMode.credit && !widget.hasCustomer;
 
-  /// Comp / credit / company were appended unconditionally, ignoring the
-  /// flags that exist precisely to control them — every waiter could comp a
-  /// bill. The desk must enforce this too; this is the UX half only.
   List<PaymentMode> _availableModes() {
     final flags = ref.read(flagsProvider);
     return <PaymentMode>[
@@ -141,16 +133,8 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
     ];
   }
 
-  /// Bills already settled in this sheet's lifetime.
-  ///
-  /// The old flow reported "Paid 1 of 2 — retry remaining" and then restarted
-  /// the loop from bill index 0 on the next tap, re-paying the settled bill.
-  /// `bill:payment` also carried no idempotency key here (unlike the
-  /// quick-settle path), so the desk had nothing to dedupe on.
   final Set<String> _settledBillIds = <String>{};
 
-  /// Idempotency keys, stable per bill for the life of this sheet. A retry
-  /// re-sends the *same* key so the desk can recognise and collapse it.
   final Map<String, String> _requestIds = <String, String>{};
 
   String _requestIdFor(String billId) =>
@@ -168,9 +152,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
     final flags = ref.read(flagsProvider);
     final useSplits = flags.splitPayment && _splits.isNotEmpty;
 
-    // Guard the non-split branch explicitly. `canPay` allowed a null mode
-    // through whenever split mode was on with an empty split list and the
-    // grand total happened to be zero, and `_selectedMode!` then threw.
     final selectedMode = _selectedMode;
     if (!useSplits && selectedMode == null) {
       DynamicToast.show(context,
@@ -204,18 +185,12 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       ];
     }
 
-    // Bills still owing. Anything already settled in this sheet is skipped,
-    // which is what makes the retry button safe.
     final outstanding = widget.bills
         .where((b) => !_settledBillIds.contains(b.id))
         .toList(growable: false);
     final billWeights =
         outstanding.map((b) => b.totalAmount).toList(growable: false);
 
-    // Every entry is split across the outstanding bills by largest
-    // remainder, in integer paise. Each entry's allocations sum back to the
-    // entry exactly — no drift to patch up afterwards, and no NaN when the
-    // weights are all zero.
     final perBillPayments = <String, List<Map<String, dynamic>>>{
       for (final bill in outstanding) bill.id: <Map<String, dynamic>>[],
     };
@@ -254,8 +229,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
         _settledBillIds.add(bill.id);
       } else {
         failures++;
-        // Stop on the first failure. Carrying on would settle later bills
-        // while an earlier one is in an unknown state.
+
         break;
       }
     }
@@ -335,15 +309,12 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       maxChildSize: 0.95,
       builder: (_, scrollCtrl) => AppSurface(
         borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
-        padding: EdgeInsets.fromLTRB(
-            20, 12, 20, 28 + context.sheetBottomInset),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 28 + context.sheetBottomInset),
         child: ListView(
           controller: scrollCtrl,
           children: [
-            Center(
-                child: const SheetHandle()),
+            Center(child: const SheetHandle()),
             const SizedBox(height: 16),
-
             Row(
               children: [
                 const Icon(Icons.payment_outlined,
@@ -355,7 +326,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                     style: AppTypography.headline),
               ],
             ),
-
             if (widget.bills.length > 1) ...[
               const SizedBox(height: 8),
               for (final bill in widget.bills)
@@ -388,7 +358,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                 ),
             ],
             const SizedBox(height: 16),
-
             Text('PAYMENT MODE',
                 style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
             const SizedBox(height: 10),
@@ -406,7 +375,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
               ],
             ),
             const SizedBox(height: 12),
-
             if (_isCreditBlocked)
               Container(
                 padding: const EdgeInsets.all(10),
@@ -424,7 +392,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                           style: AppTypography.caption)),
                 ]),
               ),
-
             if (_needsRef) ...[
               const SizedBox(height: 12),
               Text('REFERENCE NUMBER',
@@ -437,7 +404,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                     : 'Card approval code',
               ),
             ],
-
             if (_needsReason) ...[
               const SizedBox(height: 12),
               Text('REASON',
@@ -451,7 +417,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                   controller: _authorizedByController,
                   hint: 'Authorized by (name)'),
             ],
-
             if (_selectedMode == PaymentMode.cash &&
                 !(isSplitMode && _splits.isNotEmpty)) ...[
               const SizedBox(height: 12),
@@ -489,7 +454,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                   ]),
                 ),
               ],
-
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -515,7 +479,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                 ],
               ),
             ],
-
             if (isSplitMode) ...[
               const SizedBox(height: 12),
               Divider(color: context.palette.ink10),
@@ -561,11 +524,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                     ]),
                   ),
                 ),
-
-              // Explicit, operator-initiated round-off. The automatic
-              // version silently topped up the last payment line by up to
-              // 99 paise the customer never handed over; this makes it a
-              // deliberate act with a "Round-off" note attached.
               if (_remaining.isPositive &&
                   _remaining < const Money.rupees(1) &&
                   _splits.isNotEmpty)
@@ -636,7 +594,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                 ]),
               ],
             ],
-
             const SizedBox(height: 16),
             Row(children: [
               Expanded(

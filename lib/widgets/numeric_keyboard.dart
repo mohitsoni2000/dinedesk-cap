@@ -46,8 +46,6 @@ class NumericKeyboard extends StatelessWidget {
 
     return Center(
       child: ConstrainedBox(
-        // Keys are Expanded — without a ceiling the pad stretches to full
-        // tablet width. Matches PinPad.maxWidth so the two keypads agree.
         constraints: const BoxConstraints(maxWidth: PinPad.maxWidth),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

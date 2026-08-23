@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
@@ -21,8 +19,6 @@ class LiquidBottomNav extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.navBar,
-        // The hairline separates the bar from the content. It used to also
-        // cast a 20px upward shadow over whatever was scrolling beneath it.
         border: Border(top: BorderSide(color: palette.navHairline)),
       ),
       child: SafeArea(
@@ -61,10 +57,6 @@ class LiquidBottomNav extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 3),
-                            // Without this a long label like SETTINGS wraps at
-                            // large font scales, and since only some tabs wrap
-                            // the bar's tabs end up different heights. The
-                            // icon above still identifies the tab.
                             Text(
                               items[i].label,
                               maxLines: 1,
@@ -157,8 +149,6 @@ class _LiquidPrimaryButtonState extends State<LiquidPrimaryButton> {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           decoration: BoxDecoration(
-            // A flat brand fill, not a vertical terra400→terra600 ramp under
-            // a two-layer terra glow.
             color: enabled ? AppColors.terra500 : context.palette.ink10,
             borderRadius: const BorderRadius.all(AppRadii.md),
           ),
@@ -241,7 +231,8 @@ class _LiquidSecondaryButtonState extends State<LiquidSecondaryButton> {
             children: [
               if (widget.leadingIcon != null) ...[
                 Icon(widget.leadingIcon,
-                    color: enabled ? context.palette.ink : context.palette.ink30,
+                    color:
+                        enabled ? context.palette.ink : context.palette.ink30,
                     size: 20),
                 const SizedBox(width: 8),
               ],

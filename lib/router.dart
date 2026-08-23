@@ -27,17 +27,8 @@ import 'widgets/ready_orders_banner.dart';
 import 'widgets/rejected_kots_banner.dart';
 import 'widgets/root_shell.dart';
 
-/// Lets code with no BuildContext of its own (background services like
-/// sync_service.dart) reach the root Overlay — e.g. to show a DynamicToast.
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
-/// CC-LAT-001: notifies GoRouter's `redirect` to re-run without recomputing
-/// `routerProvider` itself. Watching isAuthenticatedProvider/
-/// forceDisconnectedProvider directly in the provider body used to rebuild a
-/// brand-new GoRouter — and with it a new RouterDelegate — every time either
-/// flipped, tearing the Navigator back down to `initialLocation: '/splash'`
-/// at the exact moment connect succeeds, racing the screen's own
-/// `context.go('/tables')`.
 class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(Ref ref) {
     ref.listen(isAuthenticatedProvider, (_, __) => notifyListeners());
@@ -89,31 +80,20 @@ final routerProvider = Provider<GoRouter>((ref) {
               liquidPage(key: s.pageKey, child: const QrScanScreen())),
       GoRoute(
           path: '/connecting',
-          pageBuilder: (_, s) => liquidPage(
-              key: s.pageKey, child: const ConnectingScreen())),
+          pageBuilder: (_, s) =>
+              liquidPage(key: s.pageKey, child: const ConnectingScreen())),
       GoRoute(
           path: '/auth',
           pageBuilder: (_, s) =>
               liquidPage(key: s.pageKey, child: const AuthScreen())),
       StatefulShellRoute.indexedStack(
-        // The shell's own chrome — nav rail/bar and the two banners — sits
-        // outside every branch's Scaffold, so without a Material ancestor its
-        // text renders in Flutter's "you forgot Material" style (yellow double
-        // underline). `transparency` supplies the ancestor without painting
-        // over the background colour behind it.
         builder: (context, state, navigationShell) => Material(
           type: MaterialType.transparency,
-          // The app background: one colour. `SizedBox.expand` is load-bearing
-          // — a bare ColoredBox passes its constraints through loosely and the
-          // shell would shrink-wrap instead of filling the screen.
           child: ColoredBox(
             color: context.palette.paper,
             child: SizedBox.expand(
               child: ConnectionBanner(
                 child: ReadyOrdersBanner(
-                  // Outermost of the three so it is never covered: a KOT the
-                  // kitchen never received outranks both the connection state
-                  // and a ready-to-serve nudge.
                   child: RejectedKotsBanner(
                     child: RootShell(navigationShell: navigationShell),
                   ),

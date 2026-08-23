@@ -33,8 +33,8 @@ class ProfileScreen extends ConsumerWidget {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
-          child: PageContentClamp(
-            child: Column(
+            child: PageContentClamp(
+          child: Column(
             children: [
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -92,8 +92,8 @@ class ProfileScreen extends ConsumerWidget {
                                     ),
                                     child: Text(
                                       '${opShift.toUpperCase()} SHIFT',
-                                      style: AppTypography.pill.copyWith(
-                                          color: AppColors.terraInk),
+                                      style: AppTypography.pill
+                                          .copyWith(color: AppColors.terraInk),
                                     ),
                                   ),
                               ],
@@ -103,10 +103,9 @@ class ProfileScreen extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-
                     Text("TODAY'S SHIFT",
-                        style: context.palette.micro
-                            .copyWith(letterSpacing: 1.4)),
+                        style:
+                            context.palette.micro.copyWith(letterSpacing: 1.4)),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -133,112 +132,110 @@ class ProfileScreen extends ConsumerWidget {
                       ],
                     ),
                     const SizedBox(height: 16),
-
-                  Text('PAIRED WITH',
-                      style:
-                          context.palette.micro.copyWith(letterSpacing: 1.4)),
-                  const SizedBox(height: 8),
-                  AppCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: conn.online
-                                    ? AppColors.success
-                                    : AppColors.warn,
+                    Text('PAIRED WITH',
+                        style:
+                            context.palette.micro.copyWith(letterSpacing: 1.4)),
+                    const SizedBox(height: 8),
+                    AppCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: conn.online
+                                      ? AppColors.success
+                                      : AppColors.warn,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(restaurantName,
-                                  style: AppTypography.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(restaurantAddress,
-                            style: context.palette.caption),
-                        const SizedBox(height: 10),
-                        Divider(height: 1, color: context.palette.ink10),
-                        const SizedBox(height: 10),
-                        _InfoRow(
-                            icon: Icons.computer,
-                            label: 'Admin device',
-                            value: restaurantDevice),
-                        const SizedBox(height: 6),
-                        _InfoRow(
-                            icon: Icons.wifi,
-                            label: 'Network',
-                            value: '$restaurantIp · LAN'),
-                      ],
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(restaurantName,
+                                    style: AppTypography.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(restaurantAddress,
+                              style: context.palette.caption),
+                          const SizedBox(height: 10),
+                          Divider(height: 1, color: context.palette.ink10),
+                          const SizedBox(height: 10),
+                          _InfoRow(
+                              icon: Icons.computer,
+                              label: 'Admin device',
+                              value: restaurantDevice),
+                          const SizedBox(height: 6),
+                          _InfoRow(
+                              icon: Icons.wifi,
+                              label: 'Network',
+                              value: '$restaurantIp · LAN'),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  AppCard(
-                    padding: EdgeInsets.zero,
-                    child: Column(children: [
-                      ListTile(
-                        leading: Icon(Icons.admin_panel_settings_outlined,
-                            color: context.palette.ink70),
-                        title: const Text('PIN managed on desktop',
-                            style: AppTypography.bodyMd),
-                        subtitle: Text('Ask an admin to reset operator PIN',
-                            style: context.palette.caption),
-                      ),
-                      Divider(height: 1, color: context.palette.ink10),
-                      ListTile(
-                        leading: Icon(Icons.qr_code_scanner,
-                            color: context.palette.ink70),
-                        title: const Text('Re-pair this device',
-                            style: AppTypography.bodyMd),
-                        subtitle: Text(
-                            'Scan a fresh QR from the admin desktop',
-                            style: context.palette.caption),
-                        trailing: Icon(Icons.chevron_right,
-                            color: context.palette.ink30),
-                        onTap: () => context.go('/scan'),
-                      ),
-                    ]),
-                  ),
-                  const SizedBox(height: 16),
-                  LiquidSecondaryButton(
-                    label: 'Sign out',
-                    leadingIcon: Icons.logout,
-                    onPressed: () {
-
-                      ref.read(syncServiceProvider).unregisterListeners();
-                      ref.read(socketServiceProvider).disconnect();
-                      SessionService().clearPairing();
-                      ref.read(cartProvider.notifier).clear();
-                      ref.read(orderNotesProvider.notifier).state = '';
-                      ref.read(selectedTableIdProvider.notifier).state = null;
-                      ref.read(forceDisconnectedProvider.notifier).state =
-                          false;
-                      ref.read(isAuthenticatedProvider.notifier).state = false;
-                      context.go('/scan');
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  Center(
-                    child: Text('RestroApp v1.0.0',
-                        style: context.palette.micro
-                            .copyWith(letterSpacing: 1.0)),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    AppCard(
+                      padding: EdgeInsets.zero,
+                      child: Column(children: [
+                        ListTile(
+                          leading: Icon(Icons.admin_panel_settings_outlined,
+                              color: context.palette.ink70),
+                          title: const Text('PIN managed on desktop',
+                              style: AppTypography.bodyMd),
+                          subtitle: Text('Ask an admin to reset operator PIN',
+                              style: context.palette.caption),
+                        ),
+                        Divider(height: 1, color: context.palette.ink10),
+                        ListTile(
+                          leading: Icon(Icons.qr_code_scanner,
+                              color: context.palette.ink70),
+                          title: const Text('Re-pair this device',
+                              style: AppTypography.bodyMd),
+                          subtitle: Text(
+                              'Scan a fresh QR from the admin desktop',
+                              style: context.palette.caption),
+                          trailing: Icon(Icons.chevron_right,
+                              color: context.palette.ink30),
+                          onTap: () => context.go('/scan'),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(height: 16),
+                    LiquidSecondaryButton(
+                      label: 'Sign out',
+                      leadingIcon: Icons.logout,
+                      onPressed: () {
+                        ref.read(syncServiceProvider).unregisterListeners();
+                        ref.read(socketServiceProvider).disconnect();
+                        SessionService().clearPairing();
+                        ref.read(cartProvider.notifier).clear();
+                        ref.read(orderNotesProvider.notifier).state = '';
+                        ref.read(selectedTableIdProvider.notifier).state = null;
+                        ref.read(forceDisconnectedProvider.notifier).state =
+                            false;
+                        ref.read(isAuthenticatedProvider.notifier).state =
+                            false;
+                        context.go('/scan');
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: Text('RestroApp v1.0.0',
+                          style: context.palette.micro
+                              .copyWith(letterSpacing: 1.0)),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
-      )),
+            ],
+          ),
+        )),
       ),
     );
   }
@@ -261,8 +258,7 @@ class _Kpi extends StatelessWidget {
             decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
           ),
           const SizedBox(height: 8),
-          Text(value,
-              style: AppTypography.headline.copyWith(fontSize: 22)),
+          Text(value, style: AppTypography.headline.copyWith(fontSize: 22)),
           const SizedBox(height: 2),
           Text(label, style: context.palette.caption),
         ],
@@ -283,8 +279,7 @@ class _InfoRow extends StatelessWidget {
       children: [
         Icon(icon, color: context.palette.ink50, size: 16),
         const SizedBox(width: 8),
-        SizedBox(
-            width: 90, child: Text(label, style: context.palette.caption)),
+        SizedBox(width: 90, child: Text(label, style: context.palette.caption)),
         Expanded(
           child: Text(value,
               style: AppTypography.bodyMd

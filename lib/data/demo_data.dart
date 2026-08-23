@@ -1,5 +1,3 @@
-
-
 Map<String, dynamic> buildDemoSyncPayload() {
   final today = DateTime.now();
   final businessDate = '${today.year}-'

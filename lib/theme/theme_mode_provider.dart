@@ -1,12 +1,10 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _prefsKey = 'setting_theme_mode';
 
-final themeModeProvider =
-    StateNotifierProvider<ThemeModeNotifier, ThemeMode>(
+final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>(
   (ref) => ThemeModeNotifier(),
 );
 

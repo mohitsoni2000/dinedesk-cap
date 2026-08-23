@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
@@ -108,8 +106,8 @@ class _HelpSheet extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 16 + context.sheetBottomInset),
+              padding:
+                  EdgeInsets.fromLTRB(16, 8, 16, 16 + context.sheetBottomInset),
               child: LiquidPrimaryButton(
                 label: 'Got it',
                 fullWidth: true,

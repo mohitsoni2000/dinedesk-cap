@@ -3,34 +3,17 @@ import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
 import 'physics.dart';
 
-/// ============================================================
-/// CART FLIGHT — the 2026 "item flies into the cart" moment.
-///
-/// A small terra dot pops out of the tapped row, arcs along a
-/// quadratic bezier (gravity-ish path) and lands on the cart bar
-/// (phones) or the order rail total (wide layouts). Pure overlay
-/// garnish: cart state is updated instantly by existing logic —
-/// this only makes the update *visible in space*.
-///
-/// Perf: one tiny widget animating transform in the root overlay,
-/// removed on landing. Skipped entirely under OS reduce-motion.
-/// ============================================================
 class CartFlight {
   CartFlight._();
 
-  /// Attached to the terra cart bar container (phone layout).
-  static final GlobalKey cartBarKey =
-      GlobalKey(debugLabel: 'cart-flight-bar');
+  static final GlobalKey cartBarKey = GlobalKey(debugLabel: 'cart-flight-bar');
 
-  /// Attached to the order rail total (wide layout).
   static final GlobalKey railKey = GlobalKey(debugLabel: 'cart-flight-rail');
 
-  /// Rail first: when both exist (mid-resize), the rail owns review.
   static List<GlobalKey> get _targets => <GlobalKey>[railKey, cartBarKey];
 
   static void fly(BuildContext origin, {VoidCallback? onLand}) {
-    final RenderBox? originBox =
-        origin.findRenderObject() as RenderBox?;
+    final RenderBox? originBox = origin.findRenderObject() as RenderBox?;
     RenderBox? targetBox;
     for (final key in _targets) {
       final ctx = key.currentContext;
@@ -40,8 +23,7 @@ class CartFlight {
         break;
       }
     }
-    final OverlayState? overlay =
-        Overlay.maybeOf(origin, rootOverlay: true);
+    final OverlayState? overlay = Overlay.maybeOf(origin, rootOverlay: true);
 
     if (originBox == null ||
         !originBox.attached ||
@@ -54,7 +36,7 @@ class CartFlight {
 
     final Offset start =
         originBox.localToGlobal(originBox.size.center(Offset.zero));
-    // Land near the label / count side of the bar, not dead-center.
+
     final Offset end = targetBox.localToGlobal(
         Offset(targetBox.size.width * 0.22, targetBox.size.height * 0.5));
 
@@ -85,7 +67,6 @@ class _FlightDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Arc control point: above the midpoint → parabolic hop.
     final Offset ctrl = Offset(
       (start.dx + end.dx) / 2,
       (start.dy < end.dy ? start.dy : end.dy) - 84,
@@ -102,10 +83,9 @@ class _FlightDot extends StatelessWidget {
           u * u * start.dx + 2 * u * t * ctrl.dx + t * t * end.dx,
           u * u * start.dy + 2 * u * t * ctrl.dy + t * t * end.dy,
         );
-        // Born small → full → shrinks into the bar; fades on landing.
+
         final double born = (t / 0.12).clamp(0.0, 1.0);
-        final double scale =
-            born * (1.0 - 0.62 * Curves.easeIn.transform(t));
+        final double scale = born * (1.0 - 0.62 * Curves.easeIn.transform(t));
         final double opacity =
             t > 0.86 ? (1 - (t - 0.86) / 0.14).clamp(0.0, 1.0) : 1.0;
 
@@ -126,8 +106,7 @@ class _FlightDot extends StatelessWidget {
                     border: Border.all(color: Colors.white, width: 2),
                     boxShadow: AppShadows.terraGlow,
                   ),
-                  child: const Icon(Icons.add,
-                      size: 11, color: Colors.white),
+                  child: const Icon(Icons.add, size: 11, color: Colors.white),
                 ),
               ),
             ),
@@ -138,9 +117,6 @@ class _FlightDot extends StatelessWidget {
   }
 }
 
-/// Fires the physics [Boing] squash-pop every time [trigger] changes —
-/// e.g. wrap the cart bar with `BoingOnChange(trigger: itemCount, …)`
-/// and it bounces on every add / remove without any manual plumbing.
 class BoingOnChange extends StatefulWidget {
   final Object? trigger;
   final double power;

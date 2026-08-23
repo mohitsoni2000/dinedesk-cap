@@ -87,10 +87,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
 
     final pin = _pin.join();
     unawaited(SessionService().getSavedPairing().then((pairing) {
-      // Debug builds only. In release the demo token can never be written
-      // (see QrScanScreen._demoScan), and even if one survived from an older
-      // install we route it through the real handshake so it simply fails
-      // rather than granting a PIN-less session.
       if (kDebugMode && pairing?.token == 'demo-token') {
         unawaited(_submitDemo());
       } else {
@@ -131,9 +127,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     final socketService = ref.read(socketServiceProvider);
     final syncService = ref.read(syncServiceProvider);
 
-    // verifyPin is a Future now rather than a callback pair — the callback
-    // form had no ack timeout at all, so a desk that accepted the packet and
-    // never replied left this screen spinning forever.
     final response = await socketService.verifyPin(pin);
     if (!mounted) return;
 
@@ -188,7 +181,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     if (!mounted) return;
     final state = ref.read(socketServiceProvider).state;
     if (state != SocketState.connected && state != SocketState.verified) {
-      return; // desk not reachable — PIN pad stays as fallback
+      return;
     }
     final pin = await bio.unlock();
     if (pin == null || pin.isEmpty || !mounted) return;
@@ -265,10 +258,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
       child: Scaffold(
         backgroundColor: Colors.transparent,
         resizeToAvoidBottomInset: true,
-        // SliverFillRemaining(hasScrollBody: false) forces the child to fill
-        // and *overflows* when it can't fit — with two Spacers and a keypad
-        // in here, a short viewport had nowhere to go. This scrolls instead,
-        // while minHeight keeps the spaced-out look whenever there is room.
         body: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) => SingleChildScrollView(
@@ -414,8 +403,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                       color: borderColor,
                                       width: 1.5,
                                     ),
-                                    // A filled PIN dot is marked by its fill
-                                    // and its size, not by a terra halo.
                                   ),
                                 );
                               },

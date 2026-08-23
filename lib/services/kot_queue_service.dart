@@ -7,25 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'log.dart';
 import 'socket_service.dart';
 
-/// Offline-first KOT pipeline.
-///
-/// WiFi blips are a fact of restaurant life, so a `kot:send` that can't reach
-/// the desk is persisted and flushed the moment the socket is verified again.
-///
-/// The previous version inverted that promise. `SocketService.emitAck` never
-/// throws — it *returns* `{'kind': 'error'}` — so the `catch { break; }` guard
-/// was unreachable for a dropped connection, and the flush loop fell through
-/// to `items.removeAt(0)` on every path. A mid-flush disconnect therefore
-/// **deleted the queued KOT from disk permanently**, while the waiter's screen
-/// still said it would fire on reconnect. Three things changed:
-///
-///  1. Transport failure and desk rejection are now distinguished
-///     ([isTransportFailure]). Transport failure keeps the item and stops.
-///  2. A desk rejection *quarantines* the KOT in a dead-letter list and
-///     notifies the app. Nothing is ever silently dropped.
-///  3. Every read-modify-write of the queue holds a mutex. `_enqueue` and
-///     `_doFlush` previously raced, and the flush rewrote a stale snapshot —
-///     erasing any KOT queued while it ran.
 final Provider<KotQueueService> kotQueueProvider =
     Provider<KotQueueService>((ref) {
   final service = KotQueueService();
@@ -33,8 +14,6 @@ final Provider<KotQueueService> kotQueueProvider =
   return service;
 });
 
-/// A KOT the desk actively refused. Held for the operator to see and re-fire
-/// or discard by hand — never deleted behind their back.
 class RejectedKot {
   final Map<String, dynamic> payload;
   final String reason;
@@ -58,9 +37,8 @@ class RejectedKot {
     return RejectedKot(
       payload: Map<String, dynamic>.from(payload),
       reason: json['reason']?.toString() ?? 'Rejected by the desk',
-      rejectedAt:
-          DateTime.tryParse(json['rejected_at']?.toString() ?? '') ??
-              DateTime.now(),
+      rejectedAt: DateTime.tryParse(json['rejected_at']?.toString() ?? '') ??
+          DateTime.now(),
     );
   }
 }
@@ -85,16 +63,12 @@ class KotQueueService {
   static const String _deadLetterKey = 'rejected_kots_v1';
   static const String _tag = '[KotQueue]';
 
-  /// A KOT older than this is stale — the covers have long since left. It is
-  /// quarantined rather than fired blind into the kitchen.
   static const Duration maxAge = Duration(hours: 2);
 
-  /// Hard cap so a phone left offline overnight can't fill its storage.
   static const int maxQueued = 200;
 
   static const Duration _sendTimeout = Duration(seconds: 8);
 
-  /// Serialises every read-modify-write of the on-disk queue.
   Future<void> _lock = Future<void>.value();
 
   Future<void>? _flushFuture;
@@ -102,8 +76,6 @@ class KotQueueService {
   final StreamController<RejectedKot> _rejections =
       StreamController<RejectedKot>.broadcast();
 
-  /// Fires whenever the desk refuses a queued KOT. The UI must surface this;
-  /// a KOT that never reaches the kitchen is not allowed to be invisible.
   Stream<RejectedKot> get rejections => _rejections.stream;
 
   Future<T> _synchronized<T>(Future<T> Function() action) {
@@ -118,10 +90,6 @@ class KotQueueService {
     return completer.future;
   }
 
-  // ---------------------------------------------------------------------
-  // Storage (all callers must hold the lock)
-  // ---------------------------------------------------------------------
-
   Future<List<Map<String, dynamic>>> _readRaw(String key) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(key) ?? const <String>[];
@@ -131,8 +99,6 @@ class KotQueueService {
         final decoded = jsonDecode(entry);
         if (decoded is Map) out.add(Map<String, dynamic>.from(decoded));
       } catch (error) {
-        // A corrupt row is itself a lost KOT — say so rather than dropping
-        // it into a `.where(isNotEmpty)` filter as the old code did.
         logE(_tag, 'corrupt queue entry discarded', error);
       }
     }
@@ -163,10 +129,6 @@ class KotQueueService {
     if (!_rejections.isClosed) _rejections.add(rejected);
   }
 
-  // ---------------------------------------------------------------------
-  // Public API
-  // ---------------------------------------------------------------------
-
   Future<int> pendingCount() =>
       _synchronized(() async => (await _readRaw(_queueKey)).length);
 
@@ -181,12 +143,6 @@ class KotQueueService {
   Future<void> clearRejected() =>
       _synchronized(() => _writeRaw(_deadLetterKey, <Map<String, dynamic>>[]));
 
-  /// Sends a KOT now if the desk is reachable, otherwise queues it durably.
-  ///
-  /// [clientRequestId] must be **stable across retries of the same round**.
-  /// The old code minted a fresh id inside this method, so a waiter re-tapping
-  /// "Send KOT" after a timeout produced a second id the desk could not
-  /// recognise as a duplicate — and a second KOT in the kitchen.
   Future<KotSendResult> sendKot(
     SocketService socket,
     Map<String, dynamic> payload, {
@@ -205,10 +161,6 @@ class KotQueueService {
       );
     }
 
-    // Older rounds must reach the kitchen before this one. If the queue
-    // could not be drained, this round joins the back of it rather than
-    // jumping the line — the previous version sent anyway, so round 3 could
-    // hit the tandoor before round 2.
     final drained = await flush(socket);
     if (!drained) {
       await _enqueue(stamped);
@@ -234,8 +186,6 @@ class KotQueueService {
       );
     }
 
-    // The desk understood us and said no. Do not queue a retry of something
-    // it has already refused; hand it back to the caller to show.
     return KotSendResult(KotSendOutcome.rejected, ack);
   }
 
@@ -254,10 +204,6 @@ class KotQueueService {
         logD(_tag, 'queued KOT (${items.length} pending)');
       });
 
-  /// Fires every pending KOT, oldest first.
-  ///
-  /// Returns true only when the queue is genuinely empty afterwards. A caller
-  /// that needs ordering guarantees must check this.
   Future<bool> flush(SocketService socket) {
     if (socket.state != SocketState.verified) return Future<bool>.value(false);
     final existing = _flushFuture;
@@ -310,7 +256,6 @@ class KotQueueService {
 
       if (ack['kind'] == 'error') {
         if (isTransportFailure(ack)) {
-          // Still unreachable. Keep everything and try again next time.
           logD(_tag, 'flush paused — desk unreachable');
           return false;
         }
@@ -318,7 +263,6 @@ class KotQueueService {
         final isDuplicate =
             message.contains('duplicate') || message.contains('already');
         if (isDuplicate) {
-          // Already applied on a previous attempt. Safe to drop.
           await _dropHead(null);
           continue;
         }
@@ -340,9 +284,6 @@ class KotQueueService {
     }
   }
 
-  /// Removes the head of the queue. Removal happens *by position under the
-  /// lock*, so a KOT enqueued while the network call was in flight is never
-  /// clobbered by a stale snapshot.
   Future<void> _dropHead(String? quarantineReason) => _synchronized(() async {
         final items = await _readRaw(_queueKey);
         if (items.isEmpty) return;

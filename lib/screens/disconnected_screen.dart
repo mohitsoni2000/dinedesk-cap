@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,10 +13,6 @@ class DisconnectedScreen extends ConsumerWidget {
   const DisconnectedScreen({super.key});
 
   Future<void> _confirmScanQr(BuildContext context, WidgetRef ref) async {
-    // The background socket keeps retrying forever and may well have already
-    // reconnected by the time staff looks at the phone again — scanning a
-    // fresh QR wipes the still-possibly-valid saved pairing and forces a trip
-    // to the admin desktop, so make sure that's really what's needed first.
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -53,10 +47,6 @@ class DisconnectedScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // The background socket (SocketService) keeps retrying indefinitely even
-    // while this screen is up — if it silently reconnects (e.g. the WiFi
-    // dead zone was left a minute after the 15-minute banner gave up),
-    // there's no reason to keep stranding the operator here.
     ref.listen(connectionProvider.select((c) => c.online), (prev, online) {
       if (online == true) context.go('/tables');
     });
@@ -136,11 +126,6 @@ class DisconnectedScreen extends ConsumerWidget {
                           leadingIcon: Icons.qr_code_scanner,
                           onPressed: () => _confirmScanQr(context, ref),
                         ),
-                        // Only offered when this exact phone already holds a
-                        // device secret from a prior real pairing — the desk
-                        // still decides at connect time whether the admin has
-                        // actually turned this on, but there is no reason to
-                        // show the option on a device that could never use it.
                         FutureBuilder<bool>(
                           future: SessionService().hasDeviceSecret(),
                           builder: (context, snapshot) {

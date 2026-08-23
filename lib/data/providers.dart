@@ -1,5 +1,3 @@
-
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/feature_flags.dart';
 import '../models/server_models.dart';
@@ -23,11 +21,9 @@ class RestaurantTable {
   final int seats;
   final String floor;
   final TableState state;
-  /// Must stay index-parallel with [joinedOperatorNames]; populate both
-  /// together from the same source list (e.g. ServerTable.operatorIds).
+
   final List<String> joinedOperatorIds;
-  /// Must stay index-parallel with [joinedOperatorIds]; populate both
-  /// together from the same source list (e.g. ServerTable.operatorNames).
+
   final List<String> joinedOperatorNames;
   final int? coverCount;
   final Money? bill;
@@ -142,8 +138,7 @@ class RestaurantRoom {
         serverId: serverId ?? this.serverId,
         capacity: capacity ?? this.capacity,
         state: state ?? this.state,
-        guestName:
-            guestName == _absent ? this.guestName : guestName as String?,
+        guestName: guestName == _absent ? this.guestName : guestName as String?,
         activeOrderId: activeOrderId == _absent
             ? this.activeOrderId
             : activeOrderId as String?,
@@ -242,9 +237,6 @@ class SelectedAddonChoice {
     required this.price,
   });
 
-  /// The price field is sent for the desk's audit log only. The desk must
-  /// re-price every line from its own catalogue and ignore this value —
-  /// a tampered client could otherwise submit an add-on at ₹0.
   Map<String, dynamic> toJson() => <String, dynamic>{
         'choice_id': choiceId,
         'name': name,
@@ -317,8 +309,6 @@ class MenuItem {
   bool get isWeighed => measureUnit != null && measureUnit!.isNotEmpty;
 }
 
-/// Admin-configured category display order, independent of any particular
-/// item's own sort_order — menu tabs must follow this, not item occurrence.
 class MenuCategory {
   final String name;
   final int sortOrder;
@@ -327,9 +317,6 @@ class MenuCategory {
 
 final menuCategoriesProvider = StateProvider<List<MenuCategory>>((_) => []);
 
-/// Floor names in the admin's configured display_order — the Tables screen
-/// must build its floor tabs from this, not from whichever floor a table
-/// happens to appear under first in a table list sorted by something else.
 final floorNamesProvider = StateProvider<List<String>>((_) => []);
 
 class SelectedOption {
@@ -342,8 +329,6 @@ class SelectedOption {
     this.priceModifier = Money.zero,
   });
 
-  /// See [SelectedAddonChoice.toJson] — the desk re-prices, this is audit
-  /// context only.
   Map<String, dynamic> toJson() => <String, dynamic>{
         'group_name': groupName,
         'option_name': optionName,
@@ -397,20 +382,14 @@ class CartLine {
     this.syncStatus = SyncStatus.synced,
   });
 
-  Money get addonsExtra =>
-      selectedAddons.map((g) => g.extraPrice).sumMoney();
+  Money get addonsExtra => selectedAddons.map((g) => g.extraPrice).sumMoney();
 
-  /// Unit price including the line's own modifiers and add-ons.
   Money get unitPrice => item.price + modsExtra + addonsExtra;
 
-  /// Exact, in paise. The weighed branch rounds once, inside
-  /// [Money.timesWeight] — the only fractional multiply in the money path.
-  Money get lineTotal =>
-      item.isWeighed ? unitPrice.timesWeight(weight ?? 0) : unitPrice.times(qty);
+  Money get lineTotal => item.isWeighed
+      ? unitPrice.timesWeight(weight ?? 0)
+      : unitPrice.times(qty);
 
-  /// A line with no configuration at all — no variation, no modifiers, no
-  /// options, no add-ons, no note, not weighed. Only these are addressable
-  /// from a menu tile's badge and "-" button.
   bool get isPlain =>
       variationId == null &&
       mods.isEmpty &&
@@ -419,16 +398,6 @@ class CartLine {
       itemNote.trim().isEmpty &&
       !item.isWeighed;
 
-  /// Identity of a cart line's *configuration*, independent of quantity.
-  ///
-  /// This is what fixed the add-on merge bug. The old merge predicate only
-  /// checked variation / mods / note, so a line carrying add-ons matched a
-  /// bare tap of the same item — tapping "Paneer Tikka" after adding
-  /// "Paneer Tikka + Extra Cheese" bumped the *add-on* line to qty 2 and
-  /// charged the customer 60 rupees for cheese on a plain portion.
-  ///
-  /// Weighed lines never merge: two 1.4kg entries are two distinct weighings,
-  /// not one 2.8kg line, and collapsing them would lose the record.
   String get configKey {
     if (item.isWeighed) return 'uid:$uid';
     final optionIds = selectedOptions
@@ -483,14 +452,8 @@ class Operator {
   final String role;
   final String shift;
 
-  /// The desk's operator id. It was called `username` while being populated
-  /// from `operator.id`, which is how `createdBy` ended up being compared
-  /// against the wrong thing in two places.
   final String id;
 
-  /// Auto-generated staff-facing code (EMP001, ...) — what the waiter enters
-  /// on the "Log in without a QR" screen. Null on a Desk build old enough
-  /// not to send it yet.
   final String? employeeId;
 
   const Operator({
@@ -518,8 +481,7 @@ class RestaurantInfo {
 class ConnectionStatus {
   final bool online;
   final String label;
-  final int?
-      secondsRemaining;
+  final int? secondsRemaining;
   const ConnectionStatus({
     required this.online,
     required this.label,
@@ -546,10 +508,6 @@ class HistoryOrder {
   final String tableId;
   final String time;
 
-  /// The desk's business date (`YYYY-MM-DD`), not a calendar date derived
-  /// from `created_at` on this phone. A kitchen closing at 2am books its 1am
-  /// orders to the previous business day, and every local derivation of
-  /// "today" disagreed with the desk's day-end report.
   final String date;
   final int itemCount;
   final Money total;
@@ -611,9 +569,6 @@ class HistoryOrderLine {
   final String? variationId;
   final String? variationName;
 
-  /// The KOT round this line was fired on. Null means it has not been sent to
-  /// the kitchen yet. [HistoryOrder] covers a whole order, not one round, so
-  /// this is the only thing that tells its lines apart by round.
   final String? kotNumber;
 
   const HistoryOrderLine({
@@ -636,17 +591,9 @@ class ActiveOperator {
   const ActiveOperator({required this.name, required this.role});
 }
 
-// `spiceLevels` and `addOns` used to live here as const lists with real
-// prices baked in (Extra Cheese +60, Half Portion -50). Nothing read them —
-// every modifier is server-defined and arrives with the menu — but they were
-// a live hazard: one accidental reference and the phone would price a line
-// off a hardcoded constant instead of the catalogue. Deleted.
-
 final tablesProvider = StateProvider<List<RestaurantTable>>((_) => []);
 final roomsProvider = StateProvider<List<RestaurantRoom>>((_) => []);
-/// CC-LAT-009: true whenever tables/floors/rooms came from the on-disk floor
-/// cache rather than a live sync. A stale table that looks live is how a
-/// waiter seats a party twice — this is a correctness signal, not decoration.
+
 final isFloorDataStaleProvider = StateProvider<bool>((_) => false);
 final offersProvider = StateProvider<List<Offer>>((_) => []);
 final menuProvider = StateProvider<List<MenuItem>>((_) => []);
@@ -682,16 +629,6 @@ final cartProvider = StateNotifierProvider<CartNotifier, List<CartLine>>(
 class CartNotifier extends StateNotifier<List<CartLine>> {
   CartNotifier() : super(const <CartLine>[]);
 
-  /// Adds one unit of a plain, unconfigured item.
-  ///
-  /// Merging is by [CartLine.configKey], not by `item.id`. That is the whole
-  /// fix: the old predicate ignored `selectedAddons`, so this call could
-  /// land on a line that already carried paid add-ons and silently charge
-  /// them again on the new unit.
-  ///
-  /// Weighed items are rejected outright — they have no meaningful "one
-  /// unit", and the old path built them with `weight: null`, which made
-  /// `lineTotal` evaluate to zero and gave the food away.
   void addSimple(MenuItem item) {
     assert(
       !item.isWeighed,
@@ -730,7 +667,6 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
     ));
   }
 
-  /// Merges [line] into an identically-configured existing line, or appends.
   void _upsert(CartLine line) {
     final key = line.configKey;
     final index = state.indexWhere((l) => l.configKey == key);
@@ -742,16 +678,6 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
     next[index] = next[index].copyWith(qty: next[index].qty + line.qty);
     state = next;
   }
-
-  // -------------------------------------------------------------------------
-  // Addressing
-  //
-  // `uid` is the only key. The old `remove(String itemId)` deleted the *first*
-  // line matching an item id while `setQty(String itemId, ...)` rewrote
-  // *every* line matching it — two different semantics for the same argument,
-  // which meant decrementing a plain item also rewrote the quantity of the
-  // configured, more expensive line sitting next to it.
-  // -------------------------------------------------------------------------
 
   int _indexOfUid(int uid) => state.indexWhere((l) => l.uid == uid);
 
@@ -779,11 +705,6 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
     setQtyAt(index, state[index].qty - 1);
   }
 
-  /// Decrements the most recently added *plain* line for [itemId].
-  ///
-  /// This is what a menu tile's "−" button means: the badge on that tile
-  /// counts only unconfigured lines, so the button must only ever touch
-  /// those. Configured lines are edited from the cart, by uid.
   void decrementPlainLine(String itemId) {
     final index = state.lastIndexWhere((l) => l.isPlain && l.item.id == itemId);
     if (index < 0) return;
@@ -837,13 +758,8 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
     ];
   }
 
-  /// Exact cart total in paise.
   Money get total => state.map((l) => l.lineTotal).sumMoney();
 
-  /// Per-item quantities for the menu tiles' badges.
-  ///
-  /// Only plain lines count — the same rule the "−" button follows, so the
-  /// badge and the button can never disagree about what they are addressing.
   Map<String, int> get plainQtyByItemId {
     final counts = <String, int>{};
     for (final line in state) {
@@ -862,15 +778,6 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
   }
 }
 
-/// Plain (unconfigured) quantity for one menu item.
-///
-/// A menu row watches this instead of the whole cart. Watching `cartProvider`
-/// from the order-builder's `build` meant one tap rebuilt the entire screen —
-/// and, with the old eager `ListView(children:)`, the entire catalogue's
-/// widget tree with it.
-///
-/// `.select` on the family argument keeps the comparison to a single int, so
-/// adding item A does not rebuild item B's row.
 final plainCartQtyProvider = Provider.family<int, String>((ref, itemId) {
   return ref.watch(cartProvider.select((lines) {
     var total = 0;
@@ -881,14 +788,6 @@ final plainCartQtyProvider = Provider.family<int, String>((ref, itemId) {
   }));
 });
 
-/// Customer name per active order id, computed once per history change.
-///
-/// Each table tile used to run its own
-/// `historyProvider.select((orders) => orders.where(...).firstOrNull)`.
-/// Riverpod re-runs a selector on every change of the source provider before
-/// comparing the result, so a floor of 60 tiles against 400 history entries
-/// was 24,000 comparisons on *every* order broadcast — and there are several
-/// per minute in a busy service. This is one pass; each tile's lookup is O(1).
 final customerNameByOrderIdProvider = Provider<Map<String, String>>((ref) {
   final history = ref.watch(historyProvider);
   final names = <String, String>{};
@@ -899,10 +798,6 @@ final customerNameByOrderIdProvider = Provider<Map<String, String>>((ref) {
   return names;
 });
 
-/// Same shape of fix as [customerNameByOrderIdProvider] above: every table
-/// tile used to run its own `.any()` scan over [readyOrdersProvider] on
-/// every ready-ticket broadcast — 60 tiles × N ready tickets, repeated per
-/// event. One pass here, O(1) `.contains()` per tile.
 final readyTableIdsProvider = Provider<Set<String>>((ref) {
   final ready = ref.watch(readyOrdersProvider);
   return {
@@ -911,7 +806,6 @@ final readyTableIdsProvider = Provider<Set<String>>((ref) {
   };
 });
 
-/// Same fix, for the `isLinked` scan over [linkGroupsProvider]'s values.
 final linkedTableIdsProvider = Provider<Set<String>>((ref) {
   final groups = ref.watch(linkGroupsProvider);
   return {for (final ids in groups.values) ...ids};
@@ -919,8 +813,6 @@ final linkedTableIdsProvider = Provider<Set<String>>((ref) {
 
 final operatorProvider = StateProvider<Operator?>((_) => null);
 
-/// The business date the desk is currently booking to, as reported on the
-/// orders it has sent us. Never computed from the device clock.
 final businessDateProvider = Provider<String?>((ref) {
   final history = ref.watch(historyProvider);
   for (final order in history) {
@@ -933,10 +825,6 @@ final operatorStatsProvider = Provider<OperatorStats>((ref) {
   final operatorId = ref.watch(operatorProvider)?.id;
   final businessDate = ref.watch(businessDateProvider);
 
-  // Without an operator id or a business date from the desk there is nothing
-  // honest to report. The old version treated every order with an unknown
-  // creator as this waiter's ("createdBy == null || createdBy == myId"),
-  // which inflated their numbers with everyone else's work.
   if (operatorId == null || operatorId.isEmpty || businessDate == null) {
     return const OperatorStats(ordersToday: 0, tablesServed: 0, itemsSold: 0);
   }
@@ -976,9 +864,6 @@ final discountsProvider = StateProvider<List<Map<String, dynamic>>>((_) => []);
 final flagsProvider = StateProvider<FeatureFlags>((_) => const FeatureFlags());
 final rawMenuDataProvider = StateProvider<Map<String, dynamic>>((_) => {});
 
-/// Parsed orders, not raw maps. This was `List<Map<String, dynamic>>` — the
-/// Dart equivalent of `any[]` — and eight screens dug into it with string
-/// keys and no type checking whatsoever.
 final activeOrdersProvider = StateProvider<List<ServerOrder>>((_) => []);
 final socketServiceProvider = Provider<SocketService>((ref) {
   final service = SocketService();
@@ -995,8 +880,6 @@ final customerLinkServiceProvider = Provider<CustomerLinkService>(
       ref.read(socketServiceProvider), ref.read(syncServiceProvider)),
 );
 
-/// CC-LAT-010: started from `main()`, before the first frame — see
-/// connection_bootstrap.dart for why.
 final connectionBootstrapProvider =
     StateNotifierProvider<ConnectionBootstrap, BootstrapOutcome>(
         (ref) => ConnectionBootstrap(ref));
@@ -1007,18 +890,10 @@ final hapticEnabledProvider = StateProvider<bool>((_) => true);
 
 final isAuthenticatedProvider = StateProvider<bool>((_) => false);
 
-/// Whether a pairing exists on disk. Drives whether an unauthenticated user
-/// belongs at /auth (PIN) or /scan (pair first). Set by SplashScreen /
-/// ConnectingScreen once the pairing has been read.
 final hasSavedPairingProvider = StateProvider<bool>((_) => false);
 final pinVerifiedAtProvider = StateProvider<DateTime?>((_) => null);
 final forceDisconnectedProvider = StateProvider<bool>((_) => false);
 
-// `generateKotId()` used to mint client-side ids ("K-1", "K-2") from a
-// module-level counter, and the order-success screen fell back to it whenever
-// the desk's ack arrived without a KOT number. The waiter then read out a KOT
-// number that existed nowhere on the desk. Gone — an absent KOT number now
-// renders as "pending" instead of a fabricated one.
 final lastKotIdProvider = StateProvider<String?>((_) => null);
 
 final linkGroupsProvider = StateProvider<Map<String, List<String>>>((_) => {});

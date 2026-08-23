@@ -41,7 +41,6 @@ class _CustomerCountSheetState extends State<_CustomerCountSheet> {
     return AppSurface(
       borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
       padding: EdgeInsets.zero,
-      // Stepper, 56pt counter and chip row add up past a short viewport.
       child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(20, 12, 20, 28 + context.sheetBottomInset),
         child: Column(
@@ -83,8 +82,6 @@ class _CustomerCountSheetState extends State<_CustomerCountSheet> {
                     onTap: () => _set(_count - 1),
                     enabled: _count > 1),
                 const SizedBox(width: 24),
-                // minWidth, not a fixed width — a two-digit count at a large
-                // system font scale needs more room than 80 and would clip.
                 ConstrainedBox(
                   constraints: const BoxConstraints(minWidth: 80),
                   child: Text(

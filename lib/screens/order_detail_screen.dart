@@ -24,12 +24,8 @@ import '../widgets/offers_sheet.dart';
 class OrderDetailScreen extends ConsumerStatefulWidget {
   final String orderId;
 
-  /// True when shown inside the history screen's tablet detail pane rather
-  /// than pushed as its own route. Only changes how back/dismiss behave —
-  /// the bill, discount and payment flows are identical either way.
   final bool embedded;
 
-  /// Called instead of popping the route when [embedded].
   final VoidCallback? onClose;
 
   const OrderDetailScreen({
@@ -204,8 +200,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       if (mounted) {
         DynamicToast.show(context,
             message: 'Order ${order.id} cancelled', kind: ToastKind.warning);
-        // _close(), not context.pop() — when embedded in the history detail
-        // pane, popping would take the whole History tab with it.
+
         _close();
       }
     });
@@ -225,10 +220,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         {
           'order_id': order.orderId,
         },
-        // Money event — SocketService.emit refuses to guess a timeout for
-        // one of these. Same generous window as bill:payment: a
-        // bill-generate that times out early and gets retried is a
-        // duplicate-bill risk, not just a slower retry.
         timeout: const Duration(seconds: 15), onAck: (response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
@@ -247,8 +238,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 parsedBills
                     .add(ServerBill.fromMap(Map<String, dynamic>.from(b)));
               } on WireFormatException catch (e) {
-                // A bill we cannot price must not reach the payment sheet —
-                // that is exactly how a zero grand total got there before.
                 logE('[OrderDetail]', 'dropped a malformed bill', e);
               }
             }
@@ -268,10 +257,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           _billId = bill?['id']?.toString() ?? response['bill_id']?.toString();
           _billNumber = bill?['bill_number']?.toString() ??
               response['bill_number']?.toString();
-          // The generated bills are authoritative once they exist. The old
-          // guard treated a zero grand total as "no data" and silently fell
-          // back to the order total — so a fully comped bill displayed and
-          // charged the undiscounted amount.
+
           _billTotal = parsedBills.isNotEmpty ? grandTotal : order.total;
           _billGst = Money.fromWire(bill?['total_gst']) ??
               Money.fromWire(response['gst']);
@@ -286,8 +272,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               ? _bills.map((b) => b.id).toList()
               : (_billId != null ? [_billId!] : const <String>[]);
           for (final id in billIds) {
-            socketService
-                .emit('print:bill', <String, dynamic>{'bill_id': id});
+            socketService.emit('print:bill', <String, dynamic>{'bill_id': id});
           }
         }
         DynamicToast.show(context,
@@ -417,8 +402,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     }
   }
 
-  /// Leaves the screen — pops the route normally, or hands back to the host
-  /// pane when embedded.
   void _close() {
     if (widget.onClose != null) {
       widget.onClose!();

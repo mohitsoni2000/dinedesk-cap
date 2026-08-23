@@ -42,9 +42,7 @@ class FeedbackService {
     try {
       await player.stop();
       await player.play(AssetSource(asset));
-    } catch (_) {
-
-    }
+    } catch (_) {}
   }
 
   Future<void> dispose() async {

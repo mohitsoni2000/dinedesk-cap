@@ -9,12 +9,8 @@ import 'log.dart';
 
 const _tag = '[Update]';
 
-// Both stores list this app under the same bundle/package id.
 const _storeId = 'com.command.crew';
 
-/// Android drives its update through Play Core (in-app update flow); iOS has
-/// no equivalent API, so it's just a "here's where to get the new version"
-/// link resolved from the App Store listing itself.
 class UpdateCheckResult {
   final bool available;
   final AppUpdateInfo? androidInfo;
@@ -48,7 +44,9 @@ class UpdateService {
   Future<UpdateCheckResult> _checkAndroid() async {
     final info = await InAppUpdate.checkForUpdate();
     if (info.updateAvailability == UpdateAvailability.updateAvailable) {
-      logD(_tag, 'Android update available '
+      logD(
+          _tag,
+          'Android update available '
           '(immediate: ${info.immediateUpdateAllowed}, flexible: ${info.flexibleUpdateAllowed})');
       return UpdateCheckResult.android(info);
     }
@@ -100,10 +98,6 @@ class UpdateService {
     return false;
   }
 
-  /// Prefers Play's immediate (full-screen, blocking) flow when Play allows
-  /// it — a POS device sitting on a floor is never mid-task in a way worth
-  /// protecting the way a flexible background download is designed for.
-  /// Falls back to flexible, then to just opening the Play Store listing.
   Future<void> startAndroidUpdate(AppUpdateInfo info) async {
     try {
       if (info.immediateUpdateAllowed) {
@@ -118,7 +112,8 @@ class UpdateService {
     } catch (e) {
       logD(_tag, 'Android update flow failed: $e');
     }
-    await openStoreUrl('https://play.google.com/store/apps/details?id=$_storeId');
+    await openStoreUrl(
+        'https://play.google.com/store/apps/details?id=$_storeId');
   }
 
   Future<void> openStoreUrl(String url) async {

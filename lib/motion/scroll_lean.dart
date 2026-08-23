@@ -5,20 +5,10 @@ import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
 import 'springs.dart';
 
-/// ============================================================
-/// SCROLL VELOCITY LEAN — lists with mass.
-///
-/// While you fling, the content leans a few pixels into the
-/// motion; the moment you stop it spring-settles back. The whole
-/// viewport moves as ONE transform layer, so per-frame cost is a
-/// single matrix — no row rebuilds, safe on low-end hardware.
-/// Disabled automatically under OS reduce-motion.
-/// ============================================================
 class ScrollVelocityLean extends StatefulWidget {
   final ScrollController controller;
   final Widget child;
 
-  /// Max lean in logical pixels. Keep it whisper-subtle (3–6).
   final double maxLean;
 
   const ScrollVelocityLean({
@@ -40,8 +30,7 @@ class _ScrollVelocityLeanState extends State<ScrollVelocityLean> {
   @override
   void initState() {
     super.initState();
-    _lastOffset =
-        widget.controller.hasClients ? widget.controller.offset : 0;
+    _lastOffset = widget.controller.hasClients ? widget.controller.offset : 0;
     widget.controller.addListener(_onScroll);
   }
 
@@ -51,9 +40,7 @@ class _ScrollVelocityLeanState extends State<ScrollVelocityLean> {
     final double delta = offset - _lastOffset;
     _lastOffset = offset;
 
-    // Per-event delta is a good velocity proxy (≈ px per frame).
-    final double lean =
-        (delta * 0.55).clamp(-widget.maxLean, widget.maxLean);
+    final double lean = (delta * 0.55).clamp(-widget.maxLean, widget.maxLean);
     _target.value = lean;
 
     _settle?.cancel();

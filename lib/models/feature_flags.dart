@@ -8,6 +8,7 @@ class FeatureFlags {
   final bool serviceCharge;
   final bool reservations;
   final bool customers;
+  final bool customerEdit;
   final bool inventory;
   final bool kotPrinting;
   final bool directKot;
@@ -90,6 +91,7 @@ class FeatureFlags {
     this.serviceCharge = true,
     this.reservations = false,
     this.customers = false,
+    this.customerEdit = true,
     this.inventory = false,
     this.kotPrinting = true,
     this.directKot = false,
@@ -182,6 +184,7 @@ class FeatureFlags {
       serviceCharge: flag('flag_service_charge', true),
       reservations: flag('flag_reservations'),
       customers: flag('flag_customers'),
+      customerEdit: flag('flag_customer_edit', true),
       inventory: flag('flag_inventory'),
       kotPrinting: flag('flag_kot_printing', true),
       directKot: flag('flag_direct_kot'),
@@ -225,9 +228,6 @@ class FeatureFlags {
       companyBill: flag('flag_company_bill'),
       tableMerge: flag('flag_table_merge', true),
       tableShift: flag('flag_table_shift', true),
-      // No `true` fallback: the desk column defaults to 0, so an older desk
-      // that never sends the key must leave the action hidden rather than
-      // offering a shift its gateway will refuse.
       kotShift: flag('flag_kot_shift'),
       tableLink: flag('flag_table_link', true),
       collectPayment: flag('flag_collect_payment', true),

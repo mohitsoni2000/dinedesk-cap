@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -166,8 +164,7 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                                   on
                                       ? Icons.check_circle
                                       : Icons.radio_button_unchecked,
-                                  color:
-                                      on ? AppColors.terra : palette.ink30,
+                                  color: on ? AppColors.terra : palette.ink30,
                                 ),
                               ],
                             ),
@@ -177,11 +174,8 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                     ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  AppSpacing.lg,
-                  AppSpacing.lg,
-                  AppSpacing.lg + context.sheetBottomInset),
+              padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg,
+                  AppSpacing.lg, AppSpacing.lg + context.sheetBottomInset),
               child: Row(
                 children: [
                   Expanded(

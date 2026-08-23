@@ -40,12 +40,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
   _ScanStage _stage = _ScanStage.idle;
   int _shakeTrigger = 0;
 
-  /// True once the scanner reports it cannot open the camera.
-  ///
-  /// The scan-target overlay — corner brackets, sweeping line, "Align the
-  /// QR…" — is instruction for aiming at something. With no camera there is
-  /// nothing to aim, and it was drawing straight over the placeholder's
-  /// message and its Open Settings button.
   bool _cameraFailed = false;
 
   late final AnimationController _entranceCtrl = AnimationController(
@@ -74,12 +68,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
         capture.barcodes.isEmpty ? null : capture.barcodes.first.rawValue;
     if (raw == null) return;
 
-    // Parsed and *constrained* in one place. The old inline version used
-    // Uri.parse, which throws on input like `restroapp://pair?host=[bad` and
-    // escaped this `void ... async` to the zone as an unhandled error; it
-    // also placed no constraint on the host at all, so a sticker taped over
-    // the real one at the POS station could point the phone anywhere and
-    // harvest operator PINs.
     final parsed = parsePairingUri(raw);
     final PairingInfo pairing;
     switch (parsed) {
@@ -142,11 +130,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
     });
   }
 
-  /// Debug builds only — see the matching guards in connecting_screen and
-  /// auth_screen. This writes a real pairing carrying `demo-token` into
-  /// secure storage, after which the app is fully navigable with no socket
-  /// and no PIN. A waiter could also fall into it by mistap during a WiFi
-  /// outage and take orders that went nowhere.
   void _demoScan() {
     if (!kDebugMode) return;
     if (_processing) return;
@@ -184,16 +167,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.ink,
-      // `SizedBox.expand` is load-bearing. Scaffold hands its body *loose*
-      // constraints, and a Stack sizes itself to its largest NON-positioned
-      // child — here that is only the SafeArea top bar, about 113pt. Every
-      // other child is Positioned and contributes nothing to sizing, so the
-      // whole screen collapsed into a band at the top and the camera
-      // placeholder inside a Positioned.fill overflowed by 22px.
-      //
-      // This used to be held up by accident: a decorative 12%-opacity mesh
-      // overlay sat here as a non-positioned child wrapping a full-size box.
-      // The height now comes from the body itself, not from a decoration.
       body: SizedBox.expand(
         child: Stack(
           children: [
@@ -202,8 +175,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                 controller: _controller,
                 onDetect: _onDetect,
                 errorBuilder: (_, __) {
-                  // errorBuilder runs during build, so the flag is raised on
-                  // the next frame rather than inside this one.
                   if (!_cameraFailed) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted) setState(() => _cameraFailed = true);
@@ -213,12 +184,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                 },
               ),
             ),
-
-            // A flat scrim, not a radial vignette. It exists because the
-            // instruction text and chrome are white-on-camera and need
-            // something behind them; it just no longer ramps. With no camera
-            // the placeholder is already a dark surface, so the scrim would
-            // only dim its own message.
             if (!_cameraFailed)
               Positioned.fill(
                 child: IgnorePointer(
@@ -226,7 +191,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                       ColoredBox(color: Colors.black.withValues(alpha: 0.35)),
                 ),
               ),
-
             if (!_cameraFailed)
               Positioned.fill(
                 child: AnimatedBuilder(
@@ -242,11 +206,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                   ),
                 ),
               ),
-
-            // A 12%-opacity mesh wash used to sit here, over the camera. With
-            // the mesh gone it was painting a flat tint over the whole preview
-            // for no reason — the flat scrim above is the only overlay now.
-
             SafeArea(
               child: AnimatedBuilder(
                 animation: _entranceCtrl,
@@ -298,7 +257,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                 ),
               ),
             ),
-
             Positioned(
               left: 0,
               right: 0,
@@ -318,8 +276,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: LiquidGlassSurface(
                       borderRadius: const BorderRadius.all(AppRadii.xl),
-                      // An opaque panel. The 7%-white tint only ever read as a
-                      // surface because a 30px blur sat behind it.
                       tint: AppColors.night,
                       padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
                       child: Column(
@@ -367,9 +323,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                             ],
                           ),
                           const SizedBox(height: 12),
-                          // Hidden outright in release rather than merely
-                          // disabled — a dead "explore the demo kitchen" link
-                          // on the pairing screen is its own support call.
                           if (kDebugMode)
                             Center(
                               child: GestureDetector(
@@ -433,15 +386,9 @@ class _CameraUnavailable extends StatelessWidget {
             const SizedBox(height: 8),
             Text('Allow camera access to pair this device.',
                 textAlign: TextAlign.center,
-                // Was white at 0.6 alpha, which measures 2.95:1 against the
-                // camera-dark backdrop — below AA. 0.85 clears it.
                 style: AppTypography.caption
                     .copyWith(color: Colors.white.withValues(alpha: 0.85))),
             const SizedBox(height: 20),
-            // This screen used to end at the sentence above: it told the
-            // operator to go to Settings and then gave them no way to get
-            // there. Pairing is the first thing a new device does, so someone
-            // who mistaps "Don't Allow" was stranded outside the app.
             Pressable(
               semanticLabel: 'Open this app’s settings',
               onTap: AppSettingsLauncher.open,
@@ -580,8 +527,6 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
                   child: Container(
                     width: size - 40,
                     height: 2,
-                    // A plain line. It was a five-stop gradient fading out at
-                    // both ends under a terra glow.
                     decoration: BoxDecoration(
                       color: AppColors.terra400,
                       borderRadius: BorderRadius.circular(1),
@@ -598,7 +543,6 @@ class _ScanTargetOverlayState extends State<_ScanTargetOverlay>
                 height: size,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(24),
-                  // The green border alone marks a verified read.
                   border: Border.all(color: AppColors.success, width: 2),
                 ),
               ),
@@ -680,8 +624,6 @@ class _BracketPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // The brackets are drawn once. They used to be drawn twice: a 6px
-    // mask-blurred glow pass underneath the crisp one.
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
@@ -726,8 +668,6 @@ class _GlassIcon extends StatelessWidget {
   final bool active;
   final VoidCallback onTap;
 
-  /// Required: this renders an icon and nothing else, so there is no text for
-  /// a screen reader to fall back on.
   final String label;
   const _GlassIcon({
     required this.icon,
@@ -738,10 +678,6 @@ class _GlassIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // An opaque chip. This sat on the camera preview, so it used to be a
-    // blurred glass surface with a low-alpha white tint under an amber glow
-    // when lit. With no blur behind it the tint had nothing to read against,
-    // so the fill is solid: amber when on, near-black when off.
     return LiquidGlassSurface(
       borderRadius: const BorderRadius.all(AppRadii.sm),
       tint: active ? AppColors.amber : Colors.black.withValues(alpha: 0.55),

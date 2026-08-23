@@ -5,22 +5,12 @@ import '../theme/tokens.dart';
 import '../widgets/dynamic_toast.dart';
 import '../widgets/pin_verify_sheet.dart';
 
-/// Lets background services (sync_service.dart) with no BuildContext of
-/// their own surface server-side action failures (error:validation /
-/// error:permission) that a fire-and-forget emit() would otherwise drop
-/// silently — routed through the same DynamicToast every screen uses.
 void showAppToast(String message, {ToastKind kind = ToastKind.error}) {
   final context = rootNavigatorKey.currentContext;
   if (context == null) return;
   DynamicToast.show(context, message: message, kind: kind);
 }
 
-/// A KOT that genuinely failed to print (printer offline, no desktop window
-/// to receive the job, etc.) needs a signal the operator can't miss the way
-/// a 3-second toast can be — this blocks until acknowledged. Only one shows
-/// at a time; a second failure while one is already up is dropped rather
-/// than stacking dialogs, since the operator is already being told to check
-/// the kitchen and a queue of near-identical dialogs adds nothing.
 bool _printFailedAlertShowing = false;
 
 void showKotPrintFailedAlert({
@@ -57,13 +47,6 @@ void showKotPrintFailedAlert({
   ).then((_) => _printFailedAlertShowing = false);
 }
 
-/// A reconnect's silent resync can come back rejected because the desktop's
-/// (RAM-only, per-process) PIN-verified flag has genuinely lapsed — the only
-/// case that should ever interrupt the operator. This asks for the PIN
-/// in-place, over whatever screen they're already on, instead of the old
-/// behaviour of clearing auth state and hard-navigating to the full login
-/// screen. Only one prompt at a time; a second rejection while one is
-/// already up is dropped rather than stacking sheets.
 bool _pinReverifyShowing = false;
 
 Future<bool> promptPinReverify() async {
@@ -78,10 +61,6 @@ Future<bool> promptPinReverify() async {
   }
 }
 
-/// Surfaces "a new version is available" (see update_service.dart, checked
-/// at startup and on each foreground resume in main.dart). Dismissing just
-/// hides it for the rest of this app session — it never blocks the app, and
-/// the next cold start / resume checks again regardless.
 bool _updateAlertShowing = false;
 
 void showUpdateAvailableDialog({required VoidCallback onUpdateNow}) {

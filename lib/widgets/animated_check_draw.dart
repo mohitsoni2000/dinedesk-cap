@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
 
@@ -67,8 +65,6 @@ class _CheckPainter extends CustomPainter {
     final r = size.width / 2;
     final c = Offset(r, r);
 
-    // One solid disc. There used to be three: an 18-sigma MaskFilter.blur
-    // halo behind it and a diagonal white sheen shader over it.
     final fill = Paint()..color = color;
     canvas.drawCircle(c, r * 0.88, fill);
 

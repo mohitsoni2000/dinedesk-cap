@@ -1139,7 +1139,16 @@ class SyncService {
           ? (current.activeBillCount > 0 ? current.activeBillCount : 1)
           : current.activeBillCount,
       orderItemCount: order.itemCount,
-      bill: order.total,
+      // Deliberately NOT `bill: order.total`. ServerOrder.total (wire field
+      // `total`) is the order's own subtotal; RestaurantTable.bill must hold
+      // ServerTable.orderTotal (wire field `order_total`), the desk's final
+      // billable figure after GST/service charge. They are not the same
+      // number — setting bill from order.total here once showed a lower,
+      // wrong total on the Tables screen for every table already carrying
+      // charges, the moment a broadcast without its own table snapshot
+      // (e.g. kot:sent) ran after a correct table:updated. `bill` stays
+      // whatever it already was; only table:updated / _applyTablesFromEnvelope
+      // / a resync — all sourced from ServerTable — are allowed to change it.
     );
     _setTables(tables);
   }

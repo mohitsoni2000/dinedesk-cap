@@ -8,7 +8,6 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
-import '../data/money.dart';
 import '../data/table_selectors.dart';
 import '../data/recent_tables.dart';
 import '../data/table_open_intent.dart';
@@ -32,9 +31,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   String? _floor;
   String _query = '';
   bool _searchOpen = false;
+  bool _mineOnly = false;
   bool _openingTable = false;
   String? _openingTableId;
-  TableState? _spotlight;
+  _StatusTag? _spotlight;
   bool _refreshing = false;
   late final AnimationController _refreshController;
 
@@ -123,9 +123,9 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
             mainAxisExtent: context.tableTileExtent /
-                    1.05 *
+                    1.3 *
                     context.effectiveTextScale.clamp(1.0, 1.55) +
-                16,
+                8,
           ),
           itemCount: list.length,
           itemBuilder: (_, i) {
@@ -264,8 +264,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   @override
   Widget build(BuildContext context) {
     final connOnline = ref.watch(connectionProvider.select((c) => c.online));
-    final op = ref.watch(operatorProvider);
-    final opName = op?.name ?? 'there';
     final restaurant = ref.watch(restaurantProvider);
     final restaurantName = restaurant?.name ?? 'Restaurant';
     final activeOps = ref.watch(activeOperatorsProvider);
@@ -278,6 +276,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
         if (mounted) setState(() => _floor = floors.first);
       });
     }
+
+    final mineCountOnFloor = ref.watch(tablesProvider.select((list) => list
+        .where((t) => t.floor == activeFloor && t.state == TableState.mine)
+        .length));
 
     final query = _query.trim().toLowerCase();
     final isSearching = query.isNotEmpty;
@@ -303,24 +305,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('Tables', style: AppTypography.displayLg),
-                          const SizedBox(height: 2),
-                          Row(children: [
-                            Flexible(
-                              child: Text(
-                                'Hi ${opName.split(' ').first} · ',
-                                style: AppTypography.caption,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            Flexible(
-                              child: Text(
-                                restaurantName,
-                                style: AppTypography.caption
-                                    .copyWith(fontWeight: FontWeight.w600),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ]),
                         ],
                       ),
                     ),
@@ -404,7 +388,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                     ),
                   ),
                 ),
-              _RecentTablesRow(onOpen: _onTableTap),
               _CollapseSection(
                 hidden: _searchOpen,
                 child: Column(
@@ -421,23 +404,35 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                         onChange: (s) => setState(() => _spotlight = s),
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _StatsStrip(),
-                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _FloorTabs(
-                  value: activeFloor,
-                  floors: floors,
-                  counts: floorCounts,
-                  enabled: !isSearching,
-                  onChange: (v) => _goFloor(v, floors),
+                child: Row(
+                  children: [
+                    _MineFilterToggle(
+                      active: _mineOnly,
+                      count: mineCountOnFloor,
+                      onTap: () {
+                        ref
+                            .read(feedbackServiceProvider)
+                            .fire(const FeedbackSelection());
+                        setState(() => _mineOnly = !_mineOnly);
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _FloorTabs(
+                        value: activeFloor,
+                        floors: floors,
+                        counts: floorCounts,
+                        enabled: !isSearching,
+                        onChange: (v) => _goFloor(v, floors),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 12),
@@ -446,6 +441,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                     ? _TablesGridSlot(
                         query: query,
                         showFloorTags: true,
+                        mineOnly: _mineOnly,
                         builder: _buildTablesGrid,
                       )
                     : _FloorCoast(
@@ -462,6 +458,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                         pageBuilder: (context, floor) => _TablesGridSlot(
                           floor: floor,
                           showFloorTags: false,
+                          mineOnly: _mineOnly,
                           builder: _buildTablesGrid,
                         ),
                       ),
@@ -603,16 +600,20 @@ class _BlinkingDotState extends State<_BlinkingDot>
 }
 
 class _LegendStrip extends StatelessWidget {
-  final TableState? active;
-  final ValueChanged<TableState?> onChange;
+  final _StatusTag? active;
+  final ValueChanged<_StatusTag?> onChange;
   const _LegendStrip({required this.active, required this.onChange});
 
+  // Mine/Other dropped as legend entries — color no longer encodes ownership
+  // (the Mine tab covers that), it encodes order progress, so the legend
+  // shows the same stages the pills themselves can now display.
   static const _entries = [
-    (TableState.free, 'FREE'),
-    (TableState.mine, 'MINE'),
-    (TableState.other, 'OTHER'),
-    (TableState.dirty, 'DIRTY'),
-    (TableState.reserved, 'RESERVED'),
+    _StatusTag.free,
+    _StatusTag.orderOpen,
+    _StatusTag.eating,
+    _StatusTag.bill,
+    _StatusTag.dirty,
+    _StatusTag.reserved,
   ];
 
   @override
@@ -621,22 +622,22 @@ class _LegendStrip extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          for (final e in _entries)
+          for (final tag in _entries)
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: GestureDetector(
-                onTap: () => onChange(active == e.$1 ? null : e.$1),
+                onTap: () => onChange(active == tag ? null : tag),
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                   decoration: BoxDecoration(
-                    color: active == e.$1
-                        ? _ringColor(context, e.$1).withValues(alpha: 0.12)
+                    color: active == tag
+                        ? _ringColor(context, tag).withValues(alpha: 0.12)
                         : Colors.transparent,
                     borderRadius: const BorderRadius.all(AppRadii.pill),
                     border: Border.all(
-                      color: active == e.$1
-                          ? _ringColor(context, e.$1)
+                      color: active == tag
+                          ? _ringColor(context, tag)
                           : context.palette.hairline,
                     ),
                   ),
@@ -647,12 +648,12 @@ class _LegendStrip extends StatelessWidget {
                         width: 6,
                         height: 6,
                         decoration: BoxDecoration(
-                          color: _ringColor(context, e.$1),
+                          color: _ringColor(context, tag),
                           shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 5),
-                      Text(e.$2,
+                      Text(_tagLabel(tag),
                           style: AppTypography.pill
                               .copyWith(color: context.palette.ink70)),
                     ],
@@ -661,116 +662,6 @@ class _LegendStrip extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _StatsStrip extends ConsumerWidget {
-  const _StatsStrip();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mineCount = ref.watch(tablesProvider.select(
-      (list) => list.where((t) => t.state == TableState.mine).length,
-    ));
-    final freeCount = ref.watch(tablesProvider.select(
-      (list) => list.where((t) => t.state == TableState.free).length,
-    ));
-
-    final billSum = ref.watch(tablesProvider.select(
-      (list) => list.map((t) => t.bill ?? Money.zero).sumMoney(),
-    ));
-
-    return Row(
-      children: [
-        Expanded(
-          child: _StatMiniCard(
-            dotColor: AppColors.terra,
-            label: 'My tables',
-            value: _BumpNumber(value: mineCount),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _StatMiniCard(
-            dotColor: AppColors.success,
-            label: 'Free now',
-            value: _BumpNumber(value: freeCount),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _StatMiniCard(
-            label: 'On tables',
-            value: Text(
-              formatRupeesCompact(billSum),
-              style: AppTypography.title.copyWith(fontWeight: FontWeight.w800),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatMiniCard extends StatelessWidget {
-  final Color? dotColor;
-  final String label;
-  final Widget value;
-  const _StatMiniCard(
-      {this.dotColor, required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return AppSurface(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      borderRadius: const BorderRadius.all(AppRadii.md),
-      shadow: const [],
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              if (dotColor != null) ...[
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration:
-                      BoxDecoration(color: dotColor, shape: BoxShape.circle),
-                ),
-                const SizedBox(width: 4),
-              ],
-              Expanded(
-                child: Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.pill
-                        .copyWith(color: context.palette.ink50)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 3),
-          value,
-        ],
-      ),
-    );
-  }
-}
-
-class _BumpNumber extends StatelessWidget {
-  final int value;
-  const _BumpNumber({required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: value.toDouble(), end: value.toDouble()),
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeOutCubic,
-      builder: (_, v, __) => Text(
-        '${v.round()}',
-        style: AppTypography.title.copyWith(fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -830,6 +721,73 @@ class _OnlineStrip extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Pinned filter next to the floor tabs — tap to show only the tables this
+/// operator is currently working, on whichever floor is active. Styled to
+/// match _FloorTabs' pills but in the same terra accent used for TableState.mine
+/// elsewhere, so it reads as "my tables" rather than another floor choice.
+class _MineFilterToggle extends StatelessWidget {
+  final bool active;
+  final int count;
+  final VoidCallback onTap;
+  const _MineFilterToggle({
+    required this.active,
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: SpringBuilder(
+        to: active ? 1.0 : 0.0,
+        spring: RestroSprings.snappy,
+        builder: (BuildContext _, double t, Widget? child) {
+          return Transform.scale(
+            scale: 1 + 0.03 * t,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                color: Color.lerp(context.palette.surface, AppColors.terra, t),
+                borderRadius: const BorderRadius.all(AppRadii.pill),
+                border: Border.all(
+                  color: t > 0.5 ? Colors.transparent : AppColors.terra,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: child,
+            ),
+          );
+        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.person,
+                size: 13, color: active ? Colors.white : AppColors.terra),
+            const SizedBox(width: 4),
+            Text(
+              'Mine',
+              style: AppTypography.micro.copyWith(
+                color: active ? Colors.white : AppColors.terra,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '$count',
+              style: AppTypography.micro.copyWith(
+                color: active
+                    ? Colors.white.withValues(alpha: 0.7)
+                    : AppColors.terra.withValues(alpha: 0.7),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -927,57 +885,126 @@ class _FloorTabs extends StatelessWidget {
   }
 }
 
-Color _pillBg(BuildContext context, TableState state) {
+/// What a table's pill actually communicates. Free/dirty/reserved map 1:1
+/// from TableState; an occupied table (mine or other — ownership doesn't
+/// change the color, only whether a name is prefixed) resolves to whichever
+/// stage its order is at. Mirrors the desk's `cardStatus()` ladder
+/// (floor-plan.component.ts) for the tiers this app has data for. 'Serve' is
+/// deliberately not folded in here — it's already shown via the separate
+/// pulsing `_ReadyChip`, so repeating it in the pill would just be noise.
+/// 'Not Sent' / 'Bill Saved' need pending-item and advance totals the wire
+/// payload doesn't carry yet, so they're not replicated.
+enum _StatusTag { free, orderOpen, eating, bill, dirty, reserved }
+
+_StatusTag _statusTagFor(
+    TableState state, int orderItemCount, int activeBillCount) {
   switch (state) {
-    case TableState.mine:
-      return AppColors.terra;
-    case TableState.other:
-      return context.palette.tableOtherBg;
-    case TableState.dirty:
-      return context.palette.tableDirtyBg;
-    case TableState.reserved:
-      return context.palette.tableReservedBg;
     case TableState.free:
+      return _StatusTag.free;
+    case TableState.dirty:
+      return _StatusTag.dirty;
+    case TableState.reserved:
+      return _StatusTag.reserved;
+    case TableState.mine:
+    case TableState.other:
+      if (orderItemCount == 0) return _StatusTag.orderOpen;
+      if (activeBillCount > 0) return _StatusTag.bill;
+      return _StatusTag.eating;
+  }
+}
+
+/// The solid accent for a tag — matches the desk's own palette
+/// (is-noorder/is-eating/is-bill in floor-plan.component.scss) so a table
+/// reads the same color on both screens. Free/dirty/reserved keep this
+/// app's existing soft-pill palette instead — only the three occupied-order
+/// stages get the desk's bold solid treatment.
+Color _tagAccent(_StatusTag tag) {
+  switch (tag) {
+    case _StatusTag.orderOpen:
+      return const Color(0xFF64748B); // slate — matches desk's is-noorder
+    case _StatusTag.eating:
+      return AppColors.warn; // matches desk's is-eating (--warning)
+    case _StatusTag.bill:
+      return AppColors.info; // matches desk's is-bill (--info)
+    case _StatusTag.free:
+    case _StatusTag.dirty:
+    case _StatusTag.reserved:
+      return AppColors.terra; // unused — those tags never reach here
+  }
+}
+
+Color _pillBg(BuildContext context, _StatusTag tag) {
+  switch (tag) {
+    case _StatusTag.free:
       return context.palette.tableFreeBg;
+    case _StatusTag.dirty:
+      return context.palette.tableDirtyBg;
+    case _StatusTag.reserved:
+      return context.palette.tableReservedBg;
+    case _StatusTag.orderOpen:
+    case _StatusTag.eating:
+    case _StatusTag.bill:
+      return _tagAccent(tag);
   }
 }
 
-Color _pillFg(BuildContext context, TableState state) {
-  switch (state) {
-    case TableState.mine:
-      return Colors.white;
-    case TableState.other:
-      return context.palette.tableOtherText;
-    case TableState.dirty:
-      return context.palette.tableDirtyText;
-    case TableState.reserved:
-      return context.palette.tableReservedText;
-    case TableState.free:
+Color _pillFg(BuildContext context, _StatusTag tag) {
+  switch (tag) {
+    case _StatusTag.free:
       return context.palette.tableFreeText;
+    case _StatusTag.dirty:
+      return context.palette.tableDirtyText;
+    case _StatusTag.reserved:
+      return context.palette.tableReservedText;
+    case _StatusTag.orderOpen:
+    case _StatusTag.eating:
+    case _StatusTag.bill:
+      return Colors.white;
   }
 }
 
-Color _ringColor(BuildContext context, TableState state) =>
-    state == TableState.mine ? AppColors.terra : _pillFg(context, state);
-
-String _pillLabel(TableState state, List<String> operatorNames) {
-  switch (state) {
-    case TableState.mine:
-      return 'MINE';
-    case TableState.other:
-      final first =
-          operatorNames.isNotEmpty ? operatorNames.first.trim() : null;
-      if (first == null || first.isEmpty) return 'OTHER';
-      final label = first.split(' ').first.toUpperCase();
-      final extra = operatorNames.length - 1;
-      return extra > 0 ? '$label +$extra' : label;
-    case TableState.dirty:
-      return 'DIRTY';
-    case TableState.reserved:
-      return 'RESERVED';
-    case TableState.free:
-      return 'FREE';
+/// The visible accent for rings/legend swatches — the solid tags' own fg is
+/// plain white (fine on their filled pill, invisible as a ring color), so
+/// those three use their accent color directly instead.
+Color _ringColor(BuildContext context, _StatusTag tag) {
+  switch (tag) {
+    case _StatusTag.orderOpen:
+    case _StatusTag.eating:
+    case _StatusTag.bill:
+      return _tagAccent(tag);
+    case _StatusTag.free:
+    case _StatusTag.dirty:
+    case _StatusTag.reserved:
+      return _pillFg(context, tag);
   }
+}
+
+String _tagLabel(_StatusTag tag) {
+  switch (tag) {
+    case _StatusTag.free:
+      return 'FREE';
+    case _StatusTag.orderOpen:
+      return 'ORDER OPEN';
+    case _StatusTag.eating:
+      return 'EATING';
+    case _StatusTag.bill:
+      return 'BILL';
+    case _StatusTag.dirty:
+      return 'DIRTY';
+    case _StatusTag.reserved:
+      return 'RESERVED';
+  }
+}
+
+String _pillLabel(TableState state, _StatusTag tag, List<String> operatorNames) {
+  final label = _tagLabel(tag);
+  if (state != TableState.other) return label;
+  final first = operatorNames.isNotEmpty ? operatorNames.first.trim() : null;
+  if (first == null || first.isEmpty) return label;
+  final who = operatorNames.length > 1
+      ? '${first.split(' ').first.toUpperCase()} +${operatorNames.length - 1}'
+      : first.split(' ').first.toUpperCase();
+  return '$who · $label';
 }
 
 String? _pillTooltip(TableState state, List<String> operatorNames) {
@@ -985,14 +1012,14 @@ String? _pillTooltip(TableState state, List<String> operatorNames) {
   return '${operatorNames.join(', ')} are working here';
 }
 
-Widget _applySpotlight(BuildContext context, Widget card, TableState state,
-    TableState? spotlight) {
+Widget _applySpotlight(BuildContext context, Widget card, _StatusTag tag,
+    _StatusTag? spotlight) {
   if (spotlight == null) return card;
-  if (state == spotlight) {
+  if (tag == spotlight) {
     return Container(
       decoration: BoxDecoration(
         borderRadius: const BorderRadius.all(AppRadii.lg),
-        border: Border.all(color: _ringColor(context, state), width: 1.5),
+        border: Border.all(color: _ringColor(context, tag), width: 1.5),
       ),
       child: card,
     );
@@ -1030,12 +1057,20 @@ Widget _applySpotlight(BuildContext context, Widget card, TableState state,
 class _StatePill extends StatelessWidget {
   final TableState state;
   final List<String> operatorNames;
-  const _StatePill({required this.state, this.operatorNames = const []});
+  final int orderItemCount;
+  final int activeBillCount;
+  const _StatePill({
+    required this.state,
+    this.operatorNames = const [],
+    this.orderItemCount = 0,
+    this.activeBillCount = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final bg = _pillBg(context, state);
-    final fg = _pillFg(context, state);
+    final tag = _statusTagFor(state, orderItemCount, activeBillCount);
+    final bg = _pillBg(context, tag);
+    final fg = _pillFg(context, tag);
     final pill = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -1051,7 +1086,7 @@ class _StatePill extends StatelessWidget {
             decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
           ),
           const SizedBox(width: 5),
-          Text(_pillLabel(state, operatorNames),
+          Text(_pillLabel(state, tag, operatorNames),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppTypography.pill.copyWith(color: fg)),
@@ -1060,29 +1095,6 @@ class _StatePill extends StatelessWidget {
     );
     final tooltip = _pillTooltip(state, operatorNames);
     return tooltip == null ? pill : Tooltip(message: tooltip, child: pill);
-  }
-}
-
-class _BillTag extends StatelessWidget {
-  const _BillTag();
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.6, end: 1.0),
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.elasticOut,
-      builder: (_, scale, child) => Transform.scale(scale: scale, child: child),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(
-          border: Border.all(color: AppColors.warn, width: 1),
-          borderRadius: const BorderRadius.all(AppRadii.pill),
-        ),
-        child: Text('BILL',
-            style: AppTypography.pill.copyWith(color: AppColors.warn)),
-      ),
-    );
   }
 }
 
@@ -1233,7 +1245,7 @@ class _TableCard extends ConsumerWidget {
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final DateTime? occupiedSince;
-  final TableState? spotlight;
+  final _StatusTag? spotlight;
   final bool showFloorTag;
   const _TableCard({
     required this.table,
@@ -1296,6 +1308,9 @@ class _TableCard extends ConsumerWidget {
     final isReady = ref.watch(
         readyTableIdsProvider.select((ids) => ids.contains(table.serverId)));
     final isMine = table.state == TableState.mine;
+    final tag =
+        _statusTagFor(table.state, table.orderItemCount, table.activeBillCount);
+    final borderColor = _ringColor(context, tag);
     final customerName = ref.watch(flagsProvider.select((f) => f.customers))
         ? ref.watch(historyProvider.select((orders) => orders
             .where((o) => o.orderId == table.activeOrderId)
@@ -1323,8 +1338,7 @@ class _TableCard extends ConsumerWidget {
                         ? context.palette.tableMineWashEnd
                         : flightContext.palette.surface,
                     borderRadius: const BorderRadius.all(AppRadii.lg),
-                    border:
-                        Border.all(color: context.palette.hairline, width: 1),
+                    border: Border.all(color: borderColor, width: 1),
                     boxShadow: isMine
                         ? AppShadows.mineFor(context)
                         : AppShadows.cardFor(context),
@@ -1341,12 +1355,7 @@ class _TableCard extends ConsumerWidget {
                 color:
                     isMine ? context.palette.mineWash : context.palette.surface,
                 borderRadius: const BorderRadius.all(AppRadii.lg),
-                border: Border.all(
-                  color: isMine
-                      ? context.palette.tableMineBorder
-                      : context.palette.hairline,
-                  width: 1,
-                ),
+                border: Border.all(color: borderColor, width: 1),
                 boxShadow: isMine
                     ? AppShadows.mineFor(context)
                     : AppShadows.cardFor(context),
@@ -1371,11 +1380,18 @@ class _TableCard extends ConsumerWidget {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          if (isReady)
+                          _StatePill(
+                              state: table.state,
+                              operatorNames: table.joinedOperatorNames,
+                              orderItemCount: table.orderItemCount,
+                              activeBillCount: table.activeBillCount),
+                          if (isReady) ...[
+                            const SizedBox(height: 4),
                             const AttentionPulse(
                                 scale: 1.06, child: _ReadyChip()),
+                          ],
                           if (isMine && occupiedSince != null) ...[
-                            if (isReady) const SizedBox(height: 4),
+                            const SizedBox(height: 4),
                             _TimerChip(since: occupiedSince!),
                           ],
                         ],
@@ -1388,10 +1404,6 @@ class _TableCard extends ConsumerWidget {
                     runSpacing: 4,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      _StatePill(
-                          state: table.state,
-                          operatorNames: table.joinedOperatorNames),
-                      if (table.activeBillCount > 0) const _BillTag(),
                       if (customerName != null && customerName.isNotEmpty)
                         _CustomerTag(name: customerName),
                       if (isLinked)
@@ -1432,7 +1444,7 @@ class _TableCard extends ConsumerWidget {
 
     return Stack(
       children: [
-        _applySpotlight(context, card, table.state, spotlight),
+        _applySpotlight(context, card, tag, spotlight),
         if (isLoading)
           Positioned.fill(
             child: Container(
@@ -1453,104 +1465,6 @@ class _TableCard extends ConsumerWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-class _RecentTablesRow extends ConsumerWidget {
-  final ValueChanged<RestaurantTable> onOpen;
-  const _RecentTablesRow({required this.onOpen});
-
-  Color _dot(BuildContext context, TableState s) => switch (s) {
-        TableState.free => AppColors.success,
-        TableState.mine => AppColors.terra,
-        TableState.other => context.palette.tableOtherText,
-        TableState.dirty => AppColors.amber,
-        TableState.reserved => context.palette.tableReservedText,
-      };
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ids = ref.watch(recentTablesProvider);
-    if (ids.isEmpty) return const SizedBox.shrink();
-    final byId = ref.watch(tablesProvider.select(
-      (list) => {for (final t in list) t.serverId: t},
-    ));
-    final entries = <RestaurantTable>[
-      for (final id in ids)
-        if (byId[id] != null) byId[id]!,
-    ];
-    if (entries.isEmpty) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: SizedBox(
-        height: 34,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          children: [
-            Container(
-              alignment: Alignment.center,
-              padding: const EdgeInsets.only(right: 8),
-              child: Row(
-                children: [
-                  Icon(Icons.history, size: 13, color: context.palette.ink50),
-                  const SizedBox(width: 4),
-                  Text('RECENT',
-                      style: AppTypography.micro.copyWith(
-                          color: context.palette.ink50, letterSpacing: 1.0)),
-                ],
-              ),
-            ),
-            for (final t in entries)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: Pressable(
-                  onTap: () => onOpen(t),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: t.state == TableState.mine
-                          ? context.palette.terraSoft
-                          : context.palette.surface,
-                      borderRadius: const BorderRadius.all(AppRadii.pill),
-                      border: Border.all(
-                        color: t.state == TableState.mine
-                            ? context.palette.tableMineBorder
-                            : context.palette.hairline,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: _dot(context, t.state),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(t.id,
-                            style: AppTypography.caption
-                                .copyWith(fontWeight: FontWeight.w700)),
-                        if (t.bill != null) ...[
-                          const SizedBox(width: 5),
-                          Text(formatRupeesCompact(t.bill!),
-                              style: AppTypography.caption
-                                  .copyWith(color: context.palette.ink50)),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -1585,12 +1499,14 @@ class _TablesGridSlot extends ConsumerWidget {
   const _TablesGridSlot({
     this.floor,
     this.query = '',
+    this.mineOnly = false,
     required this.showFloorTags,
     required this.builder,
   });
 
   final String? floor;
   final String query;
+  final bool mineOnly;
   final bool showFloorTags;
   final Widget Function(List<RestaurantTable> list,
       {required bool showFloorTags}) builder;
@@ -1598,7 +1514,7 @@ class _TablesGridSlot extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tables = ref.watch(tablesProvider);
-    final list = floor == null
+    var list = floor == null
         ? tables
             .where((t) =>
                 t.id.toLowerCase().contains(query) ||
@@ -1606,6 +1522,11 @@ class _TablesGridSlot extends ConsumerWidget {
                     .any((n) => n.toLowerCase().contains(query)))
             .toList(growable: false)
         : tables.where((t) => t.floor == floor).toList(growable: false);
+    if (mineOnly) {
+      list = list.where((t) => t.state == TableState.mine).toList(
+            growable: false,
+          );
+    }
     return builder(list, showFloorTags: showFloorTags);
   }
 }

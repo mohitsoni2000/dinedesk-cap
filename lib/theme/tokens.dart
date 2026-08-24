@@ -367,10 +367,10 @@ class AppTypography {
 
   static const TextStyle tableName = TextStyle(
     fontFamily: cormorant,
-    fontWeight: FontWeight.w600,
-    fontSize: 27,
-    height: 1.1,
-    letterSpacing: -0.405,
+    fontWeight: FontWeight.w700,
+    fontSize: 34,
+    height: 1.05,
+    letterSpacing: -0.51,
   );
 
   static const TextStyle sheetTitle = TextStyle(
@@ -662,7 +662,7 @@ extension AdaptiveContext on BuildContext {
         AppSizeClass.tablet || AppSizeClass.tabletWide => tablet ?? phone,
       };
 
-  double get tableTileExtent => adaptive(phone: 200, tablet: 212);
+  double get tableTileExtent => adaptive(phone: 182, tablet: 192);
 
   double get sheetBottomInset => math.max(
         MediaQuery.viewInsetsOf(this).bottom,

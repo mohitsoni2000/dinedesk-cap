@@ -14,6 +14,7 @@ import '../services/session_service.dart';
 import '../services/socket_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_glass_surface.dart';
+import '../widgets/discover_pairing_sheet.dart';
 import '../widgets/help_sheet.dart';
 import '../widgets/manual_entry_sheet.dart';
 
@@ -315,9 +316,17 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
                               Expanded(
                                 child: _ConsoleButton(
                                   icon: Icons.keyboard_outlined,
-                                  label: 'Enter code instead',
+                                  label: 'Enter code',
                                   emphasis: true,
                                   onTap: () => ManualEntrySheet.show(context),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _ConsoleButton(
+                                  icon: Icons.wifi_find_rounded,
+                                  label: 'Discover',
+                                  onTap: () => DiscoverPairingSheet.show(context),
                                 ),
                               ),
                             ],

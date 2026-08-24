@@ -184,7 +184,8 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
         _openingTable = true;
         _openingTableId = t.serverId;
       });
-      final response = await ref.read(socketServiceProvider).emitAck(
+      final response =
+          await ref.read(socketServiceProvider).emitAckWhenConnected(
         'order:create',
         {
           'table_id': t.serverId,

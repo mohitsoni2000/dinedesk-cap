@@ -475,6 +475,33 @@ class SocketService {
     }
   }
 
+  /// Like [emitAck], but a transport failure (offline, or the ack timed out
+  /// because the desk is unreachable) waits for the socket to reconnect and
+  /// re-verify, then retries — instead of surfacing the failure immediately.
+  /// `kot:send` already gets this via [KotQueueService]'s local queue;
+  /// interactive actions like opening a table have no queue to fall back
+  /// into, so a tap made mid-blip used to fail outright and need a second,
+  /// manual tap once back online. Bounded by [maxWait] so a genuinely dead
+  /// network still surfaces an error instead of hanging the caller forever.
+  Future<Map<String, dynamic>> emitAckWhenConnected(
+    String event,
+    Map<String, dynamic> data, {
+    Duration? timeout,
+    Duration maxWait = const Duration(minutes: 5),
+  }) async {
+    final deadline = DateTime.now().add(maxWait);
+    var response = await emitAck(event, data, timeout: timeout);
+    while (isTransportFailure(response) && DateTime.now().isBefore(deadline)) {
+      final remaining = deadline.difference(DateTime.now());
+      await stateStream
+          .firstWhere((s) => s == SocketState.verified)
+          .timeout(remaining, onTimeout: () => SocketState.disconnected);
+      if (DateTime.now().isAfter(deadline)) break;
+      response = await emitAck(event, data, timeout: timeout);
+    }
+    return response;
+  }
+
   void on(String event, void Function(dynamic) handler) {
     final socket = _socket;
     if (socket == null) {

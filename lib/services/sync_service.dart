@@ -50,6 +50,7 @@ class SyncService {
   final Ref _ref;
   StreamSubscription<SocketState>? _stateSubscription;
   StreamSubscription<RejectedKot>? _kotRejectionSubscription;
+  StreamSubscription<RejectedOrderSubmission>? _orderRejectionSubscription;
   Map<String, String> _floorMap = {};
   Map<String, DateTime> _tableTimerCache = {};
   Map<String, dynamic>? _lastFlagsMap;
@@ -163,6 +164,11 @@ class SyncService {
       showAppToast('A KOT could not be sent: ${rejected.reason}');
     });
 
+    _orderRejectionSubscription =
+        _ref.read(offlineOrderQueueProvider).rejections.listen((rejected) {
+      showAppToast('An order could not be sent: ${rejected.reason}');
+    });
+
     _socket.on('table:updated', (data) {
       final map = asMap(data);
       final ServerTable st;
@@ -224,10 +230,7 @@ class SyncService {
       final orderMap = env.orderMap;
       if (orderMap != null) {
         final order = _parseOrder(orderMap);
-        if (order != null) {
-          _replaceActiveOrder(order);
-          if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
-        }
+        if (order != null) adoptOrder(order);
       }
       _applyTablesFromEnvelope(env);
       _applyRoomsFromEnvelope(env);
@@ -258,6 +261,7 @@ class SyncService {
         final order = _parseOrder(orderMap);
         if (order != null) {
           _replaceActiveOrder(order);
+          _updateTableForOrder(order);
           if (order.itemCount > 0) {
             final kotType = env.kotMap?['kot_type']?.toString();
             var entry = _serverOrderToHistory(order);
@@ -279,6 +283,8 @@ class SyncService {
         applyOrderAck({'order': orderMap},
             includeHistory: true, markTableBilled: true);
       }
+      _applyTablesFromEnvelope(env);
+      _applyRoomsFromEnvelope(env);
     });
 
     _socket.on('bill:paid', (data) {
@@ -352,10 +358,7 @@ class SyncService {
       final orderMap = env.orderMap;
       if (orderMap != null) {
         final order = _parseOrder(orderMap);
-        if (order != null) {
-          _replaceActiveOrder(order);
-          if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
-        }
+        if (order != null) adoptOrder(order);
       }
     });
 
@@ -364,10 +367,7 @@ class SyncService {
       final orderMap = env.orderMap;
       if (orderMap != null) {
         final order = _parseOrder(orderMap);
-        if (order != null) {
-          _replaceActiveOrder(order);
-          if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
-        }
+        if (order != null) adoptOrder(order);
       }
     });
 
@@ -430,10 +430,7 @@ class SyncService {
       final orderMap = env.orderMap;
       if (orderMap != null) {
         final order = _parseOrder(orderMap);
-        if (order != null) {
-          _replaceActiveOrder(order);
-          if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
-        }
+        if (order != null) adoptOrder(order);
       }
       _applyTablesFromEnvelope(env);
       _applyRoomsFromEnvelope(env);
@@ -847,6 +844,8 @@ class SyncService {
     _stateSubscription = null;
     _kotRejectionSubscription?.cancel();
     _kotRejectionSubscription = null;
+    _orderRejectionSubscription?.cancel();
+    _orderRejectionSubscription = null;
 
     if (_timerFlush?.isActive ?? false) {
       _timerFlush!.cancel();

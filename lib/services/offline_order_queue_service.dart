@@ -15,6 +15,18 @@ final Provider<OfflineOrderQueueService> offlineOrderQueueProvider =
   return service;
 });
 
+/// An order submission that was dropped from the local queue without ever
+/// reaching the desk — either it sat offline longer than [OfflineOrderQueueService.maxAge]
+/// or the queue was full. Mirrors [RejectedKot]: same "don't fail silently"
+/// principle, kept as its own type since an order+KOT drop is a different
+/// event than a bare KOT rejection.
+class RejectedOrderSubmission {
+  final String reason;
+  final DateTime rejectedAt;
+
+  const RejectedOrderSubmission({required this.reason, required this.rejectedAt});
+}
+
 enum OrderSubmitOutcome { sent, queued, rejected }
 
 /// Result of [OfflineOrderQueueService.submitOrder]. When [outcome] is
@@ -65,6 +77,20 @@ class OfflineOrderQueueService {
 
   Future<void> _lock = Future<void>.value();
   Future<void>? _flushFuture;
+
+  final StreamController<RejectedOrderSubmission> _rejections =
+      StreamController<RejectedOrderSubmission>.broadcast();
+
+  Stream<RejectedOrderSubmission> get rejections => _rejections.stream;
+
+  void _reportDropped(String reason) {
+    logE(_tag, reason);
+    if (!_rejections.isClosed) {
+      _rejections.add(
+        RejectedOrderSubmission(reason: reason, rejectedAt: DateTime.now()),
+      );
+    }
+  }
 
   Future<T> _synchronized<T>(Future<T> Function() action) {
     final completer = Completer<T>();
@@ -195,7 +221,7 @@ class OfflineOrderQueueService {
       _synchronized(() async {
         final items = await _readRaw();
         if (items.length >= maxQueued) {
-          logE(_tag, 'queue full ($maxQueued pending) — dropping oldest');
+          _reportDropped('Order queue full ($maxQueued pending) — oldest dropped');
           items.removeAt(0);
         }
         items.add(<String, dynamic>{
@@ -241,8 +267,8 @@ class OfflineOrderQueueService {
 
       final queuedAt = DateTime.tryParse(next['queued_at']?.toString() ?? '');
       if (queuedAt != null && DateTime.now().difference(queuedAt) > maxAge) {
-        logE(_tag,
-            'dropping order submission older than ${maxAge.inHours}h — not fired automatically');
+        _reportDropped(
+            'Order was offline more than ${maxAge.inHours}h and was not sent — check the table and re-place it if needed');
         await _dropHead();
         continue;
       }
@@ -262,5 +288,7 @@ class OfflineOrderQueueService {
         await _writeRaw(items);
       });
 
-  void dispose() {}
+  void dispose() {
+    unawaited(_rejections.close());
+  }
 }

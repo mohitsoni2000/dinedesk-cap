@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/providers.dart';
 import '../motion/motion.dart';
@@ -12,6 +13,8 @@ import 'app_surface.dart';
 import 'sheet_handle.dart';
 
 enum _DiscoverStage { searching, none, multiple, manual, form }
+
+const _lastEmployeeIdKey = 'crew_last_employee_id';
 
 class DiscoverPairingSheet {
   static Future<void> show(BuildContext context) {
@@ -51,6 +54,14 @@ class _DiscoverPairingSheetBodyState
   void initState() {
     super.initState();
     _search();
+    _loadLastEmployeeId();
+  }
+
+  Future<void> _loadLastEmployeeId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_lastEmployeeIdKey);
+    if (saved == null || !mounted) return;
+    _employeeIdCtrl.text = saved;
   }
 
   @override
@@ -127,6 +138,8 @@ class _DiscoverPairingSheetBodyState
     switch (result) {
       case RecoverySuccess(token: final token, deviceSecret: final secret):
         ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
+        await (await SharedPreferences.getInstance())
+            .setString(_lastEmployeeIdKey, employeeId);
         final pairing = PairingInfo(
           host: desk.ip,
           port: desk.port,

@@ -570,7 +570,19 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   }
 
   Future<void> _submit() async {
-    final pinOk = await requirePinIfNeeded(context, ref, 'kot');
+    // The per-action PIN check itself needs a live round-trip to the desk
+    // (operator:verify) — offline, it would block exactly the flow this
+    // screen's offline-first send is meant to unblock. Skipping it here is
+    // safe specifically because this is the plain KOT-send path: it never
+    // touches money, and it's queued under the operator's already-verified
+    // session token either way (see offlineOrderQueueProvider below) — the
+    // desk still knows exactly who sent it once it syncs. Money actions
+    // (generate_bill, payment, ...) are untouched and still always verify
+    // PIN live before proceeding.
+    final socket = ref.read(socketServiceProvider);
+    final pinOk = socket.state == SocketState.verified
+        ? await requirePinIfNeeded(context, ref, 'kot')
+        : true;
     if (!pinOk || !mounted) return;
     await _submitWithFlow(generateBill: false, collectPayment: false);
   }
@@ -648,7 +660,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   }
 
   Future<void> _submitOnlyKot() async {
-    final pinOk = await requirePinIfNeeded(context, ref, 'kot');
+    // Same reasoning as _submit(): skip the live PIN round-trip only when
+    // offline, only for this money-free path — see the comment there.
+    final socket = ref.read(socketServiceProvider);
+    final pinOk = socket.state == SocketState.verified
+        ? await requirePinIfNeeded(context, ref, 'kot')
+        : true;
     if (!pinOk || !mounted) return;
     await _submitWithFlow(
       generateBill: false,

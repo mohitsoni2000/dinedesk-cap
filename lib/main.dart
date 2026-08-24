@@ -11,6 +11,7 @@ import 'motion/motion.dart';
 import 'router.dart';
 import 'services/app_messenger.dart';
 import 'services/platform_surfaces.dart';
+import 'services/socket_service.dart';
 import 'services/trace.dart';
 import 'services/update_service.dart';
 import 'theme/app_theme.dart';
@@ -90,8 +91,31 @@ class _RestroAppState extends ConsumerState<RestroApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      ref.read(socketServiceProvider).reconnectIfNeeded();
+      unawaited(_verifyConnectionOnResume());
       _checkForUpdate();
+    }
+  }
+
+  /// Android can suspend the isolate while this app is backgrounded and kill
+  /// the socket transport underneath it without ever running onDisconnect —
+  /// `SocketService.state` then keeps claiming "verified" after resume even
+  /// though nothing is actually listening on the other end.
+  /// `reconnectIfNeeded()` alone can't catch that (its guard trusts the same
+  /// stale `state`), so first confirm the connection is real with a live
+  /// resync — which also refreshes tables and flushes queued
+  /// orders/KOTs as a bonus if it succeeds. `SocketService.emitAck` flips
+  /// `state` to disconnected on a genuine ack timeout, so a dead socket
+  /// surfaces here as `state == disconnected` afterward and gets a full,
+  /// clean reconnect through the same path the manual "retry" button uses.
+  Future<void> _verifyConnectionOnResume() async {
+    final socket = ref.read(socketServiceProvider);
+    if (socket.state == SocketState.disconnected) {
+      socket.reconnectIfNeeded();
+      return;
+    }
+    await ref.read(syncServiceProvider).requestResync();
+    if (ref.read(socketServiceProvider).state == SocketState.disconnected) {
+      ref.read(connectionBootstrapProvider.notifier).retry();
     }
   }
 

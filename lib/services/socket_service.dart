@@ -465,6 +465,13 @@ class SocketService {
     } catch (err, stack) {
       if (err.toString().contains('timed out')) {
         logE(_tag, '$event ack timed out');
+        // A real ack timeout is definitive proof the transport isn't
+        // answering, even if the underlying io.Socket (or Android, after
+        // resuming a suspended isolate) still thinks it's connected. Flip
+        // `_state` here so every caller that gates on it — reconnectIfNeeded,
+        // ConnectionBootstrap, SyncService's reconnect listener — sees the
+        // truth instead of a stale "verified" that never self-corrects.
+        _setState(SocketState.disconnected);
         return _errorAck(
           AckCode.timeout,
           "The desk didn't respond — check the connection and retry",

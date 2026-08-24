@@ -10,6 +10,7 @@ import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/biometric_service.dart';
 import '../services/kot_queue_service.dart';
+import '../services/offline_order_queue_service.dart';
 import '../services/session_service.dart';
 import '../services/socket_service.dart';
 import '../theme/tokens.dart';
@@ -166,7 +167,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
       label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
     );
     ref.read(isAuthenticatedProvider.notifier).state = true;
-    unawaited(ref.read(kotQueueProvider).flush(socketService));
+    unawaited(ref.read(offlineOrderQueueProvider).flush(socketService).then(
+        (_) => ref.read(kotQueueProvider).flush(socketService)));
     await _maybeOfferBiometric(pin);
     if (!mounted) return;
     setState(() => _verified = true);

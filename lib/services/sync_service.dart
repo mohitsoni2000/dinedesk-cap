@@ -18,6 +18,7 @@ import 'floor_cache.dart';
 import 'kot_queue_service.dart';
 import 'log.dart';
 import 'menu_parser.dart';
+import 'offline_order_queue_service.dart';
 import 'platform_surfaces.dart';
 import 'socket_service.dart';
 import 'trace.dart';
@@ -817,7 +818,8 @@ class SyncService {
 
         _socket.markVerified();
         _ref.read(isAuthenticatedProvider.notifier).state = true;
-        unawaited(_ref.read(kotQueueProvider).flush(_socket));
+        unawaited(_ref.read(offlineOrderQueueProvider).flush(_socket).then(
+            (_) => _ref.read(kotQueueProvider).flush(_socket)));
         return true;
       } else if (res['code'] == 'reauth_required') {
         if (await promptPinReverify()) {

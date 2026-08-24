@@ -9,7 +9,9 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../motion/motion.dart';
 import '../services/kot_queue_service.dart';
+import '../services/offline_order_queue_service.dart';
 import '../services/pin_guard.dart';
+import '../services/socket_service.dart';
 import '../services/platform_surfaces.dart';
 import '../theme/tokens.dart';
 import '../utils/request_id.dart';
@@ -279,6 +281,35 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     });
   }
 
+  void _afterKotSent(
+      SocketService socketService, String orderId, bool printKot) {
+    String liveName = widget.tableId;
+    for (final t in ref.read(tablesProvider)) {
+      if (t.serverId == widget.tableId) {
+        liveName = t.id;
+        break;
+      }
+    }
+    ref.read(liveActivityProvider).start(
+          orderId: orderId,
+          tableName: liveName,
+          subtitle: '${ref.read(cartProvider).length} items · sent to kitchen',
+        );
+
+    if (!printKot) return;
+    socketService.emit(
+      'print:kot',
+      <String, dynamic>{'order_id': orderId},
+      onAck: (response) {
+        if (!mounted || response['kind'] != 'error') return;
+        DynamicToast.show(context,
+            message: response['message']?.toString() ??
+                'KOT print failed — check the kitchen printer',
+            kind: ToastKind.error);
+      },
+    );
+  }
+
   Future<_OrderFlowStepResult> _runOrderFlow({
     required bool generateBill,
     required bool collectPayment,
@@ -291,7 +322,10 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
     if (_kotSentOrderId != null) {
       orderId = _kotSentOrderId;
-    } else {
+    } else if (generateBill || collectPayment) {
+      // Money paths always wait for a live connection — never queue a bill
+      // generation or a payment offline. _createOrUpdateOrder already blocks
+      // (via SocketService.emitAckWhenConnected) until it can reach the desk.
       final items = _itemsPayload(cart);
       final fallbackOrderId = _activeOrderIdForTable();
 
@@ -362,34 +396,102 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           .applyOrderAck(kotResponse.ack, includeHistory: true);
 
       _rememberKotLabel(kotResponse.ack);
+      _afterKotSent(socketService, orderId, printKot);
+    } else {
+      // Plain "send to kitchen" — no bill, no payment. This never blocks on
+      // a lost connection: offlineOrderQueueProvider queues the whole
+      // create/update + KOT-send unit and returns immediately, so the
+      // waiter keeps working instead of watching a spinner or an error.
+      final items = _itemsPayload(cart);
+      final existingOrderId = _activeOrderIdForTable();
+      final orderRequestId = _pendingOrderRequestId ??= newRequestId();
+      final kotRequestId = _pendingKotRequestId ??= newRequestId();
+      final useUpdate = existingOrderId != null && items.isNotEmpty;
+      final orderPayload = useUpdate
+          ? <String, dynamic>{
+              'order_id': existingOrderId,
+              'items_add': items,
+              'notes': _notes.text,
+            }
+          : <String, dynamic>{
+              if (widget.isRoom)
+                'room_id': widget.tableId
+              else if (_orderType == _OrderType.dineIn)
+                'table_id': widget.tableId,
+              'items': items,
+              'notes': _notes.text,
+              'order_type': widget.isRoom
+                  ? 'room'
+                  : (_orderType == _OrderType.dineIn ? 'dine_in' : 'takeaway'),
+              if (_customer != null && _customer!['id'] != null)
+                'customer_id': _customer!['id'],
+            };
 
-      String liveName = widget.tableId;
-      for (final t in ref.read(tablesProvider)) {
-        if (t.serverId == widget.tableId) {
-          liveName = t.id;
-          break;
-        }
-      }
-      ref.read(liveActivityProvider).start(
-            orderId: orderId,
-            tableName: liveName,
-            subtitle:
-                '${ref.read(cartProvider).length} items · sent to kitchen',
-          );
-
-      if (printKot) {
-        socketService.emit(
-          'print:kot',
-          <String, dynamic>{'order_id': orderId},
-          onAck: (response) {
-            if (!mounted || response['kind'] != 'error') return;
-            DynamicToast.show(context,
-                message: response['message']?.toString() ??
-                    'KOT print failed — check the kitchen printer',
-                kind: ToastKind.error);
-          },
+      ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.pending);
+      OrderSubmitResult submitResult;
+      try {
+        submitResult = await ref.read(offlineOrderQueueProvider).submitOrder(
+              socketService,
+              orderEvent: useUpdate ? 'order:update' : 'order:create',
+              orderPayload: orderPayload,
+              orderRequestId: orderRequestId,
+              kotRequestId: kotRequestId,
+            );
+      } catch (_) {
+        ref.read(cartProvider.notifier).setSyncStatusFailed();
+        return const _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.kotSend,
+          errorMessage: 'Failed to send KOT to kitchen — please retry',
         );
       }
+
+      if (submitResult.isQueued) {
+        _pendingOrderRequestId = null;
+        _pendingKotRequestId = null;
+        return const _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.kotSend,
+          errorMessage:
+              'Desk unreachable — order queued on this phone and will send '
+              'automatically the moment we reconnect.',
+        );
+      }
+      if (submitResult.isRejected) {
+        ref.read(cartProvider.notifier).setSyncStatusFailed();
+        final orderFailed = submitResult.orderAck['kind'] == 'error';
+        return _OrderFlowStepResult(
+          failedStep: orderFailed
+              ? _OrderFlowStep.orderCreate
+              : _OrderFlowStep.kotSend,
+          errorMessage: orderFailed
+              ? 'Could not save order — please retry'
+              : (submitResult.kotAck['message']?.toString().isNotEmpty == true
+                  ? 'Kitchen refused this KOT: ${submitResult.kotAck['message']}'
+                  : 'Failed to send KOT to kitchen — please retry'),
+        );
+      }
+
+      orderId =
+          _orderIdFromResponse(submitResult.orderAck, fallback: existingOrderId);
+      if (orderId == null || orderId.isEmpty) {
+        return _OrderFlowStepResult(
+          failedStep: _OrderFlowStep.orderCreate,
+          errorMessage: 'Order saved but ID not returned — please retry',
+        );
+      }
+
+      ref
+          .read(syncServiceProvider)
+          .applyOrderAck(submitResult.orderAck, includeHistory: true);
+      _kotSentOrderId = orderId;
+      _pendingOrderRequestId = null;
+      _pendingKotRequestId = null;
+      ref.read(cartProvider.notifier).setSyncStatusAll(SyncStatus.synced);
+      ref
+          .read(syncServiceProvider)
+          .applyOrderAck(submitResult.kotAck, includeHistory: true);
+
+      _rememberKotLabel(submitResult.kotAck);
+      _afterKotSent(socketService, orderId, printKot);
     }
 
     if (!generateBill) return const _OrderFlowStepResult();

@@ -256,14 +256,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final existingOrderId = _activeOrderIdForTable();
     final requestId = _pendingOrderRequestId ??= newRequestId();
     if (existingOrderId != null && items.isNotEmpty) {
-      return socketService.emitAck('order:update', <String, dynamic>{
+      return socketService.emitAckWhenConnected('order:update', <String, dynamic>{
         'order_id': existingOrderId,
         'items_add': items,
         'notes': notes,
         'client_request_id': requestId,
       });
     }
-    return socketService.emitAck('order:create', <String, dynamic>{
+    return socketService.emitAckWhenConnected('order:create', <String, dynamic>{
       if (widget.isRoom)
         'room_id': widget.tableId
       else if (_orderType == _OrderType.dineIn)

@@ -46,8 +46,15 @@ final class _OrderFlowStepResult {
 
   final String? errorMessage;
 
-  const _OrderFlowStepResult({this.failedStep, this.errorMessage});
-  bool get isSuccess => failedStep == null;
+  /// True when the order/KOT was safely queued on this phone rather than
+  /// actually reaching the desk yet (offline). Not a failure — the waiter
+  /// should still be sent on to the success screen — but the message shown
+  /// needs to say "queued", not imply it already reached the kitchen.
+  final bool isQueued;
+
+  const _OrderFlowStepResult(
+      {this.failedStep, this.errorMessage, this.isQueued = false});
+  bool get isSuccess => failedStep == null || isQueued;
 }
 
 class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
@@ -372,7 +379,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         _pendingOrderRequestId = null;
         _pendingKotRequestId = null;
         return const _OrderFlowStepResult(
-          failedStep: _OrderFlowStep.kotSend,
+          isQueued: true,
           errorMessage:
               'Desk unreachable — KOT queued on this phone and will fire '
               'automatically the moment we reconnect.',
@@ -449,7 +456,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         _pendingOrderRequestId = null;
         _pendingKotRequestId = null;
         return const _OrderFlowStepResult(
-          failedStep: _OrderFlowStep.kotSend,
+          isQueued: true,
           errorMessage:
               'Desk unreachable — order queued on this phone and will send '
               'automatically the moment we reconnect.',
@@ -616,12 +623,23 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           await OrderSubmittingOverlay.show(context, completer: completer);
       if (!mounted) return;
       if (ok) {
+        final result = await runningFlow;
+        if (!mounted) return;
         _submitted = true;
         _kotSentOrderId = null;
         _pendingOrderRequestId = null;
         _pendingKotRequestId = null;
         ref.read(cartProvider.notifier).clear();
         ref.read(orderNotesProvider.notifier).state = '';
+        if (result.isQueued) {
+          DynamicToast.show(context,
+              message: result.errorMessage ??
+                  'Desk unreachable — queued on this phone and will send '
+                      'automatically the moment we reconnect.',
+              kind: ToastKind.warning);
+          context.go(returnToBuilder ? _builderRoute : _successRoute);
+          return;
+        }
         if (returnToBuilder) {
           final kotLabel = ref.read(lastKotIdProvider);
           DynamicToast.show(context,

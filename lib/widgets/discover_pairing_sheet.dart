@@ -128,7 +128,12 @@ class _DiscoverPairingSheetBodyState
         ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
         await SessionService().savePairing(
           PairingInfo(
-              host: desk.ip, port: desk.port, token: token, deviceSecret: secret),
+            host: desk.ip,
+            port: desk.port,
+            token: token,
+            deviceSecret: secret,
+            deskInstanceId: desk.id,
+          ),
         );
         if (!mounted) return;
         Navigator.of(context).pop();

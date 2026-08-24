@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/discovery_service.dart';
 import '../services/session_service.dart';
@@ -126,16 +127,18 @@ class _DiscoverPairingSheetBodyState
     switch (result) {
       case RecoverySuccess(token: final token, deviceSecret: final secret):
         ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
-        await SessionService().savePairing(
-          PairingInfo(
-            host: desk.ip,
-            port: desk.port,
-            token: token,
-            deviceSecret: secret,
-            deskInstanceId: desk.id,
-          ),
+        final pairing = PairingInfo(
+          host: desk.ip,
+          port: desk.port,
+          token: token,
+          deviceSecret: secret,
+          deskInstanceId: desk.id,
         );
+        await SessionService().savePairing(pairing);
         if (!mounted) return;
+        ref
+            .read(connectionBootstrapProvider.notifier)
+            .connectWithFreshPairing(pairing);
         Navigator.of(context).pop();
         context.go('/connecting');
       case RecoveryFailed(code: final code, message: final message):

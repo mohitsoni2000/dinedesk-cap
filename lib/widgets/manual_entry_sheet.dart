@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/session_service.dart';
 import '../services/socket_service.dart';
@@ -64,9 +65,12 @@ class _ManualEntrySheetBodyState extends ConsumerState<_ManualEntrySheetBody> {
     switch (result) {
       case ProbeResult.ok:
         ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
-        await SessionService()
-            .savePairing(PairingInfo(host: host, port: port, token: code));
+        final pairing = PairingInfo(host: host, port: port, token: code);
+        await SessionService().savePairing(pairing);
         if (!mounted) return;
+        ref
+            .read(connectionBootstrapProvider.notifier)
+            .connectWithFreshPairing(pairing);
         Navigator.of(context).pop();
         context.go('/connecting');
       case ProbeResult.authRejected:

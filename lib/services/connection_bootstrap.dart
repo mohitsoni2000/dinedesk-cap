@@ -74,7 +74,23 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   }
 
   Future<void> _run() async {
-    final pairing = await SessionService().getSavedPairing();
+    PairingInfo? pairing;
+    try {
+      pairing = await SessionService()
+          .getSavedPairing()
+          .timeout(const Duration(seconds: 8));
+    } catch (err, stack) {
+      // A throw (corrupted secure storage, a platform-channel failure) or a
+      // hang here used to leave `state` stuck at BootstrapIdle forever —
+      // connecting_screen renders that as an empty host/port and an
+      // infinite "Reaching the POS server" spinner with no way out but
+      // force-closing the app, since ref.listen only reacts to a state
+      // *change* and this one never came. Route to /scan instead: a fresh
+      // QR self-heals whatever the read couldn't, same as "no pairing".
+      logE(_tag, 'Failed to read saved pairing — sending to /scan', err, stack);
+      state = const BootstrapNoPairing();
+      return;
+    }
     Trace.mark('pairing_read_done');
     if (pairing == null) {
       logD(_tag, 'No saved pairing → /scan');
@@ -289,6 +305,17 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
     _connectTimeout?.cancel();
     _socketSub?.cancel();
     _ref.read(socketServiceProvider).disconnect();
+    unawaited(_attemptConnect(pairing));
+  }
+
+  /// Called by a pairing UI (QR scan, manual code entry, or Discover) right
+  /// after it has already saved a fresh pairing to disk. `start()` only
+  /// ever reads from storage once, at app boot — without this, a freshly
+  /// paired device sits on `/connecting` forever within the same running
+  /// app instance (SessionService.savePairing() writes to disk, but nothing
+  /// tells the already-started ConnectionBootstrap about it). Only a full
+  /// app restart would have picked the new pairing up.
+  void connectWithFreshPairing(PairingInfo pairing) {
     unawaited(_attemptConnect(pairing));
   }
 

@@ -84,8 +84,6 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
     final host = pairing.host;
     final port = pairing.port;
     final token = pairing.token;
-    final deviceSecret = pairing.deviceSecret;
-    final deskInstanceId = pairing.deskInstanceId;
 
     setState(() {
       _processing = true;
@@ -100,13 +98,11 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen>
       case ProbeResult.ok:
         setState(() => _stage = _ScanStage.verified);
         ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
-        await SessionService().savePairing(PairingInfo(
-            host: host,
-            port: port,
-            token: token,
-            deviceSecret: deviceSecret,
-            deskInstanceId: deskInstanceId));
+        await SessionService().savePairing(pairing);
         if (!mounted) return;
+        ref
+            .read(connectionBootstrapProvider.notifier)
+            .connectWithFreshPairing(pairing);
         context.go('/connecting');
       case ProbeResult.authRejected:
         _showError(_ScanError.expired);

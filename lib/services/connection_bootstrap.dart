@@ -65,6 +65,18 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
 
   int _generation = 0;
 
+  /// Once a session is up, `_onSocketState`'s "connection lost" handling
+  /// stops at just showing "Reconnecting…" (see `_onSocketState` below) —
+  /// there's no equivalent to `_connectTimeout` watching for a stall.
+  /// socket.io's own `enableReconnection()` keeps retrying forever, but only
+  /// the *same* host:port — if the desk's LAN IP changed mid-shift (DHCP
+  /// renewal, POS restarted on a new address), that retry loop never
+  /// succeeds. This timer re-arms the same UDP-scan rediscovery boot uses,
+  /// so a long mid-session outage can still self-heal instead of sitting
+  /// disconnected until someone force-closes the app or rescans a QR.
+  Timer? _midSessionRediscovery;
+  static const Duration _midSessionRediscoveryDelay = Duration(seconds: 45);
+
   void start() {
     if (_started) return;
     _started = true;
@@ -105,6 +117,8 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   Future<void> _attemptConnect(PairingInfo pairing) async {
     final gen = ++_generation;
     _pairing = pairing;
+    _midSessionRediscovery?.cancel();
+    _midSessionRediscovery = null;
     state = BootstrapConnecting(pairing, stage: 0);
 
     if (kDebugMode && pairing.token == 'demo-token') {
@@ -139,6 +153,8 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
       Trace.mark('socket_connected');
       logD(_tag, '✓ Connected → checking for a resumable session');
       _connectTimeout?.cancel();
+      _midSessionRediscovery?.cancel();
+      _midSessionRediscovery = null;
       state = BootstrapConnecting(pairing, stage: 1);
       unawaited(_attemptSilentResume(pairing, gen));
     } else if (s == SocketState.disconnected &&
@@ -154,6 +170,38 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
       state = BootstrapConnecting(pairing,
           stage: (state as BootstrapConnecting).stage,
           errorMsg: 'Connection lost — retrying…');
+    } else if (s == SocketState.disconnected && state is BootstrapResumed) {
+      // A session was already up and running; socket.io will keep retrying
+      // the same host on its own. Arm a rediscovery watchdog in case that
+      // never succeeds because the desk moved.
+      _armMidSessionRediscovery(pairing, gen);
+    }
+  }
+
+  void _armMidSessionRediscovery(PairingInfo pairing, int gen) {
+    if (_midSessionRediscovery != null) return;
+    _midSessionRediscovery = Timer(_midSessionRediscoveryDelay, () {
+      _midSessionRediscovery = null;
+      unawaited(_onMidSessionRediscoveryDue(pairing, gen));
+    });
+  }
+
+  Future<void> _onMidSessionRediscoveryDue(PairingInfo pairing, int gen) async {
+    if (gen != _generation) return;
+    if (_ref.read(socketServiceProvider).state != SocketState.disconnected) {
+      return; // self-healed already
+    }
+    logD(_tag,
+        'Still disconnected ${_midSessionRediscoveryDelay.inSeconds}s in — scanning for the desk');
+    final found = await _rediscoverAndRepair(pairing, gen);
+    if (gen != _generation) return;
+    if (!found &&
+        _ref.read(socketServiceProvider).state == SocketState.disconnected) {
+      // Nothing reachable yet — try again later rather than giving up.
+      // BootstrapResumed stays the reported state throughout; only
+      // `ConnectionStatus.online` (driven by SyncService) reflects the
+      // ongoing outage to the UI.
+      _armMidSessionRediscovery(pairing, gen);
     }
   }
 
@@ -178,8 +226,20 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
     _ref.read(socketServiceProvider).disconnect();
     state = BootstrapRediscovering(pairing);
 
+    final found = await _rediscoverAndRepair(pairing, gen);
+    if (gen != _generation || found) return;
+
+    logD(_tag, '✗ Rediscovery found nothing reachable');
+    state = BootstrapFailed(pairing);
+  }
+
+  /// Scans the LAN for the paired desk (by `deskInstanceId`), and if found
+  /// at a different address, saves the updated pairing and reconnects.
+  /// Shared by the boot-time connect timeout and the mid-session
+  /// rediscovery watchdog. Returns true iff a reconnect was kicked off.
+  Future<bool> _rediscoverAndRepair(PairingInfo pairing, int gen) async {
     final candidates = await scanForDesks();
-    if (gen != _generation) return;
+    if (gen != _generation) return false;
 
     final toProbe = candidates
         .where((c) => !(c.ip == pairing.host && c.port == pairing.port))
@@ -189,28 +249,24 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
       pairing.deskInstanceId,
       priorityHost: pairing.host,
     );
-    if (gen != _generation) return;
+    if (gen != _generation) return false;
+    if (verified == null) return false;
 
-    if (verified != null) {
-      logD(
-        _tag,
-        '✓ Found desk at new address ${verified.ip}:${verified.port} — re-pairing silently',
-      );
-      final updated = PairingInfo(
-        host: verified.ip,
-        port: verified.port,
-        token: pairing.token,
-        deviceSecret: pairing.deviceSecret,
-        deskInstanceId: pairing.deskInstanceId,
-      );
-      await SessionService().savePairing(updated);
-      if (gen != _generation) return;
-      unawaited(_attemptConnect(updated));
-      return;
-    }
-
-    logD(_tag, '✗ Rediscovery found nothing reachable');
-    state = BootstrapFailed(pairing);
+    logD(
+      _tag,
+      '✓ Found desk at new address ${verified.ip}:${verified.port} — re-pairing silently',
+    );
+    final updated = PairingInfo(
+      host: verified.ip,
+      port: verified.port,
+      token: pairing.token,
+      deviceSecret: pairing.deviceSecret,
+      deskInstanceId: pairing.deskInstanceId,
+    );
+    await SessionService().savePairing(updated);
+    if (gen != _generation) return false;
+    unawaited(_attemptConnect(updated));
+    return true;
   }
 
   static bool _sameSubnet(String a, String host) {
@@ -322,6 +378,8 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   Future<void> cancelToScan() async {
     _generation++;
     _connectTimeout?.cancel();
+    _midSessionRediscovery?.cancel();
+    _midSessionRediscovery = null;
     unawaited(_socketSub?.cancel());
     _ref.read(socketServiceProvider).disconnect();
     await SessionService().clearPairing();
@@ -332,6 +390,7 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   @override
   void dispose() {
     _connectTimeout?.cancel();
+    _midSessionRediscovery?.cancel();
     _socketSub?.cancel();
     super.dispose();
   }

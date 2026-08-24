@@ -257,6 +257,76 @@ class SocketService {
     return completer.future;
   }
 
+  static Future<RecoveryResult> pairScanless(
+    String host,
+    int port,
+    String employeeId,
+    String pin, {
+    bool useTls = false,
+  }) {
+    final completer = Completer<RecoveryResult>();
+    io.Socket? pairingSocket;
+    Timer? timeoutTimer;
+
+    void finish(RecoveryResult result) {
+      if (completer.isCompleted) return;
+      completer.complete(result);
+      timeoutTimer?.cancel();
+      pairingSocket?.dispose();
+    }
+
+    final url = namespaceUrl(host, port, useTls: useTls);
+    logD(_tag, 'pairScanless $url');
+    pairingSocket = io.io(
+      url,
+      io.OptionBuilder()
+          .setTransports(<String>['websocket'])
+          .setAuth(<String, dynamic>{
+            'pairing': <String, dynamic>{
+              'employee_id': employeeId,
+              'pin': pin,
+            },
+          })
+          .disableReconnection()
+          .build(),
+    );
+    pairingSocket.on('pairing:recovered', (dynamic data) {
+      if (data is Map) {
+        final token = data['token'];
+        final secret = data['device_secret'];
+        if (token is String && secret is String) {
+          logD(_tag, 'pairScanless: ok');
+          finish(RecoverySuccess(token, secret));
+          return;
+        }
+      }
+      finish(const RecoveryFailed(null, 'Malformed response from desk'));
+    });
+    pairingSocket.onConnectError((Object? err) {
+      logD(_tag, 'pairScanless: connect_error');
+      String? code;
+      var message = "Can't reach the desk — same Wi-Fi?";
+      if (err is Map) {
+        final c = err['code'];
+        if (c is String) code = c;
+        final m = err['message'];
+        if (m is String) message = m;
+      }
+      finish(RecoveryFailed(code, message));
+    });
+    pairingSocket.onError((_) {
+      logD(_tag, 'pairScanless: error');
+      finish(const RecoveryFailed(null, 'Connection error'));
+    });
+    pairingSocket.connect();
+    timeoutTimer = Timer(const Duration(seconds: 8), () {
+      logD(_tag, 'pairScanless: timeout');
+      finish(const RecoveryFailed(null, "The desk didn't respond in time"));
+    });
+
+    return completer.future;
+  }
+
   io.Socket? _socket;
   final StreamController<SocketState> _stateController =
       StreamController<SocketState>.broadcast();

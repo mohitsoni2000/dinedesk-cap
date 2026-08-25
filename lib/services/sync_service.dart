@@ -794,7 +794,10 @@ class SyncService {
       if (_lastMenuVersion != null) 'menu_version': _lastMenuVersion,
       if (sections != null) 'sections': sections,
     };
-    return _socket.emitAck('operator:resync', resyncPayload).then((res) async {
+    return _socket
+        .emitAck('operator:resync', resyncPayload,
+            timeout: SocketService.syncBundledAckTimeout)
+        .then((res) async {
       Trace.mark('resync_acked');
       if (res['kind'] == 'success') {
         final syncRaw = res['sync'];

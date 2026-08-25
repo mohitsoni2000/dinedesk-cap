@@ -399,14 +399,16 @@ class SocketService {
   /// For any ack whose success response bundles the full initial-sync
   /// payload (tables, menu, active orders) — operator:verify, operator:resync
   /// — far more data than the plain [ackTimeout] was sized for. The desk's
-  /// own engine.io heartbeat already tolerates up to `pingInterval +
-  /// pingTimeout` (15s, operator-server.ts) of silence before calling a
-  /// connection dead, so failing one of these at 4s was giving up on a
-  /// connection the desk itself would still call alive — especially over a
-  /// slower multi-hop LAN (e.g. a weak-signal floor relaying through another
-  /// floor's router to reach the desk). 12s keeps a safety margin under that
-  /// 15s ceiling.
-  static const Duration syncBundledAckTimeout = Duration(seconds: 12);
+  /// own engine.io heartbeat tolerates up to `pingInterval + pingTimeout`
+  /// (40s, operator-server.ts) of silence before calling a connection dead —
+  /// raised alongside this value because a large payload that takes longer
+  /// to transfer than the *old*, shorter pingTimeout could trip the
+  /// heartbeat and kill a connection that was never actually dead, just busy
+  /// moving data over a slow multi-hop LAN (e.g. a weak-signal floor
+  /// relaying through another floor's router to reach the desk). 28s keeps a
+  /// safety margin under that 40s ceiling — always let the app's own timeout
+  /// give up first, never the transport underneath it.
+  static const Duration syncBundledAckTimeout = Duration(seconds: 28);
 
   Future<Map<String, dynamic>> verifyPin(String pin) async {
     logD(_tag, 'operator:verify');

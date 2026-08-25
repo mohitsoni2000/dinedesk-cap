@@ -15,6 +15,8 @@ import 'sheet_handle.dart';
 enum _DiscoverStage { searching, none, multiple, manual, form }
 
 const _lastEmployeeIdKey = 'crew_last_employee_id';
+const _lastDeskHostKey = 'crew_last_desk_host';
+const _lastDeskPortKey = 'crew_last_desk_port';
 
 class DiscoverPairingSheet {
   static Future<void> show(BuildContext context) {
@@ -49,12 +51,14 @@ class _DiscoverPairingSheetBodyState
 
   bool _submitting = false;
   String? _error;
+  DiscoveredDesk? _lastKnownDesk;
 
   @override
   void initState() {
     super.initState();
     _search();
     _loadLastEmployeeId();
+    _loadLastKnownDesk();
   }
 
   Future<void> _loadLastEmployeeId() async {
@@ -62,6 +66,31 @@ class _DiscoverPairingSheetBodyState
     final saved = prefs.getString(_lastEmployeeIdKey);
     if (saved == null || !mounted) return;
     _employeeIdCtrl.text = saved;
+  }
+
+  Future<void> _loadLastKnownDesk() async {
+    final prefs = await SharedPreferences.getInstance();
+    final host = prefs.getString(_lastDeskHostKey);
+    final port = prefs.getInt(_lastDeskPortKey);
+    if (host == null || port == null || !mounted) return;
+    setState(() => _lastKnownDesk = DiscoveredDesk(ip: host, port: port));
+    _hostCtrl.text = host;
+    _portCtrl.text = port.toString();
+  }
+
+  Future<void> _saveLastKnownDesk(DiscoveredDesk desk) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastDeskHostKey, desk.ip);
+    await prefs.setInt(_lastDeskPortKey, desk.port);
+  }
+
+  void _useLastKnownDesk() {
+    final desk = _lastKnownDesk;
+    if (desk == null) return;
+    setState(() {
+      _selected = desk;
+      _stage = _DiscoverStage.form;
+    });
   }
 
   @override
@@ -140,6 +169,7 @@ class _DiscoverPairingSheetBodyState
         ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
         await (await SharedPreferences.getInstance())
             .setString(_lastEmployeeIdKey, employeeId);
+        await _saveLastKnownDesk(desk);
         final pairing = PairingInfo(
           host: desk.ip,
           port: desk.port,
@@ -183,7 +213,11 @@ class _DiscoverPairingSheetBodyState
             switch (_stage) {
               _DiscoverStage.searching => const _SearchingBody(),
               _DiscoverStage.none => _NoneFoundBody(
-                  onManualEntry: _useManualEntry, onRetry: _search),
+                  onManualEntry: _useManualEntry,
+                  onRetry: _search,
+                  lastKnownDesk: _lastKnownDesk,
+                  onUseLastKnown: _useLastKnownDesk,
+                ),
               _DiscoverStage.multiple =>
                 _PickerBody(found: _found, onPick: _pick),
               _DiscoverStage.manual => _ManualEntryBody(
@@ -239,9 +273,17 @@ class _SearchingBody extends StatelessWidget {
 class _NoneFoundBody extends StatelessWidget {
   final VoidCallback onManualEntry;
   final VoidCallback onRetry;
-  const _NoneFoundBody({required this.onManualEntry, required this.onRetry});
+  final DiscoveredDesk? lastKnownDesk;
+  final VoidCallback onUseLastKnown;
+  const _NoneFoundBody({
+    required this.onManualEntry,
+    required this.onRetry,
+    required this.lastKnownDesk,
+    required this.onUseLastKnown,
+  });
   @override
   Widget build(BuildContext context) {
+    final desk = lastKnownDesk;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -253,7 +295,18 @@ class _NoneFoundBody extends StatelessWidget {
         Text('Make sure this phone is on the same Wi-Fi as the Desk.',
             style: AppTypography.caption
                 .copyWith(color: Colors.white.withValues(alpha: 0.55))),
-        const SizedBox(height: 16),
+        if (desk != null) ...[
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: _SheetButton(
+              label: 'Use last known Desk — ${desk.ip}:${desk.port}',
+              emphasis: true,
+              onTap: onUseLastKnown,
+            ),
+          ),
+        ],
+        const SizedBox(height: 10),
         Row(
           children: [
             Expanded(
@@ -263,7 +316,7 @@ class _NoneFoundBody extends StatelessWidget {
             Expanded(
               child: _SheetButton(
                   label: 'Enter host manually',
-                  emphasis: true,
+                  emphasis: desk == null,
                   onTap: onManualEntry),
             ),
           ],

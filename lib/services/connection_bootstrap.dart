@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,7 +76,25 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   /// so a long mid-session outage can still self-heal instead of sitting
   /// disconnected until someone force-closes the app or rescans a QR.
   Timer? _midSessionRediscovery;
-  static const Duration _midSessionRediscoveryDelay = Duration(seconds: 45);
+
+  /// Escalating, rather than the flat 45s this used to wait.
+  ///
+  /// The flat delay was sized for the expensive case — the desk genuinely moved
+  /// and a UDP scan is the only way to find it. But the common case is a Wi-Fi
+  /// blip where the desk never moved at all, and there the first scan is cheap
+  /// (one 3s broadcast listen) and answers the question immediately. Starting
+  /// at 8s means a session that socket.io can't repair on its own self-heals in
+  /// under ten seconds instead of three quarters of a minute; the later steps
+  /// keep a genuinely absent desk from being scanned for every 8s all shift.
+  static const List<Duration> _rediscoveryBackoff = <Duration>[
+    Duration(seconds: 8),
+    Duration(seconds: 20),
+    Duration(seconds: 45),
+  ];
+  int _rediscoveryAttempt = 0;
+
+  /// The pairing this bootstrap is currently working with, if any.
+  PairingInfo? get currentPairing => _pairing;
 
   void start() {
     if (_started) return;
@@ -119,6 +138,7 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
     _pairing = pairing;
     _midSessionRediscovery?.cancel();
     _midSessionRediscovery = null;
+    _rediscoveryAttempt = 0;
     state = BootstrapConnecting(pairing, stage: 0);
 
     if (kDebugMode && pairing.token == 'demo-token') {
@@ -155,6 +175,7 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
       _connectTimeout?.cancel();
       _midSessionRediscovery?.cancel();
       _midSessionRediscovery = null;
+      _rediscoveryAttempt = 0;
       state = BootstrapConnecting(pairing, stage: 1);
       unawaited(_attemptSilentResume(pairing, gen));
     } else if (s == SocketState.disconnected &&
@@ -180,19 +201,45 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
 
   void _armMidSessionRediscovery(PairingInfo pairing, int gen) {
     if (_midSessionRediscovery != null) return;
-    _midSessionRediscovery = Timer(_midSessionRediscoveryDelay, () {
+    final delay = _rediscoveryBackoff[
+        math.min(_rediscoveryAttempt, _rediscoveryBackoff.length - 1)];
+    _rediscoveryAttempt++;
+    _midSessionRediscovery = Timer(delay, () {
       _midSessionRediscovery = null;
-      unawaited(_onMidSessionRediscoveryDue(pairing, gen));
+      unawaited(_onMidSessionRediscoveryDue(pairing, gen, delay));
     });
   }
 
-  Future<void> _onMidSessionRediscoveryDue(PairingInfo pairing, int gen) async {
+  /// Called by [ConnectionSupervisor] when the OS reports the network changed.
+  ///
+  /// A network change is the single best moment to rescan: it is both when a
+  /// stalled reconnect is most likely to succeed, and when the desk's reachable
+  /// address is most likely to have changed underneath us. Waiting out the
+  /// remaining backoff here would be waiting for information we already have.
+  void onNetworkChanged() {
+    final pairing = _pairing;
+    if (pairing == null) return;
+    _rediscoveryAttempt = 0;
+    if (_ref.read(socketServiceProvider).state != SocketState.disconnected) {
+      return;
+    }
+    logD(_tag, 'Network changed while disconnected — rescanning now');
+    _midSessionRediscovery?.cancel();
+    _midSessionRediscovery = null;
+    unawaited(_onMidSessionRediscoveryDue(pairing, _generation, Duration.zero));
+  }
+
+  Future<void> _onMidSessionRediscoveryDue(
+    PairingInfo pairing,
+    int gen,
+    Duration waited,
+  ) async {
     if (gen != _generation) return;
     if (_ref.read(socketServiceProvider).state != SocketState.disconnected) {
       return; // self-healed already
     }
     logD(_tag,
-        'Still disconnected ${_midSessionRediscoveryDelay.inSeconds}s in — scanning for the desk');
+        'Still disconnected ${waited.inSeconds}s in — scanning for the desk');
     final found = await _rediscoverAndRepair(pairing, gen);
     if (gen != _generation) return;
     if (!found &&
@@ -206,6 +253,16 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   }
 
   Future<void> _attemptSilentResume(PairingInfo pairing, int gen) async {
+    // A recovered socket kept its desk-side session and had its missed
+    // broadcasts replayed, so it is resumed by definition — asking again would
+    // only confirm what recovery already guaranteed, at the cost of the full
+    // sync payload.
+    if (_ref.read(socketServiceProvider).wasRecovered) {
+      logD(_tag, '✓ Session recovered by the desk — skipping resync');
+      _ref.read(syncServiceProvider).registerListeners();
+      state = const BootstrapResumed();
+      return;
+    }
     final resumed = await _ref.read(syncServiceProvider).requestResync();
     if (gen != _generation) return;
     if (resumed) {

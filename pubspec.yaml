@@ -35,6 +35,10 @@ dependencies:
   shared_preferences: ^2.2.3
   sensors_plus: ^6.1.0
 
+  # Network-change stream — drives instant reconnect on Wi-Fi return instead
+  # of waiting out socket.io's blind backoff (see connection_supervisor.dart)
+  connectivity_plus: ^7.3.1
+
   # Biometric unlock (FaceID / fingerprint → replays PIN verify)
   local_auth: ^2.3.0
   flutter_secure_storage: ^9.2.2

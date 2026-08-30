@@ -27,6 +27,10 @@ void main() {
 
   final container = ProviderContainer();
 
+  // Before bootstrap: the supervisor installs the adaptive timeout policy and
+  // the RTT hook on SocketService, and the very first connect() should already
+  // be using them.
+  container.read(connectionSupervisorProvider).start();
   container.read(connectionBootstrapProvider.notifier).start();
 
   runApp(UncontrolledProviderScope(
@@ -92,6 +96,9 @@ class _RestroAppState extends ConsumerState<RestroApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    ref
+        .read(connectionSupervisorProvider)
+        .setAppForeground(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.resumed) {
       unawaited(_verifyConnectionOnResume());
       _checkForUpdate();

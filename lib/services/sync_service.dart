@@ -142,8 +142,12 @@ class SyncService {
           label: 'Connected · ${restaurant?.name ?? "Restaurant"}',
         );
 
+        // A recovered session already had its missed broadcasts replayed by
+        // socket.io, so the providers are current — resyncing would re-download
+        // the full initial-sync payload for nothing.
         if (state == SocketState.connected &&
-            _ref.read(isAuthenticatedProvider)) {
+            _ref.read(isAuthenticatedProvider) &&
+            !_socket.wasRecovered) {
           unawaited(_requestResync());
         }
       } else if (state == SocketState.disconnected) {

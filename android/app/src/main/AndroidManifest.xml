@@ -3,6 +3,37 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Network resilience — see NetworkKeepAliveService.kt for why each is here.
+
+         ACCESS_NETWORK_STATE  ConnectivityManager.NetworkCallback, so a Wi-Fi
+                               drop/return reconnects instantly instead of
+                               waiting out socket.io's blind backoff.
+         ACCESS_WIFI_STATE     required to create a WifiLock.
+         CHANGE_WIFI_MULTICAST_STATE
+                               MulticastLock. Without it the Wi-Fi chip filters
+                               the desk's UDP discovery beacon (port 45654,
+                               discovery_service.dart) once the phone idles, and
+                               rediscovery silently finds nothing.
+         WAKE_LOCK             held by the foreground service host.
+
+         The two FOREGROUND_SERVICE permissions pair with the `connectedDevice`
+         service type below. `connectedDevice` — not `dataSync` — because
+         Android 15 caps dataSync services at 6 hours, which is shorter than a
+         restaurant shift. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <!-- Aggressive OEM skins (Xiaomi / Oppo / Vivo / Samsung — the bulk of the
+         Indian install base) kill even a foreground service unless the app is
+         exempt. Requested once, right after pairing succeeds. -->
+    <uses-permission
+        android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:label="Command.Crew"
         android:name="${applicationName}"
@@ -31,6 +62,10 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <service
+            android:name=".NetworkKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
         <receiver
             android:name=".CrewTablesWidgetProvider"
             android:exported="false">

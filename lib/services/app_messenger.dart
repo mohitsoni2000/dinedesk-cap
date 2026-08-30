@@ -61,6 +61,54 @@ Future<bool> promptPinReverify() async {
   }
 }
 
+bool _batteryOptAlertShowing = false;
+
+/// Asked once per install, only on Android, and only when the OS says this app
+/// is still subject to battery optimization.
+///
+/// The foreground service is what keeps the desk connection alive with the
+/// screen off, but on the OEM skins that dominate this app's install base
+/// (Xiaomi, Oppo, Vivo, Samsung) the battery manager will freeze or kill even a
+/// foreground service unless the app is exempt. Without this the operator's
+/// symptom is the one this whole feature exists to remove: orders stop arriving
+/// while the phone is in a pocket.
+void showBatteryOptimizationDialog({required VoidCallback onOpenSettings}) {
+  final context = rootNavigatorKey.currentContext;
+  if (context == null || _batteryOptAlertShowing) return;
+  _batteryOptAlertShowing = true;
+
+  showDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: dialogContext.palette.surface,
+      icon: const Icon(Icons.battery_saver_rounded,
+          color: AppColors.terra, size: 32),
+      title: const Text('Keep the desk connected', style: AppTypography.title),
+      content: const Text(
+        "Your phone's battery saver can disconnect this app from the billing "
+        'desk while the screen is off, so new orders and ready alerts stop '
+        'arriving.\n\nTo stop that, find Command.Crew in the list on the next '
+        'screen and set it to "Not optimised".',
+        style: AppTypography.bodyMd,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('Not now'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.of(dialogContext).pop();
+            onOpenSettings();
+          },
+          child: const Text('Open settings'),
+        ),
+      ],
+    ),
+  ).then((_) => _batteryOptAlertShowing = false);
+}
+
 bool _updateAlertShowing = false;
 
 void showUpdateAvailableDialog({required VoidCallback onUpdateNow}) {

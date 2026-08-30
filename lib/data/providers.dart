@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/feature_flags.dart';
 import '../models/server_models.dart';
 import '../services/connection_bootstrap.dart';
+import '../services/connection_supervisor.dart';
 import '../services/customer_link_service.dart';
 import '../services/socket_service.dart';
 import '../services/sync_service.dart';
@@ -885,6 +886,12 @@ final customerLinkServiceProvider = Provider<CustomerLinkService>(
 final connectionBootstrapProvider =
     StateNotifierProvider<ConnectionBootstrap, BootstrapOutcome>(
         (ref) => ConnectionBootstrap(ref));
+
+final connectionSupervisorProvider = Provider<ConnectionSupervisor>((ref) {
+  final supervisor = ConnectionSupervisor(ref);
+  ref.onDispose(supervisor.dispose);
+  return supervisor;
+});
 
 final tablePresencesProvider = StateProvider<Map<String, String>>((_) => {});
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -47,7 +48,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
     if (!pinOk || !mounted) return;
 
     setState(() => _submitting = true);
-    HapticFeedback.heavyImpact();
+    unawaited(HapticFeedback.heavyImpact());
 
     final response = await ref.read(socketServiceProvider).emitAck(
       'table:link',
@@ -76,7 +77,7 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
     if (!pinOk || !mounted) return;
 
     setState(() => _submitting = true);
-    HapticFeedback.heavyImpact();
+    unawaited(HapticFeedback.heavyImpact());
 
     final response = await ref.read(socketServiceProvider).emitAck(
       'table:unlink',
@@ -152,14 +153,14 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
                     ),
                   ),
                   if (isLinked)
-                    LiquidPill(
+                    const LiquidPill(
                       tint: AppColors.info,
-                      child: const Text('Linked'),
+                      child: Text('Linked'),
                     )
                   else if (_pickedServerId != null)
-                    LiquidPill(
+                    const LiquidPill(
                       tint: AppColors.success,
-                      child: const Text('Selected'),
+                      child: Text('Selected'),
                     ),
                 ],
               ),

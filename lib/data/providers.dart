@@ -599,6 +599,8 @@ final offersProvider = StateProvider<List<Offer>>((_) => []);
 final menuProvider = StateProvider<List<MenuItem>>((_) => []);
 final menuLoadingProvider = StateProvider<bool>((_) => false);
 
+final startupPermissionsCompleteProvider = StateProvider<bool>((_) => false);
+
 final fastAddPinnedProvider = StateProvider<List<MenuItem>>((_) => []);
 final fastAddAutoProvider = StateProvider<List<MenuItem>>((_) => []);
 

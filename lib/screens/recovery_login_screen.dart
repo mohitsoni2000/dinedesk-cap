@@ -117,7 +117,7 @@ class _RecoveryLoginScreenState extends ConsumerState<RecoveryLoginScreen>
           _error = message;
           _pin.clear();
         });
-        _shakeCtrl.forward(from: 0);
+        unawaited(_shakeCtrl.forward(from: 0));
     }
   }
 

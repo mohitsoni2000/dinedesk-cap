@@ -595,7 +595,7 @@ class SyncService {
     final tablesList = data['tables'];
     if (tablesList is List) {
       if (tablesList.isNotEmpty && tablesList.first is Map) {
-        final sample = Map<String, dynamic>.from(tablesList.first);
+        final sample = Map<String, dynamic>.from(tablesList.first as Map);
         logD(_tag, '  Table[0] keys: ${sample.keys.toList()}');
         logD(
             _tag,
@@ -1066,7 +1066,7 @@ class SyncService {
       final decoded = jsonDecode(raw);
       if (decoded is List) {
         return decoded
-            .whereType<Map>()
+            .whereType<Map<dynamic, dynamic>>()
             .map((m) => (m['option_name'] ?? '').toString().trim())
             .where((s) => s.isNotEmpty)
             .toList();

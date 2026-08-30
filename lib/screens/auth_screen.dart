@@ -120,7 +120,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     ref.read(isAuthenticatedProvider.notifier).state = true;
     if (!mounted) return;
     setState(() => _verified = true);
-    await Future.delayed(const Duration(milliseconds: 400));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     if (mounted) context.go('/tables');
   }
 
@@ -138,7 +138,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
         _error = response['message']?.toString() ?? 'Invalid PIN';
         _pin.clear();
       });
-      _shakeCtrl.forward(from: 0);
+      unawaited(_shakeCtrl.forward(from: 0));
       return;
     }
 
@@ -324,28 +324,25 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                         ),
                       ),
                       const SizedBox(height: 24),
-                      Hero(
-                        tag: HeroTags.appLogo,
-                        child: RubberBand(
-                            maxDrag: 42,
-                            child: Container(
-                              width: 64,
-                              height: 64,
-                              decoration: const BoxDecoration(
-                                color: AppColors.logoBg,
-                                borderRadius: BorderRadius.all(AppRadii.md),
-                                boxShadow: AppShadows.terraGlow,
+                      RubberBand(
+                          maxDrag: 42,
+                          child: Container(
+                            width: 64,
+                            height: 64,
+                            decoration: const BoxDecoration(
+                              color: AppColors.logoBg,
+                              borderRadius: BorderRadius.all(AppRadii.md),
+                              boxShadow: AppShadows.terraGlow,
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Padding(
+                              padding: const EdgeInsets.all(7),
+                              child: Image.asset(
+                                'assets/images/appicon_cream.png',
+                                fit: BoxFit.contain,
                               ),
-                              clipBehavior: Clip.antiAlias,
-                              child: Padding(
-                                padding: const EdgeInsets.all(7),
-                                child: Image.asset(
-                                  'assets/images/appicon_cream.png',
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                            )),
-                      ),
+                            ),
+                          )),
                       const SizedBox(height: 18),
                       Text(
                         'Welcome back',

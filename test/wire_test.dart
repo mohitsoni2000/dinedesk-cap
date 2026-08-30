@@ -127,7 +127,7 @@ void main() {
 
   group('AUDIT — BroadcastEnvelope', () {
     test('an empty order_id reads as null, not as an empty string', () {
-      final envelope = BroadcastEnvelope(<String, dynamic>{'order_id': ''});
+      const envelope = BroadcastEnvelope(<String, dynamic>{'order_id': ''});
       expect(envelope.orderId, isNull);
     });
   });

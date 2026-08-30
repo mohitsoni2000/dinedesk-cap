@@ -71,14 +71,16 @@ class _RestroAppState extends ConsumerState<RestroApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkForUpdate();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      unawaited(_checkForUpdate());
 
-      unawaited(Future.wait([
-        ref.read(feedbackServiceProvider).init(),
-        ref.read(readyAlertsProvider).init(),
-        ref.read(widgetSyncProvider).init(),
-      ]));
+      await ref.read(feedbackServiceProvider).init();
+      await ref.read(readyAlertsProvider).init();
+      await ref.read(widgetSyncProvider).init();
+
+      if (mounted) {
+        ref.read(startupPermissionsCompleteProvider.notifier).state = true;
+      }
     });
   }
 

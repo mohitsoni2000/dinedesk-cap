@@ -206,7 +206,7 @@ class _ContactRow extends StatelessWidget {
         children: [
           Icon(icon, color: context.palette.ink70, size: 18),
           const SizedBox(width: 10),
-          Text(label, style: AppTypography.bodyMd),
+          Flexible(child: Text(label, style: AppTypography.bodyMd)),
         ],
       ),
     );

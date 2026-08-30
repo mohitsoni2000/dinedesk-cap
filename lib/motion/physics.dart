@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -258,12 +259,12 @@ class _GravityDropState extends State<GravityDrop>
         await Future<void>.delayed(widget.delay);
         if (!mounted) return;
       }
-      _c.animateWith(SpringSimulation(
+      unawaited(_c.animateWith(SpringSimulation(
         const SpringDescription(mass: 1, stiffness: 620, damping: 13.5),
         -1,
         0,
         -2.5,
-      ));
+      )));
     });
   }
 

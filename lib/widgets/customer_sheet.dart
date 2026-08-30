@@ -420,7 +420,8 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
         final name = c['name']?.toString() ?? 'Unknown';
         final phone = c['phone']?.toString() ?? '';
         final visits = c['visit_count'] ?? c['visits'] ?? 0;
-        final credit = (c['credit_balance'] ?? c['credit'] ?? 0).toDouble();
+        final creditRaw = c['credit_balance'] ?? c['credit'] ?? 0;
+        final double credit = (creditRaw is num) ? creditRaw.toDouble() : 0.0;
 
         return AppCard(
           onTap: () => _selectCustomer(c),

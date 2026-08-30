@@ -113,7 +113,7 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
   }
 
   void _showSuccessAndExit() {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isDismissible: false,
       enableDrag: false,

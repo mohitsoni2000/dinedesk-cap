@@ -47,8 +47,8 @@ class _CustomerCountSheetState extends State<_CustomerCountSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: const SheetHandle(),
+            const Center(
+              child: SheetHandle(),
             ),
             const SizedBox(height: 16),
             Row(

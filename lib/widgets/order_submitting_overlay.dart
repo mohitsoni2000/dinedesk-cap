@@ -25,10 +25,10 @@ class OrderSubmittingOverlay {
           FadeTransition(opacity: anim, child: child),
     );
 
-    completer.future.then((ok) {
+    unawaited(completer.future.then((ok) {
       timer.cancel();
       if (nav.canPop()) nav.pop(ok);
-    });
+    }));
 
     return await dialogFuture ?? false;
   }

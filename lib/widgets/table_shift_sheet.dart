@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,7 +41,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
     if (!pinOk || !mounted) return;
 
     setState(() => _submitting = true);
-    HapticFeedback.heavyImpact();
+    unawaited(HapticFeedback.heavyImpact());
 
     final response = await ref.read(socketServiceProvider).emitAck(
       'table:shift',
@@ -103,9 +104,9 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                     ),
                   ),
                   if (_pickedServerId != null)
-                    LiquidPill(
+                    const LiquidPill(
                       tint: AppColors.success,
-                      child: const Text('Selected'),
+                      child: Text('Selected'),
                     ),
                 ],
               ),
@@ -162,7 +163,7 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
                                         .withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
-                                  child: Icon(Icons.table_restaurant_outlined,
+                                  child: const Icon(Icons.table_restaurant_outlined,
                                       size: 18, color: AppColors.success),
                                 ),
                                 const SizedBox(width: 12),

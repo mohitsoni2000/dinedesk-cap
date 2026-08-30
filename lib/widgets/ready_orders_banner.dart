@@ -83,7 +83,7 @@ class _ReadyCardState extends State<_ReadyCard>
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: context.palette.alertDeep,
-        borderRadius: BorderRadius.all(AppRadii.md),
+        borderRadius: const BorderRadius.all(AppRadii.md),
       ),
       child: Row(
         children: [

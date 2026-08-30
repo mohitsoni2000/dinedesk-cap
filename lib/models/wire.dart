@@ -68,8 +68,9 @@ int? optionalInt(Map<String, dynamic> map, String field) {
 
 int requireInt(Map<String, dynamic> map, String field, String entity) {
   final value = optionalInt(map, field);
-  if (value == null)
+  if (value == null) {
     _fail(entity, field, 'missing or not an integer', map[field]);
+  }
   return value;
 }
 
@@ -106,15 +107,17 @@ bool boolOr(Map<String, dynamic> map, String field, bool fallback) =>
 
 bool requireBool(Map<String, dynamic> map, String field, String entity) {
   final value = optionalBool(map, field);
-  if (value == null)
+  if (value == null) {
     _fail(entity, field, 'missing or not a boolean', map[field]);
+  }
   return value;
 }
 
 Money requireMoney(Map<String, dynamic> map, String field, String entity) {
   final value = Money.fromWire(map[field]);
-  if (value == null)
+  if (value == null) {
     _fail(entity, field, 'missing or not an amount', map[field]);
+  }
   return value;
 }
 

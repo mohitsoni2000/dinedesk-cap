@@ -313,7 +313,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
         child: ListView(
           controller: scrollCtrl,
           children: [
-            Center(child: const SheetHandle()),
+            const Center(child: SheetHandle()),
             const SizedBox(height: 16),
             Row(
               children: [

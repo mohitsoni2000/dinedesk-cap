@@ -153,9 +153,9 @@ class _ManualEntrySheetBodyState extends ConsumerState<_ManualEntrySheetBody> {
                 onTap: _checking ? null : _connect,
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: AppColors.terra,
-                    borderRadius: const BorderRadius.all(AppRadii.md),
+                    borderRadius: BorderRadius.all(AppRadii.md),
                     boxShadow: AppShadows.terraGlow,
                   ),
                   alignment: Alignment.center,
@@ -212,25 +212,17 @@ class _ManualField extends StatelessWidget {
             style: AppTypography.micro
                 .copyWith(color: Colors.white.withValues(alpha: 0.45))),
         const SizedBox(height: 6),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
-            borderRadius: const BorderRadius.all(AppRadii.sm),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: TextField(
-            controller: controller,
-            keyboardType: keyboardType,
-            maxLength: maxLength,
-            textCapitalization: textCapitalization,
-            style: const TextStyle(color: Colors.white, fontSize: 15),
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              counterText: '',
-              hintText: hint,
-              hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-            ),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          maxLength: maxLength,
+          textCapitalization: textCapitalization,
+          style: const TextStyle(color: Colors.white, fontSize: 15),
+          decoration: InputDecoration(
+            border: InputBorder.none,
+            counterText: '',
+            hintText: hint,
+            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
           ),
         ),
       ],

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../data/money.dart';
 import 'package:flutter/services.dart';
@@ -83,7 +84,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
     if (!_canApply) return;
     _submitting = true;
     setState(() {});
-    HapticFeedback.heavyImpact();
+    unawaited(HapticFeedback.heavyImpact());
 
     final socketService = ref.read(socketServiceProvider);
     final Map<String, dynamic> payload;
@@ -154,8 +155,8 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
         child: ListView(
           controller: scrollCtrl,
           children: [
-            Center(
-              child: const SheetHandle(),
+            const Center(
+              child: SheetHandle(),
             ),
             const SizedBox(height: 16),
             Row(

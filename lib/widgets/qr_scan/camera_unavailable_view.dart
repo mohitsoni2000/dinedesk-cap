@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../motion/motion.dart';
 import '../../services/app_settings.dart';
 import '../../theme/tokens.dart';
-import '../discover_pairing_sheet.dart';
-import '../manual_entry_sheet.dart';
 
 class CameraUnavailableView extends ConsumerWidget {
   final VoidCallback? onOpenSettings;
@@ -60,7 +58,7 @@ class CameraUnavailableView extends ConsumerWidget {
 
               // Subtitle
               Text(
-                'Camera permission is required to scan the desktop pairing QR code. Enable it in device settings or enter the code manually.',
+                'Camera permission is required to scan the desktop pairing QR code. Please enable it in device settings.',
                 textAlign: TextAlign.center,
                 style: AppTypography.caption.copyWith(
                   color: Colors.white.withValues(alpha: 0.65),
@@ -107,81 +105,6 @@ class CameraUnavailableView extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-
-              // Alternative Actions (Manual Code / Discover)
-              Row(
-                children: [
-                  Expanded(
-                    child: Pressable(
-                      onTap: () => ManualEntrySheet.show(context),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.10),
-                          borderRadius: const BorderRadius.all(AppRadii.md),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.15),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.keyboard_outlined,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Enter code',
-                              style: AppTypography.caption.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Pressable(
-                      onTap: () => DiscoverPairingSheet.show(context),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.10),
-                          borderRadius: const BorderRadius.all(AppRadii.md),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.15),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.wifi_find_rounded,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Discover',
-                              style: AppTypography.caption.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
             ],
           ),
         ),

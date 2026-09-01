@@ -88,99 +88,138 @@ class _ManualEntrySheetBodyState extends ConsumerState<_ManualEntrySheetBody> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: context.sheetBottomInset,
-      ),
-      child: AppSurface(
-        tint: AppColors.night,
-        border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
-        shadow: AppShadows.elevatedFor(context),
-        borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Center(child: SheetHandle()),
-            const SizedBox(height: 16),
-            const Text(
-              'Enter code instead',
-              style: TextStyle(
-                fontFamily: AppTypography.cormorant,
-                fontWeight: FontWeight.w600,
-                fontSize: 26,
-                height: 1.1,
-                color: Colors.white,
-                letterSpacing: -0.3,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Ask the admin desktop for the host, port and pairing code',
-              style: AppTypography.caption
-                  .copyWith(color: Colors.white.withValues(alpha: 0.55)),
-            ),
-            const SizedBox(height: 20),
-            _ManualField(
-                controller: _hostCtrl, label: 'HOST', hint: '192.168.1.24'),
-            const SizedBox(height: 12),
-            _ManualField(
-              controller: _portCtrl,
-              label: 'PORT',
-              hint: '8080',
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 12),
-            _ManualField(
-              controller: _codeCtrl,
-              label: '6-CHARACTER CODE',
-              hint: 'A1B2C3',
-              maxLength: 6,
-              textCapitalization: TextCapitalization.characters,
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: AppTypography.caption.copyWith(color: AppColors.danger),
-              ),
-            ],
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: Pressable(
-                onTap: _checking ? null : _connect,
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SafeArea(
+        top: false,
+        child: AppSurface(
+          tint: AppColors.night,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+          shadow: AppShadows.elevatedFor(context),
+          borderRadius: const BorderRadius.vertical(top: AppRadii.xl),
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Drag & Tap Dismiss Handle Bar
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).pop(),
+                onVerticalDragEnd: (details) {
+                  if (details.primaryVelocity != null &&
+                      details.primaryVelocity! > 100) {
+                    Navigator.of(context).pop();
+                  }
+                },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: const BoxDecoration(
-                    color: AppColors.terra,
-                    borderRadius: BorderRadius.all(AppRadii.md),
-                    boxShadow: AppShadows.terraGlow,
-                  ),
-                  alignment: Alignment.center,
-                  child: _checking
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Connect',
-                          style: TextStyle(
-                            fontFamily: AppTypography.inter,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                            color: Colors.white,
-                          ),
-                        ),
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: const Center(child: SheetHandle()),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 10),
+
+              Flexible(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Enter code instead',
+                        style: TextStyle(
+                          fontFamily: AppTypography.cormorant,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 26,
+                          height: 1.1,
+                          color: Colors.white,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Ask the admin desktop for the host, port and pairing code',
+                        style: AppTypography.caption.copyWith(
+                          color: Colors.white.withValues(alpha: 0.55),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _ManualField(
+                        controller: _hostCtrl,
+                        label: 'HOST',
+                        hint: '192.168.1.24',
+                      ),
+                      const SizedBox(height: 12),
+                      _ManualField(
+                        controller: _portCtrl,
+                        label: 'PORT',
+                        hint: '8080',
+                        keyboardType: TextInputType.number,
+                      ),
+                      const SizedBox(height: 12),
+                      _ManualField(
+                        controller: _codeCtrl,
+                        label: '6-CHARACTER CODE',
+                        hint: 'A1B2C3',
+                        maxLength: 6,
+                        textCapitalization: TextCapitalization.characters,
+                      ),
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _error!,
+                          style: AppTypography.caption.copyWith(
+                            color: AppColors.danger,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: Pressable(
+                          onTap: _checking ? null : _connect,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            decoration: const BoxDecoration(
+                              color: AppColors.terra,
+                              borderRadius: BorderRadius.all(AppRadii.md),
+                              boxShadow: AppShadows.terraGlow,
+                            ),
+                            alignment: Alignment.center,
+                            child: _checking
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Connect',
+                                    style: TextStyle(
+                                      fontFamily: AppTypography.inter,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -194,6 +233,7 @@ class _ManualField extends StatelessWidget {
   final TextInputType? keyboardType;
   final int? maxLength;
   final TextCapitalization textCapitalization;
+
   const _ManualField({
     required this.controller,
     required this.label,
@@ -208,12 +248,14 @@ class _ManualField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: AppTypography.micro
-                .copyWith(color: Colors.white.withValues(alpha: 0.45))),
+        Text(
+          label,
+          style: AppTypography.micro.copyWith(
+            color: Colors.white.withValues(alpha: 0.45),
+          ),
+        ),
         const SizedBox(height: 6),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.06),
             borderRadius: const BorderRadius.all(AppRadii.sm),

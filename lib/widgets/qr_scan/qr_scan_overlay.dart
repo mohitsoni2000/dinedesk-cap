@@ -170,11 +170,11 @@ class _QrScanTargetOverlayState extends State<QrScanTargetOverlay>
                 ),
               ),
 
-              // Status Message Pill
+              // Status Message Pill comfortably below the cutout frame
               Positioned(
                 left: 20,
                 right: 20,
-                top: frameTop + size + math.max(26.0, c.maxHeight * 0.035),
+                top: frameTop + size + 42,
                 child: Center(
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 220),
@@ -201,7 +201,7 @@ class _QrScanTargetOverlayState extends State<QrScanTargetOverlay>
                             ScanStage.idle => const ScanStatusPill(
                                 key: ValueKey('idle'),
                                 icon: Icons.qr_code_scanner_rounded,
-                                label: 'Align QR code',
+                                label: 'Scan QR Code',
                                 tint: Colors.black45,
                               ),
                           },

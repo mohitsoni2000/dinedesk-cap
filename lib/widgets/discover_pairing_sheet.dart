@@ -487,7 +487,6 @@ class _SheetField extends StatelessWidget {
                 .copyWith(color: Colors.white.withValues(alpha: 0.45))),
         const SizedBox(height: 6),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.06),
             borderRadius: const BorderRadius.all(AppRadii.sm),

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'data/providers.dart';
 import 'screens/splash_screen.dart';
 import 'screens/qr_scan_screen.dart';
+import 'screens/qr_camera_scan_screen.dart';
 import 'screens/connecting_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/tables_screen.dart';
@@ -77,7 +78,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
           path: '/scan',
           pageBuilder: (_, s) =>
-              liquidPage(key: s.pageKey, child: const QrScanScreen())),
+              liquidPage(key: s.pageKey, child: const QrScanScreen()),
+          routes: [
+            GoRoute(
+              path: 'camera',
+              pageBuilder: (_, s) =>
+                  liquidPage(key: s.pageKey, child: const QrCameraScanScreen()),
+            ),
+          ]),
       GoRoute(
           path: '/connecting',
           pageBuilder: (_, s) =>

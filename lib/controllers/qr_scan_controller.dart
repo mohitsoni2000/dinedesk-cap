@@ -149,7 +149,6 @@ class QrScanNotifier extends StateNotifier<QrScanState> {
     const pairing =
         PairingInfo(host: 'localhost', port: 8080, token: 'demo-token');
     SessionService().savePairing(pairing).then((_) {
-      if (!mounted) return;
       _ref
           .read(connectionBootstrapProvider.notifier)
           .connectWithFreshPairing(pairing);
@@ -180,6 +179,27 @@ class QrScanNotifier extends StateNotifier<QrScanState> {
     _errorTimer?.cancel();
     super.dispose();
   }
+}
+
+Future<void> triggerDemoSetup(
+  WidgetRef ref, {
+  required void Function() onSuccessNavigate,
+}) async {
+  ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
+  ref.read(restaurantProvider.notifier).state = const RestaurantInfo(
+    name: 'Command.Crew Demo Kitchen',
+    address: 'MG Road, Bengaluru',
+    adminDeviceLabel: 'Demo Admin Desktop',
+    adminIp: '',
+  );
+
+  const pairing =
+      PairingInfo(host: 'localhost', port: 8080, token: 'demo-token');
+  await SessionService().savePairing(pairing);
+  ref
+      .read(connectionBootstrapProvider.notifier)
+      .connectWithFreshPairing(pairing);
+  onSuccessNavigate();
 }
 
 final qrScanProvider =

@@ -4,6 +4,8 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -56,5 +58,97 @@ class MainActivity : FlutterFragmentActivity() {
                     result.notImplemented()
                 }
             }
+
+        // Network resilience controls. See NetworkKeepAliveService.kt for what
+        // the service actually holds and why; this channel is only the switch.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "crew/network")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "startKeepAlive" -> {
+                        val intent = Intent(this, NetworkKeepAliveService::class.java)
+                            .setAction(NetworkKeepAliveService.ACTION_START)
+                            .putExtra(
+                                NetworkKeepAliveService.EXTRA_RESTAURANT,
+                                call.argument<String>("restaurant")
+                            )
+                        result.success(startKeepAliveService(intent))
+                    }
+
+                    "stopKeepAlive" -> {
+                        result.success(
+                            sendServiceAction(NetworkKeepAliveService.ACTION_STOP)
+                        )
+                    }
+
+                    // Layers the (screen-on, foreground-only) low-latency Wi-Fi
+                    // lock on top of the always-held high-perf one.
+                    "setAppForeground" -> {
+                        val foreground = call.arguments as? Boolean ?: false
+                        result.success(
+                            sendServiceAction(
+                                if (foreground) {
+                                    NetworkKeepAliveService.ACTION_APP_FOREGROUNDED
+                                } else {
+                                    NetworkKeepAliveService.ACTION_APP_BACKGROUNDED
+                                }
+                            )
+                        )
+                    }
+
+                    "isIgnoringBatteryOptimizations" ->
+                        result.success(isIgnoringBatteryOptimizations())
+
+                    // Opens the system dialog. Deliberately NOT the direct
+                    // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS intent with a
+                    // package extra — Play policy restricts that to apps whose
+                    // core function genuinely requires it, and a rejected
+                    // listing is a worse outcome than one extra tap. This lands
+                    // the operator on the battery-optimization list where they
+                    // pick the app themselves.
+                    "requestIgnoreBatteryOptimizations" ->
+                        result.success(openBatteryOptimizationSettings())
+
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    private fun startKeepAliveService(intent: Intent): Boolean = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+        true
+    } catch (err: Exception) {
+        // Android 12+ throws if the app is judged to be in the background at
+        // this moment. Report the failure so Dart can fall back to the plain
+        // reconnect-on-resume path instead of assuming a live service.
+        false
+    }
+
+    private fun sendServiceAction(action: String): Boolean = try {
+        startService(
+            Intent(this, NetworkKeepAliveService::class.java).setAction(action)
+        )
+        true
+    } catch (err: Exception) {
+        false
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val power = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
+        return power.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun openBatteryOptimizationSettings(): Boolean = try {
+        startActivity(
+            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        true
+    } catch (err: Exception) {
+        false
     }
 }

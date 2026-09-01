@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -67,16 +68,16 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                       Text('Merge into ${widget.origin.id}',
                           style: AppTypography.sheetTitle),
                       const SizedBox(height: 2),
-                      Text(
+                      const Text(
                         'Pick a table to absorb into this one',
                         style: AppTypography.caption,
                       ),
                     ],
                   )),
                   if (_pickedServerId != null)
-                    LiquidPill(
+                    const LiquidPill(
                       tint: AppColors.amber,
-                      child: const Text('1 selected'),
+                      child: Text('1 selected'),
                     ),
                 ],
               ),
@@ -196,7 +197,7 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                                 context, ref, 'table_merge');
                             if (!pinOk || !mounted) return;
                             setState(() => _submitting = true);
-                            HapticFeedback.heavyImpact();
+                            unawaited(HapticFeedback.heavyImpact());
                             final response = await ref
                                 .read(socketServiceProvider)
                                 .emitAck('table:merge', {
@@ -205,6 +206,7 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                             });
                             if (!mounted) return;
                             setState(() => _submitting = false);
+                            if (!context.mounted) return;
                             if (response['kind'] == 'error') {
                               DynamicToast.show(context,
                                   message: response['message']?.toString() ??

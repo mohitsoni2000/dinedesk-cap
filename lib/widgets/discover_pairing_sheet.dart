@@ -290,7 +290,9 @@ class _NoneFoundBody extends StatelessWidget {
       children: [
         const Text('No Desk found on this Wi-Fi',
             style: TextStyle(
-                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600)),
         const SizedBox(height: 4),
         Text('Make sure this phone is on the same Wi-Fi as the Desk.',
             style: AppTypography.caption
@@ -338,7 +340,9 @@ class _PickerBody extends StatelessWidget {
       children: [
         const Text('More than one Desk found',
             style: TextStyle(
-                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600)),
         const SizedBox(height: 4),
         Text(
             'Pick the right one — this only matters on shared Wi-Fi (e.g. a food court).',
@@ -377,7 +381,9 @@ class _ManualEntryBody extends StatelessWidget {
       children: [
         const Text('Enter the Desk\'s address',
             style: TextStyle(
-                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         _SheetField(controller: hostCtrl, label: 'HOST', hint: '192.168.1.24'),
         const SizedBox(height: 12),
@@ -425,7 +431,9 @@ class _PinFormBody extends StatelessWidget {
         const SizedBox(height: 8),
         const Text('Employee ID + PIN',
             style: TextStyle(
-                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         _SheetField(
             controller: employeeIdCtrl, label: 'EMPLOYEE ID', hint: 'EMP001'),
@@ -484,7 +492,6 @@ class _SheetField extends StatelessWidget {
             borderRadius: const BorderRadius.all(AppRadii.sm),
             border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
           child: TextField(
             controller: controller,
             keyboardType: keyboardType,
@@ -522,7 +529,8 @@ class _SheetButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 13),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: emphasis ? AppColors.terra : Colors.white.withValues(alpha: 0.12),
+          color:
+              emphasis ? AppColors.terra : Colors.white.withValues(alpha: 0.12),
           borderRadius: const BorderRadius.all(AppRadii.md),
           boxShadow: emphasis ? AppShadows.terraGlow : null,
         ),
@@ -530,7 +538,8 @@ class _SheetButton extends StatelessWidget {
             ? const SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
               )
             : Text(
                 label,

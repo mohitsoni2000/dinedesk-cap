@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,7 +86,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final pinOk = await requirePinIfNeeded(context, ref, 'kot_reprint');
     if (!pinOk || !context.mounted) return;
 
-    HapticFeedback.mediumImpact();
+    unawaited(HapticFeedback.mediumImpact());
     final socketService = ref.read(socketServiceProvider);
 
     final order = ref
@@ -174,7 +175,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     );
     if (ok != true) return;
 
-    HapticFeedback.heavyImpact();
+    unawaited(HapticFeedback.heavyImpact());
 
     final socketService = ref.read(socketServiceProvider);
     socketService.emit('order:cancel', {
@@ -212,7 +213,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     if (!pinOk || !mounted) return;
     _generatingBill = true;
     setState(() {});
-    HapticFeedback.heavyImpact();
+    unawaited(HapticFeedback.heavyImpact());
 
     final socketService = ref.read(socketServiceProvider);
     socketService.emit(
@@ -245,7 +246,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         }
         final bill =
             (billsRaw is List && billsRaw.isNotEmpty && billsRaw[0] is Map)
-                ? Map<String, dynamic>.from(billsRaw[0])
+                ? Map<String, dynamic>.from(billsRaw[0] as Map)
                 : null;
 
         final grandTotal = parsedBills.map((b) => b.totalAmount).sumMoney();
@@ -350,7 +351,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         _billGenerated = false;
         _bills = [];
         _billId = null;
-        _generateBill(order);
+        unawaited(_generateBill(order));
       }
       DynamicToast.show(context,
           message:
@@ -373,7 +374,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         _billGenerated = false;
         _bills = [];
         _billId = null;
-        _generateBill(order);
+        unawaited(_generateBill(order));
       }
       DynamicToast.show(context,
           message:
@@ -393,7 +394,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         _billGenerated = false;
         _bills = [];
         _billId = null;
-        _generateBill(order);
+        unawaited(_generateBill(order));
       }
       DynamicToast.show(context,
           message:

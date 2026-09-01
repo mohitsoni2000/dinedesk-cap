@@ -88,7 +88,7 @@ class ProfileScreen extends ConsumerWidget {
                                     decoration: BoxDecoration(
                                       color: context.palette.terraSoft,
                                       borderRadius:
-                                          BorderRadius.all(AppRadii.pill),
+                                          const BorderRadius.all(AppRadii.pill),
                                     ),
                                     child: Text(
                                       '${opShift.toUpperCase()} SHIFT',

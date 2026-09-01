@@ -142,8 +142,12 @@ class SyncService {
           label: 'Connected · ${restaurant?.name ?? "Restaurant"}',
         );
 
+        // A recovered session already had its missed broadcasts replayed by
+        // socket.io, so the providers are current — resyncing would re-download
+        // the full initial-sync payload for nothing.
         if (state == SocketState.connected &&
-            _ref.read(isAuthenticatedProvider)) {
+            _ref.read(isAuthenticatedProvider) &&
+            !_socket.wasRecovered) {
           unawaited(_requestResync());
         }
       } else if (state == SocketState.disconnected) {
@@ -595,7 +599,7 @@ class SyncService {
     final tablesList = data['tables'];
     if (tablesList is List) {
       if (tablesList.isNotEmpty && tablesList.first is Map) {
-        final sample = Map<String, dynamic>.from(tablesList.first);
+        final sample = Map<String, dynamic>.from(tablesList.first as Map);
         logD(_tag, '  Table[0] keys: ${sample.keys.toList()}');
         logD(
             _tag,
@@ -1066,7 +1070,7 @@ class SyncService {
       final decoded = jsonDecode(raw);
       if (decoded is List) {
         return decoded
-            .whereType<Map>()
+            .whereType<Map<dynamic, dynamic>>()
             .map((m) => (m['option_name'] ?? '').toString().trim())
             .where((s) => s.isNotEmpty)
             .toList();

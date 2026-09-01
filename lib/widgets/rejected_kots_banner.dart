@@ -66,9 +66,9 @@ class _RejectedBar extends StatelessWidget {
           minHeight: AppTouchTargets.minimum,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: AppColors.danger,
-          borderRadius: const BorderRadius.all(AppRadii.md),
+          borderRadius: BorderRadius.all(AppRadii.md),
         ),
         child: Row(
           children: [

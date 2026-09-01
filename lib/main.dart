@@ -27,6 +27,10 @@ void main() {
 
   final container = ProviderContainer();
 
+  // Before bootstrap: the supervisor installs the adaptive timeout policy and
+  // the RTT hook on SocketService, and the very first connect() should already
+  // be using them.
+  container.read(connectionSupervisorProvider).start();
   container.read(connectionBootstrapProvider.notifier).start();
 
   runApp(UncontrolledProviderScope(
@@ -71,14 +75,20 @@ class _RestroAppState extends ConsumerState<RestroApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkForUpdate();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      unawaited(_checkForUpdate());
 
-      unawaited(Future.wait([
-        ref.read(feedbackServiceProvider).init(),
-        ref.read(readyAlertsProvider).init(),
-        ref.read(widgetSyncProvider).init(),
-      ]));
+      try {
+        await ref.read(feedbackServiceProvider).init();
+        await ref.read(readyAlertsProvider).init();
+        await ref.read(widgetSyncProvider).init();
+      } catch (err, st) {
+        debugPrint('Startup init error: $err\n$st');
+      } finally {
+        if (mounted) {
+          ref.read(startupPermissionsCompleteProvider.notifier).state = true;
+        }
+      }
     });
   }
 
@@ -90,6 +100,9 @@ class _RestroAppState extends ConsumerState<RestroApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    ref
+        .read(connectionSupervisorProvider)
+        .setAppForeground(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.resumed) {
       unawaited(_verifyConnectionOnResume());
       _checkForUpdate();

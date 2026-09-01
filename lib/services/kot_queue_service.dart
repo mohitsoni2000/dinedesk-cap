@@ -155,7 +155,7 @@ class KotQueueService {
 
     if (socket.state != SocketState.verified) {
       await _enqueue(stamped);
-      return KotSendResult(
+      return const KotSendResult(
         KotSendOutcome.queued,
         <String, dynamic>{'kind': 'queued'},
       );
@@ -164,7 +164,7 @@ class KotQueueService {
     final drained = await flush(socket);
     if (!drained) {
       await _enqueue(stamped);
-      return KotSendResult(
+      return const KotSendResult(
         KotSendOutcome.queued,
         <String, dynamic>{'kind': 'queued'},
       );
@@ -180,7 +180,7 @@ class KotQueueService {
 
     if (isTransportFailure(ack)) {
       await _enqueue(stamped);
-      return KotSendResult(
+      return const KotSendResult(
         KotSendOutcome.queued,
         <String, dynamic>{'kind': 'queued'},
       );

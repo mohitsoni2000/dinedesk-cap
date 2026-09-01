@@ -53,7 +53,7 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
         'order:create',
         {
           'room_id': r.serverId,
-          'items': const [],
+          'items': const <Map<String, dynamic>>[],
           'order_type': 'room',
         },
       );

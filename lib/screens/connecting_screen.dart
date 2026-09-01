@@ -81,41 +81,38 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Hero(
-                      tag: HeroTags.pairingCore,
-                      child: SizedBox(
-                        width: 96,
-                        height: 96,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            if (!failed) _PulseRing(),
-                            RotationTransition(
-                              turns: failed
-                                  ? const AlwaysStoppedAnimation(0)
-                                  : _spin,
-                              child: Container(
-                                width: 64,
-                                height: 64,
-                                decoration: BoxDecoration(
-                                  color: failed
-                                      ? AppColors.terraDeep
-                                      : AppColors.terra500,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  pairingRejected
-                                      ? Icons.link_off_rounded
-                                      : failed
-                                          ? Icons.wifi_off_rounded
-                                          : Icons.wifi_tethering,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
+                    SizedBox(
+                      width: 96,
+                      height: 96,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          if (!failed) _PulseRing(),
+                          RotationTransition(
+                            turns: failed
+                                ? const AlwaysStoppedAnimation(0)
+                                : _spin,
+                            child: Container(
+                              width: 64,
+                              height: 64,
+                              decoration: BoxDecoration(
+                                color: failed
+                                    ? AppColors.terraDeep
+                                    : AppColors.terra500,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                pairingRejected
+                                    ? Icons.link_off_rounded
+                                    : failed
+                                        ? Icons.wifi_off_rounded
+                                        : Icons.wifi_tethering,
+                                color: Colors.white,
+                                size: 28,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 24),

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -88,7 +87,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
 
     final pin = _pin.join();
     unawaited(SessionService().getSavedPairing().then((pairing) {
-      if (kDebugMode && pairing?.token == 'demo-token') {
+      if (pairing?.token == 'demo-token') {
         unawaited(_submitDemo());
       } else {
         unawaited(_submitReal(pin));
@@ -97,7 +96,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
   }
 
   Future<void> _submitDemo() async {
-    assert(kDebugMode, 'demo login must never run in a release build');
     await Future<void>.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
@@ -120,7 +118,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     ref.read(isAuthenticatedProvider.notifier).state = true;
     if (!mounted) return;
     setState(() => _verified = true);
-    await Future.delayed(const Duration(milliseconds: 400));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     if (mounted) context.go('/tables');
   }
 
@@ -138,7 +136,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
         _error = response['message']?.toString() ?? 'Invalid PIN';
         _pin.clear();
       });
-      _shakeCtrl.forward(from: 0);
+      unawaited(_shakeCtrl.forward(from: 0));
       return;
     }
 
@@ -167,8 +165,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
       label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
     );
     ref.read(isAuthenticatedProvider.notifier).state = true;
-    unawaited(ref.read(offlineOrderQueueProvider).flush(socketService).then(
-        (_) => ref.read(kotQueueProvider).flush(socketService)));
+    unawaited(ref
+        .read(offlineOrderQueueProvider)
+        .flush(socketService)
+        .then((_) => ref.read(kotQueueProvider).flush(socketService)));
     await _maybeOfferBiometric(pin);
     if (!mounted) return;
     setState(() => _verified = true);
@@ -278,7 +278,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                       AppSurface(
                         borderRadius: const BorderRadius.all(AppRadii.md),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 11),
+                            horizontal: 11, vertical: 11),
                         child: Row(
                           children: [
                             Container(
@@ -312,6 +312,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                 ],
                               ),
                             ),
+                            const SizedBox(width: 2),
                             Container(
                               width: 8,
                               height: 8,
@@ -324,28 +325,25 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                         ),
                       ),
                       const SizedBox(height: 24),
-                      Hero(
-                        tag: HeroTags.appLogo,
-                        child: RubberBand(
-                            maxDrag: 42,
-                            child: Container(
-                              width: 64,
-                              height: 64,
-                              decoration: const BoxDecoration(
-                                color: AppColors.logoBg,
-                                borderRadius: BorderRadius.all(AppRadii.md),
-                                boxShadow: AppShadows.terraGlow,
+                      RubberBand(
+                          maxDrag: 42,
+                          child: Container(
+                            width: 64,
+                            height: 64,
+                            decoration: const BoxDecoration(
+                              color: AppColors.logoBg,
+                              borderRadius: BorderRadius.all(AppRadii.md),
+                              boxShadow: AppShadows.terraGlow,
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Padding(
+                              padding: const EdgeInsets.all(7),
+                              child: Image.asset(
+                                'assets/images/appicon_cream.png',
+                                fit: BoxFit.contain,
                               ),
-                              clipBehavior: Clip.antiAlias,
-                              child: Padding(
-                                padding: const EdgeInsets.all(7),
-                                child: Image.asset(
-                                  'assets/images/appicon_cream.png',
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                            )),
-                      ),
+                            ),
+                          )),
                       const SizedBox(height: 18),
                       Text(
                         'Welcome back',

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -242,7 +243,7 @@ class SettingsScreen extends ConsumerWidget {
 
   void _showNotificationsSheet(
       BuildContext context, WidgetRef ref, _SettingsState settings) {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: context.palette.surface,
       shape: const RoundedRectangleBorder(
@@ -253,7 +254,7 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   void _showAppearanceSheet(BuildContext context) {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: context.palette.surface,
       shape: const RoundedRectangleBorder(
@@ -341,7 +342,7 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   void _showPerformanceSheet(BuildContext context) {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: context.palette.surface,
       shape: const RoundedRectangleBorder(
@@ -433,7 +434,7 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   void _showAboutSheet(BuildContext context, String restaurantName) {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: context.palette.surface,
       shape: const RoundedRectangleBorder(
@@ -465,19 +466,19 @@ class SettingsScreen extends ConsumerWidget {
               padding: EdgeInsets.zero,
               child: Column(
                 children: [
-                  _AboutRow(
+                  const _AboutRow(
                     icon: Icons.devices_outlined,
                     label: 'Platform',
                     value: 'Mobile Waiter App',
                   ),
                   Divider(height: 1, color: context.palette.ink10),
-                  _AboutRow(
+                  const _AboutRow(
                     icon: Icons.shield_outlined,
                     label: 'Security',
                     value: 'PIN-protected sessions',
                   ),
                   Divider(height: 1, color: context.palette.ink10),
-                  _AboutRow(
+                  const _AboutRow(
                     icon: Icons.sync_outlined,
                     label: 'Sync',
                     value: 'Real-time via Socket.IO',
@@ -755,7 +756,7 @@ class _BiometricRowState extends ConsumerState<_BiometricRow> {
           message:
               'Sign in with your PIN next time — you\'ll find the enable option right here');
     }
-    _load();
+    unawaited(_load());
   }
 
   @override

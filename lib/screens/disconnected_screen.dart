@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -39,7 +40,7 @@ class DisconnectedScreen extends ConsumerWidget {
     );
     if (confirmed != true || !context.mounted) return;
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
-    SessionService().clearPairing();
+    unawaited(SessionService().clearPairing());
     ref.read(isAuthenticatedProvider.notifier).state = false;
     ref.read(cartProvider.notifier).clear();
     context.go('/scan');

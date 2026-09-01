@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
+import 'connection_health.dart';
 import 'log.dart';
 
 enum SocketState { disconnected, connecting, connected, verified }
@@ -220,7 +221,8 @@ class SocketService {
           .disableReconnection()
           .build(),
     );
-    recoverySocket.on('pairing:recovered', (dynamic data) {
+    recoverySocket.on('pairing:recovered', (dynamic raw) {
+      final data = stripRecoveryOffset(raw);
       if (data is Map) {
         final token = data['token'];
         final secret = data['device_secret'];
@@ -290,7 +292,8 @@ class SocketService {
           .disableReconnection()
           .build(),
     );
-    pairingSocket.on('pairing:recovered', (dynamic data) {
+    pairingSocket.on('pairing:recovered', (dynamic raw) {
+      final data = stripRecoveryOffset(raw);
       if (data is Map) {
         final token = data['token'];
         final secret = data['device_secret'];
@@ -337,6 +340,20 @@ class SocketService {
 
   ConnectFailure _lastConnectFailure = ConnectFailure.none;
 
+  /// How the measured link widens the timeouts below. Defaults to the fixed
+  /// behaviour this class had before; [ConnectionSupervisor] swaps in an
+  /// adaptive one once it is watching. Kept as an injected seam so the socket
+  /// stays a transport and doesn't grow a second job.
+  TimeoutPolicy timeoutPolicy = const FixedTimeoutPolicy();
+
+  /// Fired with the round-trip time of every ack that came back cleanly, so a
+  /// listener can build a link estimate from real traffic instead of only from
+  /// dedicated probes.
+  void Function(Duration)? onAckRtt;
+
+  /// Base handshake timeout, before [timeoutPolicy] widens it.
+  static const Duration connectTimeout = Duration(seconds: 3);
+
   Stream<SocketState> get stateStream => _stateController.stream;
   SocketState get state => _state;
   io.Socket? get socket => _socket;
@@ -344,6 +361,18 @@ class SocketService {
   ConnectFailure get lastConnectFailure => _lastConnectFailure;
 
   bool get isUsable => _socket != null && _state != SocketState.disconnected;
+
+  /// True when the desk restored the previous session on the last reconnect
+  /// rather than handing out a fresh one (`connectionStateRecovery`,
+  /// operator-server.ts). Every broadcast missed during the outage has already
+  /// been replayed onto the existing listeners, so the usual catch-up resync
+  /// would be pure redundant work — and it would be pushing the whole
+  /// initial-sync payload back down the link that just proved weak enough to
+  /// drop the connection.
+  ///
+  /// Only ever true for socket.io's own internal reconnects. A fresh
+  /// [connect] builds a new session and can't recover.
+  bool get wasRecovered => _socket?.recovered ?? false;
 
   void reconnectIfNeeded() {
     if (_state == SocketState.disconnected && _socket != null) {
@@ -366,7 +395,7 @@ class SocketService {
           .setTransports(<String>['websocket'])
           .setAuth(<String, dynamic>{'token': token})
           .enableReconnection()
-          .setTimeout(3000)
+          .setTimeout(timeoutPolicy.forConnect(connectTimeout).inMilliseconds)
           .setReconnectionDelay(400)
           .setReconnectionDelayMax(3000)
           .setRandomizationFactor(0.3)
@@ -462,12 +491,40 @@ class SocketService {
         'the $ackTimeout default is not safe for it (see _moneyEvents doc).',
       );
     }
-    final effectiveTimeout = timeout ?? ackTimeout;
+    return _emitAck(
+      event,
+      data,
+      timeoutPolicy.forAck(timeout ?? ackTimeout),
+      markDeadOnTimeout: true,
+    );
+  }
+
+  /// [emitAck] without the "a timeout means the link is dead" conclusion.
+  ///
+  /// Needed for liveness probing, where a missing ack is genuinely ambiguous:
+  /// a desk build older than the event being probed for will never answer it,
+  /// and letting that tear down a perfectly healthy session would be a
+  /// self-inflicted outage on every un-upgraded desk. The caller decides what
+  /// silence means and calls [markDead] if it concludes the socket is gone.
+  Future<Map<String, dynamic>> emitAckProbe(
+    String event,
+    Map<String, dynamic> data, {
+    Duration timeout = ackTimeout,
+  }) =>
+      _emitAck(event, data, timeout, markDeadOnTimeout: false);
+
+  Future<Map<String, dynamic>> _emitAck(
+    String event,
+    Map<String, dynamic> data,
+    Duration effectiveTimeout, {
+    required bool markDeadOnTimeout,
+  }) async {
     final socket = _socket;
     logD(_tag, '-> $event ${summarizeShape(data)}');
     if (socket == null || _state == SocketState.disconnected) {
       return _errorAck(AckCode.connectionLost, 'Connection lost');
     }
+    final stopwatch = Stopwatch()..start();
     try {
       final raw = await socket
           .timeout(effectiveTimeout.inMilliseconds)
@@ -476,6 +533,7 @@ class SocketService {
         logE(_tag, '$event ack was not a Map');
         return _errorAck(AckCode.badResponse, 'Invalid server response');
       }
+      onAckRtt?.call(stopwatch.elapsed);
       final response = Map<String, dynamic>.from(raw);
       logD(_tag, '<- $event ack kind=${response['kind']}');
       return response;
@@ -488,7 +546,7 @@ class SocketService {
         // `_state` here so every caller that gates on it — reconnectIfNeeded,
         // ConnectionBootstrap, SyncService's reconnect listener — sees the
         // truth instead of a stale "verified" that never self-corrects.
-        _setState(SocketState.disconnected);
+        if (markDeadOnTimeout) _setState(SocketState.disconnected);
         return _errorAck(
           AckCode.timeout,
           "The desk didn't respond — check the connection and retry",
@@ -497,6 +555,16 @@ class SocketService {
       logE(_tag, '$event failed', err, stack);
       return _errorAck(AckCode.connectionLost, 'Connection lost');
     }
+  }
+
+  /// Declares the transport dead from the outside. For a caller that has
+  /// established, by means this class can't see, that the socket is a zombie —
+  /// io.Socket still reporting "connected" over a TCP connection nothing is
+  /// listening on.
+  void markDead() {
+    if (_socket == null) return;
+    logD(_tag, 'marked dead by supervisor');
+    _setState(SocketState.disconnected);
   }
 
   /// Like [emitAck], but a transport failure (offline, or the ack timed out
@@ -526,6 +594,29 @@ class SocketService {
     return response;
   }
 
+  /// Strips the per-packet offset socket.io appends to every broadcast once the
+  /// desk enables `connectionStateRecovery`.
+  ///
+  /// With recovery on, the server sends `[payload, offsetString]` rather than
+  /// `[payload]`, and socket_io_client hands a multi-arg event to the listener
+  /// as a List (`socket.dart` → `emitEvent`, the `args.length > 2` branch).
+  /// Every handler in `sync_service.dart` expects the payload Map, so without
+  /// this the entire live-update layer would go quiet the moment recovery was
+  /// switched on — silently, since `asMap` on a List just yields nothing.
+  ///
+  /// The shape test is deliberately narrow: exactly two elements, a Map first
+  /// and a String last. No broadcast this app consumes is itself a two-element
+  /// list, so nothing legitimate matches.
+  static dynamic stripRecoveryOffset(dynamic data) {
+    if (data is List &&
+        data.length == 2 &&
+        data.first is Map &&
+        data.last is String) {
+      return data.first;
+    }
+    return data;
+  }
+
   void on(String event, void Function(dynamic) handler) {
     final socket = _socket;
     if (socket == null) {
@@ -534,7 +625,7 @@ class SocketService {
     }
     void wrapped(dynamic data) {
       logD(_tag, '<- $event (broadcast)');
-      handler(data);
+      handler(stripRecoveryOffset(data));
     }
 
     _handlers.putIfAbsent(event, () => <void Function(dynamic)>[]).add(wrapped);

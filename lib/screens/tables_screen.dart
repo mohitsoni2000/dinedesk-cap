@@ -189,7 +189,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
         'order:create',
         {
           'table_id': t.serverId,
-          'items': const [],
+          'items': const <Map<String, dynamic>>[],
           'order_type': 'dine_in',
         },
       );
@@ -244,7 +244,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
       return;
     }
     setState(() => _refreshing = true);
-    _refreshController.repeat();
+    unawaited(_refreshController.repeat());
     try {
       await ref.read(syncServiceProvider).requestResync();
       if (!mounted) return;
@@ -300,11 +300,11 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
+                    const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Tables', style: AppTypography.displayLg),
+                          Text('Tables', style: AppTypography.displayLg),
                         ],
                       ),
                     ),
@@ -1138,7 +1138,7 @@ class _FloorTag extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: context.palette.terraSoft,
-        borderRadius: BorderRadius.all(AppRadii.pill),
+        borderRadius: const BorderRadius.all(AppRadii.pill),
       ),
       child: Text(floor,
           maxLines: 1,

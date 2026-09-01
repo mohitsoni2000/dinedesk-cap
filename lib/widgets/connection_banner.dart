@@ -197,7 +197,7 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: _resetTimer,
-                              borderRadius: BorderRadius.all(AppRadii.sm),
+                              borderRadius: const BorderRadius.all(AppRadii.sm),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 5),
@@ -207,7 +207,7 @@ class _ConnectionBannerState extends ConsumerState<ConnectionBanner> {
                                         AppColors.danger.withValues(alpha: 0.5),
                                     width: 1,
                                   ),
-                                  borderRadius: BorderRadius.all(AppRadii.sm),
+                                  borderRadius: const BorderRadius.all(AppRadii.sm),
                                 ),
                                 child: Text(
                                   'Stay here',

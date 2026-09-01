@@ -341,7 +341,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         notes: _notes.text,
       );
       if (orderResponse['kind'] == 'error') {
-        return _OrderFlowStepResult(
+        return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.orderCreate,
           errorMessage: 'Could not save order — please retry',
         );
@@ -352,7 +352,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
       orderId = _orderIdFromResponse(orderResponse, fallback: fallbackOrderId);
       if (orderId == null || orderId.isEmpty) {
-        return _OrderFlowStepResult(
+        return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.orderCreate,
           errorMessage: 'Order saved but ID not returned — please retry',
         );
@@ -480,7 +480,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       orderId =
           _orderIdFromResponse(submitResult.orderAck, fallback: existingOrderId);
       if (orderId == null || orderId.isEmpty) {
-        return _OrderFlowStepResult(
+        return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.orderCreate,
           errorMessage: 'Order saved but ID not returned — please retry',
         );
@@ -509,7 +509,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       timeout: const Duration(seconds: 15),
     );
     if (billResponse['kind'] == 'error') {
-      return _OrderFlowStepResult(
+      return const _OrderFlowStepResult(
         failedStep: _OrderFlowStep.billGenerate,
         errorMessage: 'Failed to generate bill — please retry',
       );
@@ -520,12 +520,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
     final bills = (billResponse['bills'] is List)
         ? (billResponse['bills'] as List)
-            .whereType<Map>()
+            .whereType<Map<dynamic, dynamic>>()
             .map((b) => Map<String, dynamic>.from(b))
             .toList()
         : <Map<String, dynamic>>[];
     if (bills.isEmpty) {
-      return _OrderFlowStepResult(
+      return const _OrderFlowStepResult(
         failedStep: _OrderFlowStep.billGenerate,
         errorMessage: 'Bill generated but ID not returned — please retry',
       );
@@ -534,14 +534,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     for (final bill in bills) {
       final billId = bill['id']?.toString();
       if (billId == null || billId.isEmpty) {
-        return _OrderFlowStepResult(
+        return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.billGenerate,
           errorMessage: 'Bill generated but ID not returned — please retry',
         );
       }
       final billTotal = Money.fromWire(bill['total_amount']);
       if (billTotal == null) {
-        return _OrderFlowStepResult(
+        return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.payment,
           errorMessage:
               'Bill total missing — please settle from the bill screen',
@@ -559,7 +559,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         timeout: const Duration(seconds: 15),
       );
       if (paymentResponse['kind'] == 'error') {
-        return _OrderFlowStepResult(
+        return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.payment,
           errorMessage: 'Payment failed — please retry from the bill screen',
         );
@@ -844,7 +844,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
   void _showCartLineMenu(BuildContext context, CartLine line, int index) {
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: context.palette.surface,
       shape: const RoundedRectangleBorder(

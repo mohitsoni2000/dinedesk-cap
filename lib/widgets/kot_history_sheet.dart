@@ -209,7 +209,7 @@ class _KotCard extends ConsumerWidget {
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: context.palette.terraSoft,
-                              borderRadius: BorderRadius.all(AppRadii.pill),
+                              borderRadius: const BorderRadius.all(AppRadii.pill),
                             ),
                             child: Text('YOU',
                                 style: AppTypography.pill

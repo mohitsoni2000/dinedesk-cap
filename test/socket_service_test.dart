@@ -55,4 +55,47 @@ void main() {
           isFalse);
     });
   });
+
+  group('stripRecoveryOffset — connectionStateRecovery changes broadcast shape',
+      () {
+    test('unwraps the [payload, offset] pair socket.io sends with recovery on',
+        () {
+      final payload = <String, dynamic>{'order_id': 'o1', 'status': 'sent'};
+      expect(
+        SocketService.stripRecoveryOffset(<dynamic>[payload, 'AAAAAQ==']),
+        same(payload),
+      );
+    });
+
+    test('passes an ordinary single-payload broadcast straight through', () {
+      final payload = <String, dynamic>{'order_id': 'o1'};
+      expect(SocketService.stripRecoveryOffset(payload), same(payload));
+    });
+
+    test('leaves a two-element list alone unless it looks like Map + offset',
+        () {
+      // Guards the heuristic against over-matching: neither of these is a
+      // recovery-wrapped payload and neither may be silently truncated.
+      expect(
+        SocketService.stripRecoveryOffset(<dynamic>['a', 'b']),
+        equals(<dynamic>['a', 'b']),
+      );
+      expect(
+        SocketService.stripRecoveryOffset(<dynamic>[
+          <String, dynamic>{'k': 1},
+          <String, dynamic>{'k': 2},
+        ]),
+        isA<List<dynamic>>().having((l) => l.length, 'length', 2),
+      );
+    });
+
+    test('leaves a list of the wrong length alone', () {
+      final three = <dynamic>[
+        <String, dynamic>{'k': 1},
+        'mid',
+        'offset',
+      ];
+      expect(SocketService.stripRecoveryOffset(three), equals(three));
+    });
+  });
 }

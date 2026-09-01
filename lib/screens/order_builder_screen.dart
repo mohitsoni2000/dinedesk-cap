@@ -114,7 +114,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
           .read(socketServiceProvider)
           .emitAck(event, {'table_id': tableServerId});
       if (response['kind'] == 'error') {
-        if (!context.mounted) return;
+        if (!mounted) return;
         DynamicToast.show(context,
             message: response['message']?.toString() ?? errorFallback,
             kind: ToastKind.error);
@@ -337,7 +337,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
   void _showItemQuickMenu(BuildContext context, MenuItem item) {
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: context.palette.surface,
       shape: const RoundedRectangleBorder(
@@ -722,7 +722,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                       Icon(Icons.link,
                                           size: 18, color: ctx.palette.ink70),
                                       const SizedBox(width: 8),
-                                      Text('Link Table',
+                                      const Text('Link Table',
                                           style: AppTypography.bodyMd),
                                     ],
                                   ),
@@ -735,7 +735,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                       Icon(Icons.inventory_2_outlined,
                                           size: 18, color: ctx.palette.ink70),
                                       const SizedBox(width: 8),
-                                      Text('Packages',
+                                      const Text('Packages',
                                           style: AppTypography.bodyMd),
                                     ],
                                   ),
@@ -1264,9 +1264,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                         key: CartFlight.cartBarKey,
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 16, vertical: 13),
-                                        decoration: BoxDecoration(
+                                        decoration: const BoxDecoration(
                                           color: AppColors.terra,
-                                          borderRadius: const BorderRadius.all(
+                                          borderRadius: BorderRadius.all(
                                               AppRadii.md),
                                         ),
                                         child: Row(
@@ -1858,7 +1858,7 @@ class _ItemRow extends ConsumerWidget {
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: context.palette.terraSoft,
-                              borderRadius: BorderRadius.all(AppRadii.xs),
+                              borderRadius: const BorderRadius.all(AppRadii.xs),
                             ),
                             child: Text(
                               '${item.variations.length} SIZES',
@@ -1874,7 +1874,7 @@ class _ItemRow extends ConsumerWidget {
                             decoration: BoxDecoration(
                               color: AppColors.warn
                                   .withValues(alpha: AppAlphas.warnOverlay),
-                              borderRadius: BorderRadius.all(AppRadii.xs),
+                              borderRadius: const BorderRadius.all(AppRadii.xs),
                             ),
                             child: Text('86',
                                 style: AppTypography.micro.copyWith(
@@ -2210,7 +2210,7 @@ class _OrderSideRail extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('This order', style: AppTypography.headline),
+          const Text('This order', style: AppTypography.headline),
           const SizedBox(height: 10),
           if (hasRunning) ...[
             AppCard(

@@ -9,7 +9,7 @@ void main() {
     test('picks up a beacon matching the commanddesk-main app tag', () async {
       final scanFuture = scanForDesks(timeout: const Duration(seconds: 2));
 
-      await Future.delayed(const Duration(milliseconds: 150));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
 
       final sender = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       final payload = utf8.encode(json.encode(<String, dynamic>{
@@ -32,7 +32,7 @@ void main() {
 
     test('ignores a beacon with a different app tag', () async {
       final scanFuture = scanForDesks(timeout: const Duration(seconds: 2));
-      await Future.delayed(const Duration(milliseconds: 150));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
 
       final sender = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       final payload = utf8.encode(json.encode(<String, dynamic>{
@@ -54,7 +54,7 @@ void main() {
 
     test('ignores a malformed (non-JSON) packet instead of throwing', () async {
       final scanFuture = scanForDesks(timeout: const Duration(seconds: 2));
-      await Future.delayed(const Duration(milliseconds: 150));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
 
       final sender = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
 
@@ -67,7 +67,7 @@ void main() {
 
     test('parses id and ips[] when the beacon sends them', () async {
       final scanFuture = scanForDesks(timeout: const Duration(seconds: 2));
-      await Future.delayed(const Duration(milliseconds: 150));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
 
       final sender = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       final payload = utf8.encode(json.encode(<String, dynamic>{
@@ -92,7 +92,7 @@ void main() {
     test('leaves id null and ips empty for a beacon without those fields',
         () async {
       final scanFuture = scanForDesks(timeout: const Duration(seconds: 2));
-      await Future.delayed(const Duration(milliseconds: 150));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
 
       final sender = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       final payload = utf8.encode(json.encode(<String, dynamic>{

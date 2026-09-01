@@ -122,8 +122,8 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
           final rawOffers = _lastOrder!['applied_offers'];
           _applied
             ..clear()
-            ..addAll((rawOffers is List ? rawOffers : const [])
-                .whereType<Map>()
+            ..addAll((rawOffers is List ? rawOffers : const <dynamic>[])
+                .whereType<Map<dynamic, dynamic>>()
                 .map((m) =>
                     _AppliedOffer.fromMap(Map<String, dynamic>.from(m))));
         }
@@ -178,7 +178,7 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
         child: ListView(
           controller: scrollCtrl,
           children: [
-            Center(child: const SheetHandle()),
+            const Center(child: SheetHandle()),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -244,8 +244,8 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
               const SizedBox(height: 16),
             ],
             if (manualOffers.isEmpty && autoOffers.isEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('No offers configured right now',
                     style: AppTypography.caption),
               ),

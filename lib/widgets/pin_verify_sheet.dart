@@ -109,8 +109,8 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Center(
-              child: const SheetHandle(),
+            const Center(
+              child: SheetHandle(),
             ),
             const SizedBox(height: 16),
             Container(

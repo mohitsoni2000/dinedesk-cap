@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,10 +13,10 @@ import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
-class _Round {
+class KotShiftRound {
   final String kotNumber;
   final List<HistoryOrderLine> lines;
-  const _Round({required this.kotNumber, required this.lines});
+  const KotShiftRound({required this.kotNumber, required this.lines});
 
   Money get total => lines.fold(
         Money.zero,
@@ -38,7 +39,7 @@ class KotShiftSheet extends ConsumerStatefulWidget {
   @override
   ConsumerState<KotShiftSheet> createState() => _KotShiftSheetState();
 
-  static List<_Round> roundsOf(HistoryOrder order) {
+  static List<KotShiftRound> roundsOf(HistoryOrder order) {
     final grouped = <String, List<HistoryOrderLine>>{};
     for (final line in order.lines) {
       final kot = line.kotNumber;
@@ -46,7 +47,7 @@ class KotShiftSheet extends ConsumerStatefulWidget {
       grouped.putIfAbsent(kot, () => <HistoryOrderLine>[]).add(line);
     }
     final rounds = grouped.entries
-        .map((e) => _Round(kotNumber: e.key, lines: e.value))
+        .map((e) => KotShiftRound(kotNumber: e.key, lines: e.value))
         .toList()
       ..sort((a, b) => b.kotNumber.compareTo(a.kotNumber));
     return rounds;
@@ -76,7 +77,7 @@ class KotShiftSheet extends ConsumerStatefulWidget {
 enum _Step { pickItems, pickTable }
 
 class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
-  late final List<_Round> _rounds;
+  late final List<KotShiftRound> _rounds;
 
   String? _openKot;
 
@@ -95,14 +96,14 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
     }
   }
 
-  void _openRound(_Round round) {
+  void _openRound(KotShiftRound round) {
     _openKot = round.kotNumber;
     _picked
       ..clear()
       ..addAll(round.lines.map((l) => l.orderItemId));
   }
 
-  void _toggleRound(_Round round) {
+  void _toggleRound(KotShiftRound round) {
     HapticFeedback.selectionClick();
     setState(() {
       if (_openKot == round.kotNumber) {
@@ -129,7 +130,7 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
     if (!pinOk || !mounted) return;
 
     setState(() => _submitting = true);
-    HapticFeedback.heavyImpact();
+    unawaited(HapticFeedback.heavyImpact());
 
     final response = await ref.read(socketServiceProvider).emitAck(
       'kot:shift',
@@ -222,9 +223,9 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
             ),
           ),
           if (!onItems && _pickedTableServerId != null)
-            LiquidPill(
+            const LiquidPill(
               tint: AppColors.success,
-              child: const Text('Selected'),
+              child: Text('Selected'),
             ),
         ],
       ),
@@ -255,7 +256,7 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
     );
   }
 
-  Widget _roundCard(_Round round) {
+  Widget _roundCard(KotShiftRound round) {
     final palette = context.palette;
     final open = _openKot == round.kotNumber;
 

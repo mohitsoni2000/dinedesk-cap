@@ -486,15 +486,23 @@ class _SheetField extends StatelessWidget {
             style: AppTypography.micro
                 .copyWith(color: Colors.white.withValues(alpha: 0.45))),
         const SizedBox(height: 6),
-        TextField(
-          controller: controller,
-          keyboardType: keyboardType,
-          obscureText: obscureText,
-          style: const TextStyle(color: Colors.white, fontSize: 15),
-          decoration: InputDecoration(
-            border: InputBorder.none,
-            hintText: hint,
-            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: const BorderRadius.all(AppRadii.sm),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          child: TextField(
+            controller: controller,
+            keyboardType: keyboardType,
+            obscureText: obscureText,
+            style: const TextStyle(color: Colors.white, fontSize: 15),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              hintText: hint,
+              hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+            ),
           ),
         ),
       ],

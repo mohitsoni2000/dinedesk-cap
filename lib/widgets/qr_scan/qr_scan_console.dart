@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/tokens.dart';
@@ -89,32 +88,30 @@ class QrScanConsole extends StatelessWidget {
                 ),
               ],
             ),
-            if (kDebugMode) ...[
-              const SizedBox(height: 14),
-              Center(
-                child: GestureDetector(
-                  onTap: onDemoScan,
-                  child: RichText(
-                    text: TextSpan(
-                      style: AppTypography.caption.copyWith(
-                        color: Colors.white.withValues(alpha: 0.42),
-                      ),
-                      children: [
-                        const TextSpan(text: 'No server around? '),
-                        TextSpan(
-                          text: 'Explore the demo kitchen',
-                          style: TextStyle(
-                            color: AppColors.terra100.withValues(alpha: 0.85),
-                            fontWeight: FontWeight.w600,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ],
+            const SizedBox(height: 14),
+            Center(
+              child: GestureDetector(
+                onTap: onDemoScan,
+                child: RichText(
+                  text: TextSpan(
+                    style: AppTypography.caption.copyWith(
+                      color: Colors.white.withValues(alpha: 0.42),
                     ),
+                    children: [
+                      const TextSpan(text: 'No server around? '),
+                      TextSpan(
+                        text: 'Explore the demo kitchen',
+                        style: TextStyle(
+                          color: AppColors.terra100.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
+            ),
           ],
         ),
       ),

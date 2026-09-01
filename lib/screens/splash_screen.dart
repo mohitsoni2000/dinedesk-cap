@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -53,11 +51,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     });
   }
 
-  Timer? _delayTimer;
-
   @override
   void dispose() {
-    _delayTimer?.cancel();
     _animCtrl.dispose();
     super.dispose();
   }
@@ -70,15 +65,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
     _navigated = true;
 
-    _delayTimer?.cancel();
-    _delayTimer = Timer(const Duration(milliseconds: 1500), () {
-      if (!mounted) return;
-      if (outcome is BootstrapNoPairing) {
-        context.go('/scan');
-      } else {
-        context.go('/connecting');
-      }
-    });
+    if (outcome is BootstrapNoPairing) {
+      context.go('/scan');
+    } else {
+      context.go('/connecting');
+    }
   }
 
   void _checkAndNavigate() {

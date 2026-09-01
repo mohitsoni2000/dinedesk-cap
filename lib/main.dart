@@ -78,12 +78,16 @@ class _RestroAppState extends ConsumerState<RestroApp>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       unawaited(_checkForUpdate());
 
-      await ref.read(feedbackServiceProvider).init();
-      await ref.read(readyAlertsProvider).init();
-      await ref.read(widgetSyncProvider).init();
-
-      if (mounted) {
-        ref.read(startupPermissionsCompleteProvider.notifier).state = true;
+      try {
+        await ref.read(feedbackServiceProvider).init();
+        await ref.read(readyAlertsProvider).init();
+        await ref.read(widgetSyncProvider).init();
+      } catch (err, st) {
+        debugPrint('Startup init error: $err\n$st');
+      } finally {
+        if (mounted) {
+          ref.read(startupPermissionsCompleteProvider.notifier).state = true;
+        }
       }
     });
   }

@@ -580,10 +580,11 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 10, vertical: 4),
-                                        decoration: const BoxDecoration(
-                                          color: AppColors.terra,
-                                          borderRadius:
-                                              BorderRadius.all(AppRadii.pill),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.terra
+                                              .withValues(alpha: 0.12),
+                                          borderRadius: const BorderRadius.all(
+                                              AppRadii.pill),
                                         ),
                                         child: Text('Join to help',
                                             style: AppTypography.caption

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -136,7 +135,7 @@ class QrScanNotifier extends StateNotifier<QrScanState> {
   }
 
   void demoScan({required void Function() onSuccessNavigate}) {
-    if (!kDebugMode || state.processing) return;
+    if (state.processing) return;
     state = state.copyWith(processing: true, error: null);
 
     _ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
@@ -147,12 +146,13 @@ class QrScanNotifier extends StateNotifier<QrScanState> {
       adminIp: '',
     );
 
-    SessionService()
-        .savePairing(
-      const PairingInfo(host: 'localhost', port: 8080, token: 'demo-token'),
-    )
-        .then((_) {
+    const pairing =
+        PairingInfo(host: 'localhost', port: 8080, token: 'demo-token');
+    SessionService().savePairing(pairing).then((_) {
       if (!mounted) return;
+      _ref
+          .read(connectionBootstrapProvider.notifier)
+          .connectWithFreshPairing(pairing);
       onSuccessNavigate();
     });
   }

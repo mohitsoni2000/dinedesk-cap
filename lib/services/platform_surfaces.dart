@@ -37,7 +37,8 @@ class ReadyAlertsService {
       await _plugin
           .resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
+          ?.requestNotificationsPermission()
+          .timeout(const Duration(seconds: 15), onTimeout: () => null);
       _ready = true;
     } catch (e) {
       logD(_tag, 'init failed (ok in tests): $e');

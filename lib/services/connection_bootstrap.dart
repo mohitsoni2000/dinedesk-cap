@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
@@ -141,7 +140,7 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
     _rediscoveryAttempt = 0;
     state = BootstrapConnecting(pairing, stage: 0);
 
-    if (kDebugMode && pairing.token == 'demo-token') {
+    if (pairing.token == 'demo-token') {
       logD(_tag, 'Demo pairing — skipping real socket handshake');
       unawaited(_runDemoStages(pairing, gen));
       return;

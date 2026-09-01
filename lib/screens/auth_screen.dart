@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -88,7 +87,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
 
     final pin = _pin.join();
     unawaited(SessionService().getSavedPairing().then((pairing) {
-      if (kDebugMode && pairing?.token == 'demo-token') {
+      if (pairing?.token == 'demo-token') {
         unawaited(_submitDemo());
       } else {
         unawaited(_submitReal(pin));
@@ -97,7 +96,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
   }
 
   Future<void> _submitDemo() async {
-    assert(kDebugMode, 'demo login must never run in a release build');
     await Future<void>.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
@@ -167,8 +165,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
       label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
     );
     ref.read(isAuthenticatedProvider.notifier).state = true;
-    unawaited(ref.read(offlineOrderQueueProvider).flush(socketService).then(
-        (_) => ref.read(kotQueueProvider).flush(socketService)));
+    unawaited(ref
+        .read(offlineOrderQueueProvider)
+        .flush(socketService)
+        .then((_) => ref.read(kotQueueProvider).flush(socketService)));
     await _maybeOfferBiometric(pin);
     if (!mounted) return;
     setState(() => _verified = true);
@@ -278,7 +278,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                       AppSurface(
                         borderRadius: const BorderRadius.all(AppRadii.md),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 11),
+                            horizontal: 11, vertical: 11),
                         child: Row(
                           children: [
                             Container(
@@ -312,6 +312,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                                 ],
                               ),
                             ),
+                            const SizedBox(width: 2),
                             Container(
                               width: 8,
                               height: 8,

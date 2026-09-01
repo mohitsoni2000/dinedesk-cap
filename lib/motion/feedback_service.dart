@@ -19,9 +19,13 @@ class FeedbackService {
   Future<void> init() async {
     if (_initialized) return;
     for (int i = 0; i < _poolSize; i++) {
-      final AudioPlayer p = AudioPlayer();
-      await p.setReleaseMode(ReleaseMode.stop);
-      _pool.add(p);
+      try {
+        final AudioPlayer p = AudioPlayer();
+        await p.setReleaseMode(ReleaseMode.stop);
+        _pool.add(p);
+      } catch (_) {
+        // Platform or MissingPlugin exceptions shouldn't crash app startup
+      }
     }
     _initialized = true;
   }

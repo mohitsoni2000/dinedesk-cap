@@ -2,13 +2,10 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/providers.dart';
-import 'app_messenger.dart';
 import 'connection_health.dart';
 import 'log.dart';
-import 'network_keepalive.dart';
 import 'socket_service.dart';
 
 const String _tag = '[Supervisor]';
@@ -78,7 +75,6 @@ class ConnectionSupervisor {
 
   static const String heartbeatEvent = 'operator:heartbeat';
 
-  static const String _batteryPromptKey = 'battery_opt_prompted';
 
   void start() {
     if (_started) return;
@@ -96,29 +92,19 @@ class ConnectionSupervisor {
       logE(_tag, 'connectivity stream failed', err);
     });
 
-    // Unpair, an admin kick, or an expired token all land here. The foreground
-    // service has nothing left to keep alive at that point, and leaving its
-    // notification in the shade would be a lie.
-    _ref.listen<bool>(isAuthenticatedProvider, (_, authed) {
-      if (!authed) unawaited(NetworkKeepAlive.stop());
-    });
-
     logD(_tag, 'watching');
   }
 
-  /// Driven by the app lifecycle in `main.dart`. Only affects which Wi-Fi lock
-  /// the Android service holds and how often the heartbeat fires; the session
-  /// itself is unaffected.
+  /// Driven by the app lifecycle in `main.dart`. Only affects how often the
+  /// heartbeat fires; the session itself is unaffected.
   void setAppForeground(bool foreground) {
     if (_appForeground == foreground) return;
     _appForeground = foreground;
-    unawaited(NetworkKeepAlive.setAppForeground(foreground));
     if (_heartbeatTimer != null) _restartHeartbeat();
   }
 
   void _onSocketState(SocketState state) {
     if (state == SocketState.verified) {
-      unawaited(_onSessionUp());
       _restartHeartbeat();
     } else if (state == SocketState.disconnected) {
       _stopHeartbeat();
@@ -128,37 +114,6 @@ class ConnectionSupervisor {
       // before a failure, are always the worst moments it ever saw.
       _rtt.reset();
     }
-  }
-
-  Future<void> _onSessionUp() async {
-    if (NetworkKeepAlive.isRunning) return;
-    final name = _ref.read(restaurantProvider)?.name;
-    final started = await NetworkKeepAlive.start(restaurant: name);
-    if (!started) return;
-    await NetworkKeepAlive.setAppForeground(_appForeground);
-    unawaited(_maybeAskForBatteryExemption());
-  }
-
-  /// Once per install, and only if the OS says the exemption is actually
-  /// missing. Deliberately after the session is up rather than during pairing:
-  /// at this point the operator has a working app in front of them, so the ask
-  /// reads as "keep this working" instead of one more hurdle before it does.
-  Future<void> _maybeAskForBatteryExemption() async {
-    if (await NetworkKeepAlive.isIgnoringBatteryOptimizations()) return;
-
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(_batteryPromptKey) ?? false) return;
-    await prefs.setBool(_batteryPromptKey, true);
-
-    // Let the tables screen settle first — this lands right after login, where
-    // the update dialog may also be queuing for the same navigator.
-    await Future<void>.delayed(const Duration(seconds: 3));
-    if (_ref.read(socketServiceProvider).state != SocketState.verified) return;
-
-    showBatteryOptimizationDialog(
-      onOpenSettings: () =>
-          unawaited(NetworkKeepAlive.openBatteryOptimizationSettings()),
-    );
   }
 
   // ---------------------------------------------------------------- heartbeat
@@ -261,7 +216,6 @@ class ConnectionSupervisor {
     _connectivityDebounce?.cancel();
     unawaited(_socketSub?.cancel());
     unawaited(_connectivitySub?.cancel());
-    unawaited(NetworkKeepAlive.stop());
     try {
       // Provider teardown order isn't guaranteed — the socket may already be
       // disposed. Restoring its defaults is tidiness, not correctness.

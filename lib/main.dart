@@ -122,6 +122,10 @@ class _RestroAppState extends ConsumerState<RestroApp>
   /// clean reconnect through the same path the manual "retry" button uses.
   Future<void> _verifyConnectionOnResume() async {
     final socket = ref.read(socketServiceProvider);
+    // Mid-PIN (the operator switched apps with the verify in flight): a
+    // concurrent resync would race it, and its timeout would rebuild the
+    // socket out from under it. The verify settles the link state itself.
+    if (socket.isVerifyInFlight) return;
     if (socket.state == SocketState.disconnected) {
       socket.reconnectIfNeeded();
       return;

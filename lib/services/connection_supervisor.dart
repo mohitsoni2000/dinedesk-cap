@@ -75,7 +75,6 @@ class ConnectionSupervisor {
 
   static const String heartbeatEvent = 'operator:heartbeat';
 
-
   void start() {
     if (_started) return;
     _started = true;
@@ -134,6 +133,11 @@ class ConnectionSupervisor {
     if (_beatInFlight) return;
     final socket = _ref.read(socketServiceProvider);
     if (socket.state != SocketState.verified) return;
+    // A re-verify (PinVerifySheet, change-PIN) streams a sync-sized reply;
+    // the heartbeat's ack queues behind it and can miss its 5s budget on a
+    // slow link, and "silence" ends in markDead + retry — a new socket that
+    // makes the desk drop the one carrying the verify. Skip this beat.
+    if (socket.isVerifyInFlight) return;
     _beatInFlight = true;
     try {
       // emitAckProbe, not emitAck: silence here is ambiguous (see
@@ -171,11 +175,13 @@ class ConnectionSupervisor {
   /// timeout paths do their job.
   Future<void> _onHeartbeatSilence(SocketService socket) async {
     if (_heartbeatSuccesses == 0) {
-      final pairing = _ref.read(connectionBootstrapProvider.notifier).currentPairing;
+      final pairing =
+          _ref.read(connectionBootstrapProvider.notifier).currentPairing;
       if (pairing != null) {
         final reachable = await SocketService.ping(pairing.host, pairing.port);
         if (reachable is PingOk) {
-          logD(_tag, 'desk has no $heartbeatEvent handler — heartbeat disabled');
+          logD(
+              _tag, 'desk has no $heartbeatEvent handler — heartbeat disabled');
           _heartbeatSupported = false;
           _stopHeartbeat();
           return;

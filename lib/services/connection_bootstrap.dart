@@ -133,6 +133,27 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   }
 
   Future<void> _attemptConnect(PairingInfo pairing) async {
+    // One socket per pairing, and never a replacement while a PIN is being
+    // checked: `connect()` disposes the socket carrying the operator:verify,
+    // and the new one presents the same token, so the desk drops the old
+    // session either way — the verify's ack is lost and the operator sees
+    // "Connection lost". Every repair path funnels through here (connect
+    // timeout, mid-session rediscovery, network change), so this is the one
+    // place to hold them. If the verify succeeded meanwhile, the link is
+    // proven and the queued reconnect is moot.
+    final socketService = _ref.read(socketServiceProvider);
+    if (socketService.isVerifyInFlight) {
+      logD(_tag,
+          'PIN verify in flight — holding the reconnect until it settles');
+      final heldGen = _generation;
+      await socketService.whenVerifyIdle();
+      if (heldGen != _generation) return;
+      if (socketService.state == SocketState.verified) {
+        logD(_tag, 'verify succeeded meanwhile — dropping the held reconnect');
+        return;
+      }
+    }
+
     final gen = ++_generation;
     _pairing = pairing;
     _midSessionRediscovery?.cancel();
@@ -147,7 +168,6 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
     }
 
     logD(_tag, 'Pairing loaded: ${pairing.host}:${pairing.port}');
-    final socketService = _ref.read(socketServiceProvider);
     unawaited(_socketSub?.cancel());
     _socketSub = socketService.stateStream
         .listen((s) => _onSocketState(s, pairing, gen));
@@ -252,6 +272,21 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   }
 
   Future<void> _attemptSilentResume(PairingInfo pairing, int gen) async {
+    // The socket came (back) up while the operator's PIN is being checked —
+    // typically the verify itself waiting out a reconnect. A resync now would
+    // race it on an unverified session, earn `reauth_required`, and pop a
+    // second PIN prompt over the one just typed. Let the verify decide.
+    final socketService = _ref.read(socketServiceProvider);
+    if (socketService.isVerifyInFlight) {
+      await socketService.whenVerifyIdle();
+      if (gen != _generation) return;
+      if (socketService.state == SocketState.verified) {
+        logD(_tag, '✓ Session verified by the in-flight PIN — resumed');
+        state = const BootstrapResumed();
+        return;
+      }
+    }
+
     // A recovered socket kept its desk-side session and had its missed
     // broadcasts replayed, so it is resumed by definition — asking again would
     // only confirm what recovery already guaranteed, at the cost of the full
@@ -369,6 +404,17 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   void retry() {
     final pairing = _pairing;
     if (pairing == null) return;
+    final socketService = _ref.read(socketServiceProvider);
+    if (socketService.isVerifyInFlight) {
+      // Tearing down here would kill the verify's socket before
+      // _attemptConnect's own hold could help. Re-evaluate once it settles:
+      // a verified socket needs no retry at all.
+      logD(_tag, 'retry requested mid-verify — deferring');
+      unawaited(socketService.whenVerifyIdle().then((_) {
+        if (socketService.state != SocketState.verified) retry();
+      }));
+      return;
+    }
     _connectTimeout?.cancel();
     _socketSub?.cancel();
     _ref.read(socketServiceProvider).disconnect();

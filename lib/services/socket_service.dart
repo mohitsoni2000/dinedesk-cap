@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import 'connection_health.dart';
@@ -48,6 +49,30 @@ abstract final class AckCode {
   static const String connectionLost = 'connection_lost';
   static const String timeout = 'timeout';
   static const String badResponse = 'bad_response';
+}
+
+/// What [SocketService.reconnectIfNeeded] should do about a socket the app
+/// believes is down. See [SocketService.decideReconnect].
+enum ReconnectAction {
+  /// Nothing to do: no socket, or it isn't down.
+  none,
+
+  /// An operator:verify is in flight; its own outcome decides (see
+  /// [SocketService.verifyPin]). Tearing the socket down now would lose the
+  /// ack and is exactly how PIN entry used to end in "Connection lost".
+  deferForVerify,
+
+  /// We flagged the socket dead but socket.io still thinks it is connected —
+  /// a zombie that no socket.io event will ever revive. Rebuild the engine.
+  forceReconnect,
+
+  /// socket.io's own reconnect loop still owns this socket (it may be
+  /// mid-handshake). Calling `connect()` now would send a second CONNECT.
+  leaveToSocketIo,
+
+  /// Nothing is driving the socket any more (the desk disconnected it, or the
+  /// handshake was refused); `connect()` is the only way back.
+  connect,
 }
 
 Map<String, dynamic> _errorAck(String code, String message) =>
@@ -399,11 +424,86 @@ class SocketService {
   /// [connect] builds a new session and can't recover.
   bool get wasRecovered => _socket?.recovered ?? false;
 
-  void reconnectIfNeeded() {
-    if (_state == SocketState.disconnected && _socket != null) {
-      logD(_tag, 'app resumed while disconnected — nudging reconnect');
-      _socket!.connect();
+  /// Pure decision behind [reconnectIfNeeded], split out so it can be tested
+  /// without a live socket.
+  ///
+  /// The `leaveToSocketIo` case is the one that matters most. socket_io_client's
+  /// `Socket.connect()` (lib/src/socket.dart) re-sends the CONNECT packet
+  /// whenever the engine is already open but the namespace isn't connected yet
+  /// — which is precisely the state *during* socket.io's own reconnect, while
+  /// the desk's auth middleware is still answering the first CONNECT. Nudging
+  /// then put a second CONNECT on the wire with the same token: the desk
+  /// registered a second socket for this operator, and its duplicate-socket
+  /// teardown (operator.gateway.ts, `sameToken` → `oldSocket.disconnect(true)`)
+  /// closed the connection the phone was actually using. Resume and
+  /// "Wi-Fi is back" — the two callers — fire exactly when that reconnect is
+  /// most likely to be mid-flight.
+  static ReconnectAction decideReconnect({
+    required bool hasSocket,
+    required SocketState state,
+    required bool verifyInFlight,
+    required bool ioConnected,
+    required bool ioActive,
+  }) {
+    if (!hasSocket || state != SocketState.disconnected) {
+      return ReconnectAction.none;
     }
+    if (verifyInFlight) return ReconnectAction.deferForVerify;
+    if (ioConnected) return ReconnectAction.forceReconnect;
+    if (ioActive) return ReconnectAction.leaveToSocketIo;
+    return ReconnectAction.connect;
+  }
+
+  void reconnectIfNeeded() => _reconnectIfNeeded(ignoreVerify: false);
+
+  void _reconnectIfNeeded({required bool ignoreVerify}) {
+    final socket = _socket;
+    final action = decideReconnect(
+      hasSocket: socket != null,
+      state: _state,
+      verifyInFlight: !ignoreVerify && isVerifyInFlight,
+      ioConnected: socket?.connected ?? false,
+      ioActive: socket?.active ?? false,
+    );
+    switch (action) {
+      case ReconnectAction.none:
+        return;
+      case ReconnectAction.deferForVerify:
+        // verifyPin's own `finally` reconnects if the verify left it down.
+        logD(_tag, 'reconnect requested mid-verify — deferring to its outcome');
+      case ReconnectAction.forceReconnect:
+        _forceReconnect('socket flagged dead but socket.io still connected');
+      case ReconnectAction.leaveToSocketIo:
+        logD(_tag, 'socket.io is already reconnecting — not doubling CONNECT');
+      case ReconnectAction.connect:
+        logD(_tag, 'socket idle while disconnected — nudging reconnect');
+        socket!.connect();
+    }
+  }
+
+  /// Rebuilds the engine under the *same* io.Socket, for a socket we have
+  /// concluded is dead while socket.io still reports it connected (an ack
+  /// timed out, or the supervisor's heartbeat went silent).
+  ///
+  /// Flipping [state] alone — what this class used to do — left a zombie: the
+  /// io.Socket never emits another connect/disconnect, so every later emit
+  /// was refused at the `_emitAck` gate with "Connection lost", and
+  /// [reconnectIfNeeded]'s `connect()` returned immediately because socket.io
+  /// still thought it was connected. On the PIN screen nothing else ever
+  /// reconnects (ConnectionBootstrap only watches for drops once resumed), so
+  /// the operator was stuck on "Connection lost" for good.
+  ///
+  /// A client-side `disconnect()` closes the engine and stops socket.io's own
+  /// reconnect loop; `connect()` then opens exactly one new engine. Strictly
+  /// sequential — never two engines, never two CONNECTs for this token.
+  /// Listeners registered through [on] stay attached (same io.Socket).
+  void _forceReconnect(String why) {
+    final socket = _socket;
+    if (socket == null) return;
+    logD(_tag, 'forcing a fresh engine: $why');
+    _setState(SocketState.disconnected);
+    socket.disconnect();
+    socket.connect();
   }
 
   void connect(String host, int port, String token, {bool useTls = false}) {
@@ -484,20 +584,132 @@ class SocketService {
           'menu_version': menuVersion,
       };
 
+  Completer<void>? _verifyInFlight;
+
+  /// True while an operator:verify is between "PIN submitted" and "answer
+  /// handled". Everything that could replace or tear down the socket —
+  /// [ConnectionBootstrap]'s connect/retry/repair, the supervisor's heartbeat,
+  /// the app-resume check — holds off while this is set, because the desk
+  /// drops a socket as soon as another one presents the same token, and the
+  /// verify's ack dies with it.
+  bool get isVerifyInFlight => _verifyInFlight != null;
+
+  /// Completes once no verify is in flight (immediately if none is).
+  Future<void> whenVerifyIdle() =>
+      _verifyInFlight?.future ?? Future<void>.value();
+
+  /// How long [verifyPin] waits for a down socket to come back before giving
+  /// up on a PIN it hasn't sent yet. An instance field so tests can shorten it.
+  Duration verifyReconnectWait = const Duration(seconds: 10);
+
+  /// operator:verify, single-flight, with one transparent retry where that is
+  /// provably safe.
+  ///
+  /// - **Single-flight.** Concurrent calls queue behind each other, and while
+  ///   one is in flight [isVerifyInFlight] holds every reconnect path off.
+  /// - **Socket down before sending → wait, then send once.** The PIN never
+  ///   left the phone, so the desk has not counted it against the operator's
+  ///   5-strike lockout (session-manager.ts `verifyPinForOperator`). Waiting up
+  ///   to [verifyReconnectWait] for the socket to come back and sending it then
+  ///   is invisible to the operator — this used to be an instant
+  ///   "Connection lost" and a re-typed PIN, forever, if the socket was a
+  ///   zombie (see [_forceReconnect]).
+  /// - **Socket drops after sending → fail fast, never resend.** The desk may
+  ///   well have checked that PIN already; if it was wrong, a silent resend
+  ///   would burn a second lockout strike for one attempt. So the operator is
+  ///   asked to enter it again — but straight away, instead of after the full
+  ///   [syncBundledAckTimeout], because this Dart client never rejects an
+  ///   ack whose socket went away; it only lets its timer run out.
   Future<Map<String, dynamic>> verifyPin(
     String pin, {
     String? menuVersion,
   }) async {
-    logD(_tag,
-        'operator:verify${menuVersion == null ? '' : ' (menu_version held)'}');
-    final response = await emitAck(
-      'operator:verify',
-      buildVerifyPayload(pin, menuVersion: menuVersion),
-      timeout: syncBundledAckTimeout,
-    );
-    if (response['kind'] == 'success') _setState(SocketState.verified);
-    return response;
+    while (_verifyInFlight != null) {
+      await _verifyInFlight!.future;
+    }
+    final inFlight = Completer<void>();
+    _verifyInFlight = inFlight;
+    try {
+      logD(_tag,
+          'operator:verify${menuVersion == null ? '' : ' (menu_version held)'}');
+      final payload = buildVerifyPayload(pin, menuVersion: menuVersion);
+
+      if (!isUsable) {
+        logD(_tag, 'verify: socket down before send — waiting for it');
+        _reconnectIfNeeded(ignoreVerify: true);
+        if (!await _awaitUsable(verifyReconnectWait)) {
+          logD(_tag, 'verify: socket did not come back — PIN not sent');
+          return _errorAck(AckCode.connectionLost, 'Connection lost');
+        }
+        logD(_tag, 'verify: socket back — sending the held PIN');
+      }
+
+      final response = await _sendVerifyUnlessDropped(payload);
+      if (response['kind'] == 'success') _setState(SocketState.verified);
+      return response;
+    } finally {
+      _verifyInFlight = null;
+      inFlight.complete();
+      _settleDeferredReconnect();
+    }
   }
+
+  Future<bool> _awaitUsable(Duration wait) async {
+    if (isUsable) return true;
+    try {
+      await stateStream
+          .firstWhere(
+              (s) => s == SocketState.connected || s == SocketState.verified)
+          .timeout(wait);
+    } on TimeoutException {
+      return false;
+    } on StateError {
+      return false; // stream closed — service disposed
+    }
+    return isUsable;
+  }
+
+  Future<Map<String, dynamic>> _sendVerifyUnlessDropped(
+    Map<String, dynamic> payload,
+  ) async {
+    final dropped = Completer<Map<String, dynamic>>();
+    final sub = stateStream.listen((s) {
+      if (s == SocketState.disconnected && !dropped.isCompleted) {
+        logD(_tag, 'verify: socket dropped with the PIN in flight');
+        dropped.complete(_errorAck(
+          AckCode.connectionLost,
+          'Connection dropped while checking your PIN — please enter it again',
+        ));
+      }
+    });
+    try {
+      return await Future.any(<Future<Map<String, dynamic>>>[
+        sendVerify(payload),
+        dropped.future,
+      ]);
+    } finally {
+      await sub.cancel();
+    }
+  }
+
+  /// The raw operator:verify emit. Overridden in tests only.
+  @visibleForTesting
+  Future<Map<String, dynamic>> sendVerify(Map<String, dynamic> payload) =>
+      emitAck('operator:verify', payload, timeout: syncBundledAckTimeout);
+
+  /// A verify that ended with the socket down leaves the PIN screen with
+  /// nothing else driving a reconnect (the supervisor only watches verified
+  /// sockets, ConnectionBootstrap only resumed ones), so bring it back here —
+  /// ready for the operator's next attempt instead of "Connection lost"
+  /// forever.
+  void _settleDeferredReconnect() {
+    if (_state == SocketState.disconnected) {
+      _reconnectIfNeeded(ignoreVerify: true);
+    }
+  }
+
+  @visibleForTesting
+  void debugSetState(SocketState next) => _setState(next);
 
   void markVerified() {
     if (_state != SocketState.disconnected) _setState(SocketState.verified);
@@ -595,7 +807,13 @@ class SocketService {
         // `_state` here so every caller that gates on it — reconnectIfNeeded,
         // ConnectionBootstrap, SyncService's reconnect listener — sees the
         // truth instead of a stale "verified" that never self-corrects.
-        if (markDeadOnTimeout) _setState(SocketState.disconnected);
+        // Not while a verify is in flight: its sync-sized reply holds up every
+        // ack queued behind it, so an unrelated timeout then is evidence of a
+        // busy link, not a dead one — and flipping state would make the
+        // bootstrap/resume paths replace the socket carrying the PIN.
+        if (markDeadOnTimeout && !isVerifyInFlight) {
+          _setState(SocketState.disconnected);
+        }
         return _errorAck(
           AckCode.timeout,
           "The desk didn't respond — check the connection and retry",
@@ -612,6 +830,10 @@ class SocketService {
   /// listening on.
   void markDead() {
     if (_socket == null) return;
+    if (isVerifyInFlight) {
+      logD(_tag, 'markDead ignored — a PIN verify is in flight');
+      return;
+    }
     logD(_tag, 'marked dead by supervisor');
     _setState(SocketState.disconnected);
   }

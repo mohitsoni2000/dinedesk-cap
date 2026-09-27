@@ -126,7 +126,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     final socketService = ref.read(socketServiceProvider);
     final syncService = ref.read(syncServiceProvider);
 
-    final response = await socketService.verifyPin(pin);
+    final response = await syncService.verifyPin(pin);
     if (!mounted) return;
 
     if (response['kind'] != 'success') {

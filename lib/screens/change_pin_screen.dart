@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,11 +45,14 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
     HapticFeedback.mediumImpact();
     switch (_step) {
       case _Step.current:
-        final socketService = ref.read(socketServiceProvider);
         setState(() => _verifying = true);
 
-        socketService.emit('operator:verify', {'pin': _input},
-            onAck: (response) {
+        // Only checks the current PIN; the sync bundled in the reply is not
+        // used. verifyPin (not a bare emit) so the cached menu_version keeps
+        // the unchanged menu out of that reply and the ack gets the
+        // sync-sized timeout — see PinVerifySheet._verify.
+        unawaited(
+            ref.read(syncServiceProvider).verifyPin(_input).then((response) {
           if (!mounted) return;
           if (response['kind'] == 'success') {
             setState(() {
@@ -63,7 +68,7 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
               _verifying = false;
             });
           }
-        });
+        }));
         break;
       case _Step.fresh:
         setState(() {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -82,8 +84,14 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
     HapticFeedback.mediumImpact();
 
     final pin = _pin.join();
-    final socket = ref.read(socketServiceProvider);
-    socket.emit('operator:verify', {'pin': pin}, onAck: (response) {
+    // A pure re-auth check — the bundled sync in the reply is not applied
+    // here (the 'resync' caller re-requests it once this pops true). Routed
+    // through verifyPin anyway rather than a bare emit: it carries the cached
+    // menu_version, so the desk leaves the ~277KB menu out of a reply nobody
+    // reads, and it gets the sync-sized ack timeout. The plain 4s emit timeout
+    // this used to run on was too short for the full initial-sync reply on a
+    // slow LAN — and an ack timeout marks the whole socket dead.
+    unawaited(ref.read(syncServiceProvider).verifyPin(pin).then((response) {
       if (!mounted) return;
       if (response['kind'] == 'success') {
         Navigator.of(context).pop(true);
@@ -94,7 +102,7 @@ class _PinVerifySheetState extends ConsumerState<_PinVerifySheet> {
           _pin.clear();
         });
       }
-    });
+    }));
   }
 
   @override

@@ -77,6 +77,11 @@ class SyncService {
 
   String? _lastMenuVersion;
 
+  /// The version of the menu currently applied, or null when none is (cold
+  /// start, or before the first sync lands). Sent with `operator:resync` and
+  /// `operator:verify` so the desk can leave the menu out of its reply.
+  String? get cachedMenuVersion => _lastMenuVersion;
+
   int _menuParseSeq = 0;
 
   Future<MenuParseResult> _parseMenuOffThread(Map<String, dynamic> raw) async {
@@ -663,7 +668,14 @@ class SyncService {
       logD(_tag, '  Offers: ${offers.length} loaded');
     }
 
-    final serverMenuVersion = data['menu_version'] as String?;
+    // `menu` is legitimately absent whenever we sent our `menu_version` with
+    // operator:resync or operator:verify and the desk found it current — the
+    // cached menu is kept as-is, never cleared. The same holds if it is
+    // absent for any other reason: an empty menu screen mid-shift is far
+    // worse than a briefly stale one, and `menu:updated` still triggers a
+    // menu-only resync when the desk's menu really changes.
+    final rawMenuVersion = data['menu_version'];
+    final serverMenuVersion = rawMenuVersion is String ? rawMenuVersion : null;
     final menuRaw = data['menu'];
 
     final menuVersionMatches =
@@ -692,6 +704,10 @@ class SyncService {
         Trace.mark('menu_parsed');
       }
     } else {
+      logD(
+          _tag,
+          '  Menu: not in payload — keeping cached menu '
+          '(${_lastMenuVersion ?? 'none'})');
       Trace.mark('menu_parsed');
     }
 
@@ -781,6 +797,12 @@ class SyncService {
     _setTables(tables);
   }
 
+  /// `operator:verify` for [pin], carrying [cachedMenuVersion] so a desk that
+  /// supports it can skip re-sending an unchanged menu. The reply goes through
+  /// [applyInitialSync] like a resync's does, which tolerates the absent menu.
+  Future<Map<String, dynamic>> verifyPin(String pin) =>
+      _socket.verifyPin(pin, menuVersion: _lastMenuVersion);
+
   Future<bool> requestResync() => _requestResync();
 
   Future<bool> _requestMenuOnlyResync() =>
@@ -822,8 +844,10 @@ class SyncService {
 
         _socket.markVerified();
         _ref.read(isAuthenticatedProvider.notifier).state = true;
-        unawaited(_ref.read(offlineOrderQueueProvider).flush(_socket).then(
-            (_) => _ref.read(kotQueueProvider).flush(_socket)));
+        unawaited(_ref
+            .read(offlineOrderQueueProvider)
+            .flush(_socket)
+            .then((_) => _ref.read(kotQueueProvider).flush(_socket)));
         return true;
       } else if (res['code'] == 'reauth_required') {
         if (await promptPinReverify()) {

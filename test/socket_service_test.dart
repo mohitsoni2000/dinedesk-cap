@@ -98,4 +98,23 @@ void main() {
       expect(SocketService.stripRecoveryOffset(three), equals(three));
     });
   });
+
+  group('buildVerifyPayload — operator:verify carries the cached menu version',
+      () {
+    test('sends only the PIN when no menu is cached (cold start)', () {
+      expect(SocketService.buildVerifyPayload('1234'), {'pin': '1234'});
+    });
+
+    test('adds menu_version when a menu is cached', () {
+      expect(
+        SocketService.buildVerifyPayload('1234', menuVersion: 'mv-42'),
+        {'pin': '1234', 'menu_version': 'mv-42'},
+      );
+    });
+
+    test('treats an empty version as no version', () {
+      expect(SocketService.buildVerifyPayload('1234', menuVersion: ''),
+          {'pin': '1234'});
+    });
+  });
 }

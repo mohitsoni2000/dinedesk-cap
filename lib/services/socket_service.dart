@@ -439,11 +439,35 @@ class SocketService {
   /// give up first, never the transport underneath it.
   static const Duration syncBundledAckTimeout = Duration(seconds: 28);
 
-  Future<Map<String, dynamic>> verifyPin(String pin) async {
-    logD(_tag, 'operator:verify');
+  /// The `operator:verify` payload.
+  ///
+  /// [menuVersion] is the version of the menu this phone already holds (the
+  /// same value `operator:resync` sends — see SyncService). A Desk that knows
+  /// it answers with `sync.menu` omitted when the versions match — the menu is
+  /// ~277KB of the ~368KB verify reply, re-sent on every PIN entry for nothing,
+  /// and that one oversized ack is what a weak multi-hop LAN chokes on. An
+  /// older Desk strips the unknown key (its zod schema is non-strict) and
+  /// sends the full menu as before. Omitted entirely when there is no cached
+  /// menu, so a cold start always gets one.
+  static Map<String, dynamic> buildVerifyPayload(
+    String pin, {
+    String? menuVersion,
+  }) =>
+      <String, dynamic>{
+        'pin': pin,
+        if (menuVersion != null && menuVersion.isNotEmpty)
+          'menu_version': menuVersion,
+      };
+
+  Future<Map<String, dynamic>> verifyPin(
+    String pin, {
+    String? menuVersion,
+  }) async {
+    logD(_tag,
+        'operator:verify${menuVersion == null ? '' : ' (menu_version held)'}');
     final response = await emitAck(
       'operator:verify',
-      <String, dynamic>{'pin': pin},
+      buildVerifyPayload(pin, menuVersion: menuVersion),
       timeout: syncBundledAckTimeout,
     );
     if (response['kind'] == 'success') _setState(SocketState.verified);

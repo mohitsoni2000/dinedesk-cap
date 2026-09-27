@@ -351,6 +351,31 @@ class SocketService {
   /// dedicated probes.
   void Function(Duration)? onAckRtt;
 
+  /// Transports for the long-lived operator socket. Websocket only — and
+  /// deliberately so, even though the Desk may accept long-polling too.
+  ///
+  /// socket_io_client (3.1.4 in pubspec.lock, and still in 3.1.6) has no
+  /// polling transport on native platforms at all: the dart:io build of
+  /// `Transports.newInstance` (lib/src/engine/transport/io_transports.dart)
+  /// ignores the requested name and always returns a WebSocket transport.
+  /// Polling exists only in the web build. That rules out both orderings:
+  ///
+  /// - `['websocket', 'polling']` gives no fallback. A failed websocket
+  ///   handshake goes engine `onError` -> `onClose` and the Manager simply
+  ///   retries the *same* first transport; the list is only ever advanced when
+  ///   constructing a transport throws, which never happens here.
+  /// - `['polling', 'websocket']` is actively harmful. `createTransport` puts
+  ///   the *name* into the handshake query, so the phone would open a
+  ///   WebSocket to `...&transport=polling` — a transport mismatch every
+  ///   engine.io server rejects, i.e. no connection at all, on every Desk.
+  ///
+  /// So a Desk-side polling allowance changes nothing for Crew until the app
+  /// uses a client that actually implements polling on Android/iOS. Auth,
+  /// connectionStateRecovery (pid/offset) and the heartbeat all ride the
+  /// socket.io CONNECT packet / namespace events and are transport-agnostic,
+  /// so nothing else here would need to change if that day comes.
+  static const List<String> operatorTransports = <String>['websocket'];
+
   /// Base handshake timeout, before [timeoutPolicy] widens it.
   static const Duration connectTimeout = Duration(seconds: 3);
 
@@ -392,7 +417,7 @@ class SocketService {
     final socket = io.io(
       url,
       io.OptionBuilder()
-          .setTransports(<String>['websocket'])
+          .setTransports(operatorTransports)
           .setAuth(<String, dynamic>{'token': token})
           .enableReconnection()
           .setTimeout(timeoutPolicy.forConnect(connectTimeout).inMilliseconds)

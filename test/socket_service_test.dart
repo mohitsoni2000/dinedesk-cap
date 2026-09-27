@@ -117,4 +117,14 @@ void main() {
           {'pin': '1234'});
     });
   });
+
+  group('operatorTransports — native socket_io_client is websocket-only', () {
+    test('never leads with polling', () {
+      // On dart:io, socket_io_client builds a WebSocket whatever the name, but
+      // sends the name as `transport=` in the handshake — a leading 'polling'
+      // would be a websocket claiming to be polling, which the Desk rejects.
+      expect(SocketService.operatorTransports.first, 'websocket');
+      expect(SocketService.operatorTransports, isNot(contains('polling')));
+    });
+  });
 }

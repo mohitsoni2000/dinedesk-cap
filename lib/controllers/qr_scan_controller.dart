@@ -6,6 +6,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../data/providers.dart';
 import '../motion/feedback_kind.dart';
 import '../motion/feedback_service.dart';
+import '../services/discovery_service.dart';
 import '../services/pairing_uri.dart';
 import '../services/session_service.dart';
 import '../services/socket_service.dart';
@@ -94,7 +95,7 @@ class QrScanNotifier extends StateNotifier<QrScanState> {
     if (raw == null) return;
 
     final parsed = parsePairingUri(raw);
-    final PairingInfo pairing;
+    PairingInfo pairing;
     switch (parsed) {
       case PairingUriOk(pairing: final ok):
         pairing = ok;
@@ -111,6 +112,13 @@ class QrScanNotifier extends StateNotifier<QrScanState> {
       error: null,
       stage: ScanStage.checking,
     );
+
+    // A multi-homed desk lists every address it holds in the QR's `hosts`;
+    // the phone may well be on a network where only one of the alternates is
+    // reachable. Settle which one answers *before* the token probe, so the
+    // probe (and the saved pairing) use an address that actually works.
+    pairing = await resolveReachablePairing(pairing);
+    if (!mounted) return;
 
     final result =
         await SocketService.probe(pairing.host, pairing.port, pairing.token);

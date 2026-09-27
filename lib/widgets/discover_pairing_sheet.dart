@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/discovery_service.dart';
+import '../services/pairing_uri.dart';
 import '../services/session_service.dart';
 import '../services/socket_service.dart';
 import '../theme/tokens.dart';
@@ -176,6 +177,13 @@ class _DiscoverPairingSheetBodyState
           token: token,
           deviceSecret: secret,
           deskInstanceId: desk.id,
+          // The beacon already told us every interface this desk holds —
+          // keeping them means a later repair works even from a network the
+          // beacon can't reach, same as the QR's `hosts` fan-out.
+          // Held to the same LAN-only rule as the QR's `hosts`: a beacon is
+          // just an unauthenticated UDP packet, and nothing it says should be
+          // able to point this phone at a public address.
+          altHosts: parseAltHosts(desk.ips.join(','), primaryHost: desk.ip),
         );
         await SessionService().savePairing(pairing);
         if (!mounted) return;

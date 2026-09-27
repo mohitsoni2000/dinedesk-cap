@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restro/services/pairing_uri.dart';
+import 'package:restro/services/session_service.dart';
 
 void main() {
   group('AUDIT #7 — a printed QR must not be able to redirect the phone', () {
@@ -85,6 +86,60 @@ void main() {
       );
       expect(result, isA<PairingUriOk>());
       expect((result as PairingUriOk).pairing.deskInstanceId, isNull);
+    });
+  });
+
+  group(
+      'hosts[] — a multi-homed desk offers every address it can be reached on',
+      () {
+    test('captures the alternates and drops the primary duplicate', () {
+      final result = parsePairingUri(
+        'restroapp://pair?host=192.168.137.1&port=8080&token=abc'
+        '&hosts=192.168.137.1,192.168.29.5,10.0.0.7',
+      );
+      expect(result, isA<PairingUriOk>());
+      final pairing = (result as PairingUriOk).pairing;
+      expect(pairing.host, '192.168.137.1');
+      expect(pairing.altHosts, ['192.168.29.5', '10.0.0.7']);
+    });
+
+    test('leaves altHosts empty for a QR without hosts (older Desk build)', () {
+      final result = parsePairingUri(
+        'restroapp://pair?host=192.168.1.42&port=8080&token=abc',
+      );
+      expect(result, isA<PairingUriOk>());
+      expect((result as PairingUriOk).pairing.altHosts, isEmpty);
+    });
+
+    test('silently drops a public address smuggled into hosts, keeps the rest',
+        () {
+      final result = parsePairingUri(
+        'restroapp://pair?host=192.168.1.42&port=8080&token=abc'
+        '&hosts=192.168.1.42,8.8.8.8,evil.example.com,10.0.0.7',
+      );
+      expect(result, isA<PairingUriOk>());
+      expect((result as PairingUriOk).pairing.altHosts, ['10.0.0.7'],
+          reason: 'hosts[] must be held to the same LAN-only rule as host');
+    });
+
+    test('tolerates blanks, whitespace and repeats', () {
+      final result = parsePairingUri(
+        'restroapp://pair?host=192.168.1.42&port=8080&token=abc'
+        '&hosts=,%2010.0.0.7%20,,10.0.0.7,192.168.1.9,',
+      );
+      expect(result, isA<PairingUriOk>());
+      expect((result as PairingUriOk).pairing.altHosts,
+          ['10.0.0.7', '192.168.1.9']);
+    });
+
+    test('caps the list so a hostile QR cannot fan the phone out forever', () {
+      final many = List.generate(40, (i) => '10.0.0.$i').join(',');
+      final result = parsePairingUri(
+        'restroapp://pair?host=192.168.1.42&port=8080&token=abc&hosts=$many',
+      );
+      expect(result, isA<PairingUriOk>());
+      expect(
+          (result as PairingUriOk).pairing.altHosts.length, maxPairingAltHosts);
     });
   });
 }

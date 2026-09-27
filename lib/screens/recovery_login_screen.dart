@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/providers.dart';
 import '../motion/motion.dart';
+import '../services/discovery_service.dart';
 import '../services/log.dart';
 import '../services/session_service.dart';
 import '../services/socket_service.dart';
@@ -81,9 +83,9 @@ class _RecoveryLoginScreenState extends ConsumerState<RecoveryLoginScreen>
     });
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
 
-    final pairing = await SessionService().getSavedPairing();
-    final deviceSecret = pairing?.deviceSecret;
-    if (pairing == null || deviceSecret == null) {
+    final saved = await SessionService().getSavedPairing();
+    final deviceSecret = saved?.deviceSecret;
+    if (saved == null || deviceSecret == null) {
       if (!mounted) return;
       setState(() {
         _submitting = false;
@@ -91,6 +93,12 @@ class _RecoveryLoginScreenState extends ConsumerState<RecoveryLoginScreen>
       });
       return;
     }
+
+    // Recovery is usually reached *because* the link broke — and on a
+    // multi-homed desk the likeliest reason is that the phone is now on the
+    // desk's other network. Use whichever known address answers.
+    final pairing = await resolveReachablePairing(saved);
+    if (!mounted) return;
 
     final result = await SocketService.recover(
       pairing.host,
@@ -105,9 +113,26 @@ class _RecoveryLoginScreenState extends ConsumerState<RecoveryLoginScreen>
       case RecoverySuccess(:final token, :final deviceSecret):
         logD(_tag, '✓ Recovered — saving fresh credentials');
         ref.read(feedbackServiceProvider).fire(const FeedbackSuccess());
+        if (pairing.host != saved.host) {
+          await SessionService().savePairing(pairing);
+        }
         await SessionService()
             .saveRecoveredCredentials(token: token, deviceSecret: deviceSecret);
         if (!mounted) return;
+        // ConnectionBootstrap only reads storage at boot; without this it
+        // would keep dialling with the token (and address) recovery just
+        // replaced. Same contract as every other pairing UI — see
+        // connectWithFreshPairing's doc comment.
+        ref.read(connectionBootstrapProvider.notifier).connectWithFreshPairing(
+              PairingInfo(
+                host: pairing.host,
+                port: pairing.port,
+                token: token,
+                deviceSecret: deviceSecret,
+                deskInstanceId: pairing.deskInstanceId,
+                altHosts: pairing.altHosts,
+              ),
+            );
         context.go('/connecting');
       case RecoveryFailed(:final message):
         logD(_tag, '✗ Recovery failed: $message');

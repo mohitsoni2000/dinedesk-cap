@@ -294,17 +294,54 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
   /// Shared by the boot-time connect timeout and the mid-session
   /// rediscovery watchdog. Returns true iff a reconnect was kicked off.
   Future<bool> _rediscoverAndRepair(PairingInfo pairing, int gen) async {
-    final candidates = await scanForDesks();
-    if (gen != _generation) return false;
-
-    final toProbe = candidates
-        .where((c) => !(c.ip == pairing.host && c.port == pairing.port))
-        .toList();
-    final verified = await _firstVerifiedDesk(
-      toProbe,
+    // The QR's `hosts` fan-out (and every address this pairing has since
+    // moved off) is known without hearing a beacon at all — which matters,
+    // because a beacon only crosses the subnet it was broadcast on. Those are
+    // probed straight away, *concurrently* with the UDP scan rather than after
+    // it: the scan always costs its full listen window, and a multi-homed desk
+    // reachable on an address we already hold shouldn't make the operator
+    // wait that out first.
+    final scan = scanForDesks();
+    final known = expandDeskEndpoints(
+      <DiscoveredDesk>[
+        if (pairing.altHosts.isNotEmpty)
+          DiscoveredDesk(
+            ip: pairing.host,
+            port: pairing.port,
+            id: pairing.deskInstanceId,
+            ips: pairing.altHosts,
+          ),
+      ],
+      excludeIp: pairing.host,
+      excludePort: pairing.port,
+    );
+    var verified = await firstVerifiedEndpoint(
+      known,
       pairing.deskInstanceId,
       priorityHost: pairing.host,
     );
+    final candidates = await scan;
+    if (gen != _generation) return false;
+
+    if (verified == null) {
+      // Flatten to individual addresses BEFORE excluding the one we're failing
+      // on. Excluding at desk granularity used to discard the whole beacon
+      // record — alternates included — whenever its primary `ip` matched the
+      // pairing host, which is precisely the multi-homed desk this repair path
+      // exists to rescue. See expandDeskEndpoints' doc comment. Addresses the
+      // known-address pass above already ruled out are skipped too.
+      final alreadyTried = {for (final k in known) '${k.ip}:${k.port}'};
+      final targets = expandDeskEndpoints(
+        candidates,
+        excludeIp: pairing.host,
+        excludePort: pairing.port,
+      ).where((t) => !alreadyTried.contains('${t.ip}:${t.port}')).toList();
+      verified = await firstVerifiedEndpoint(
+        targets,
+        pairing.deskInstanceId,
+        priorityHost: pairing.host,
+      );
+    }
     if (gen != _generation) return false;
     if (verified == null) return false;
 
@@ -312,93 +349,11 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
       _tag,
       '✓ Found desk at new address ${verified.ip}:${verified.port} — re-pairing silently',
     );
-    final updated = PairingInfo(
-      host: verified.ip,
-      port: verified.port,
-      token: pairing.token,
-      deviceSecret: pairing.deviceSecret,
-      deskInstanceId: pairing.deskInstanceId,
-    );
+    final updated = pairing.movedTo(verified.ip, verified.port);
     await SessionService().savePairing(updated);
     if (gen != _generation) return false;
     unawaited(_attemptConnect(updated));
     return true;
-  }
-
-  static bool _sameSubnet(String a, String host) {
-    final partsA = a.split('.');
-    final partsB = host.split('.');
-    if (partsA.length != 4 || partsB.length != 4) return false;
-    return partsA[0] == partsB[0] &&
-        partsA[1] == partsB[1] &&
-        partsA[2] == partsB[2];
-  }
-
-  Future<DiscoveredDesk?> _firstVerifiedDesk(
-    List<DiscoveredDesk> candidates,
-    String? expectedId, {
-    String? priorityHost,
-  }) {
-    final targets = <DiscoveredDesk>[];
-    for (final candidate in candidates) {
-      for (final address in {candidate.ip, ...candidate.ips}) {
-        targets.add(DiscoveredDesk(
-          ip: address,
-          port: candidate.port,
-          id: candidate.id,
-        ));
-      }
-    }
-    if (targets.isEmpty) return Future.value(null);
-    final completer = Completer<DiscoveredDesk?>();
-    var remaining = targets.length;
-
-    void pingTarget(DiscoveredDesk target) {
-      SocketService.ping(
-        target.ip,
-        target.port,
-        timeout: const Duration(milliseconds: 1500),
-      ).then((result) {
-        if (completer.isCompleted) return;
-        final matches = switch (result) {
-          PingOk(id: final id) => expectedId == null || id == expectedId,
-          PingFailed() => false,
-        };
-        if (matches) {
-          completer.complete(target);
-        } else if (--remaining == 0) {
-          completer.complete(null);
-        }
-      });
-    }
-
-    final priority = <DiscoveredDesk>[];
-    final rest = <DiscoveredDesk>[];
-    for (final target in targets) {
-      (priorityHost != null && _sameSubnet(target.ip, priorityHost)
-              ? priority
-              : rest)
-          .add(target);
-    }
-    for (final target in priority) {
-      pingTarget(target);
-    }
-    if (rest.isEmpty) {
-      return completer.future;
-    }
-    if (priority.isEmpty) {
-      for (final target in rest) {
-        pingTarget(target);
-      }
-    } else {
-      Future<void>.delayed(const Duration(milliseconds: 300), () {
-        if (completer.isCompleted) return;
-        for (final target in rest) {
-          pingTarget(target);
-        }
-      });
-    }
-    return completer.future;
   }
 
   Future<void> _runDemoStages(PairingInfo pairing, int gen) async {

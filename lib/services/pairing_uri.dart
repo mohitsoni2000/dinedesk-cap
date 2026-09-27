@@ -38,6 +38,7 @@ PairingUriResult parsePairingUri(String raw) {
   final token = uri.queryParameters['token']?.trim();
   final deviceSecret = uri.queryParameters['device_secret']?.trim();
   final deskInstanceId = uri.queryParameters['id']?.trim();
+  final altHostsText = uri.queryParameters['hosts'];
 
   if (host == null || host.isEmpty) {
     return const PairingUriInvalid('missing host');
@@ -63,8 +64,30 @@ PairingUriResult parsePairingUri(String raw) {
             : deviceSecret,
         deskInstanceId: (deskInstanceId == null || deskInstanceId.isEmpty)
             ? null
-            : deskInstanceId),
+            : deskInstanceId,
+        altHosts: parseAltHosts(altHostsText, primaryHost: host)),
   );
+}
+
+/// The `hosts` parameter: the desk's other reachable addresses.
+///
+/// Unlike a bad `host`, a bad entry here doesn't invalidate the QR — the
+/// primary already passed the LAN-only check, so a junk alternate is dropped
+/// and pairing proceeds. Each entry is still held to `isLocalNetworkHost`,
+/// or a printed QR could smuggle in a public address for the phone to probe.
+List<String> parseAltHosts(String? raw, {required String primaryHost}) {
+  if (raw == null || raw.trim().isEmpty) return const [];
+  final seen = <String>{primaryHost.toLowerCase()};
+  final alternates = <String>[];
+  for (final part in raw.split(',')) {
+    final candidate = part.trim();
+    if (candidate.isEmpty) continue;
+    if (!isLocalNetworkHost(candidate)) continue;
+    if (!seen.add(candidate.toLowerCase())) continue;
+    alternates.add(candidate);
+    if (alternates.length == maxPairingAltHosts) break;
+  }
+  return List.unmodifiable(alternates);
 }
 
 bool isLocalNetworkHost(String host) {

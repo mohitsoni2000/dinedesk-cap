@@ -1,0 +1,7 @@
+What's new in 1.2.1
+
+- Fixed "Connection lost" appearing while entering your PIN, and the app getting stuck without reconnecting afterwards.
+- Logging in with your PIN is much faster on weak Wi-Fi — the app no longer downloads the whole menu again when it hasn't changed.
+- If the Desk is connected to more than one network (for example both cable and Wi-Fi), the app now finds it on whichever network your phone is on, including right after scanning the QR code.
+- The app reconnects on its own after the phone wakes up or Wi-Fi comes back, without dropping your session.
+- Signing in again after re-pairing now uses your new login straight away.

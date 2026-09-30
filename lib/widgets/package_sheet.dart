@@ -11,16 +11,30 @@ import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
 class PackageSheet extends ConsumerWidget {
-  const PackageSheet({super.key});
+  /// Items the desk hides for this table's area; a package holding one is
+  /// left out, since the desk would refuse it on send.
+  final Set<String> hiddenItemIds;
+  const PackageSheet({super.key, this.hiddenItemIds = const <String>{}});
 
-  static Future<void> show(BuildContext context) {
+  static Future<void> show(
+    BuildContext context, {
+    Set<String> hiddenItemIds = const <String>{},
+  }) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.32),
-      builder: (_) => const PackageSheet(),
+      builder: (_) => PackageSheet(hiddenItemIds: hiddenItemIds),
     );
+  }
+
+  bool _holdsHidden(Map<String, dynamic> pkg) {
+    if (hiddenItemIds.isEmpty) return false;
+    final items = pkg['items'];
+    if (items is! List) return false;
+    return items.any((i) =>
+        i is Map && hiddenItemIds.contains(i['item_id']?.toString() ?? ''));
   }
 
   @override
@@ -30,7 +44,9 @@ class PackageSheet extends ConsumerWidget {
     final packages = <Map<String, dynamic>>[];
     if (packagesRaw is List) {
       for (final p in packagesRaw) {
-        if (p is Map) packages.add(Map<String, dynamic>.from(p));
+        if (p is! Map) continue;
+        final pkg = Map<String, dynamic>.from(p);
+        if (!_holdsHidden(pkg)) packages.add(pkg);
       }
     }
 

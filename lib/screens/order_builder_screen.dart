@@ -12,11 +12,13 @@ import '../data/menu_selectors.dart';
 import '../data/money.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../services/menu_area.dart';
 import '../services/socket_service.dart';
 import '../models/server_models.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
+import '../widgets/area_hidden_sheet.dart';
 import '../widgets/app_surface.dart';
 import '../widgets/dynamic_toast.dart';
 import '../widgets/item_detail_sheet.dart';
@@ -51,6 +53,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   bool _tableMembershipInFlight = false;
   SocketService? _socketSvc;
 
+  /// Area-wise menu: what the desk hides on this table's floor / Room Service.
+  MenuAreaContext _area = MenuAreaContext.empty;
+  int _areaSeq = 0;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -76,8 +82,68 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _joinPresence();
+        _loadMenuArea();
       }
     });
+  }
+
+  Map<String, dynamic> _areaWhere() => menuAreaWhere(
+        isRoom: widget.isRoom,
+        slotId: widget.tableId,
+        orderId: _runningOrder()?.id,
+      );
+
+  /// Asks the desk what is hidden here. Re-run on every menu update, so a
+  /// change made on the desk or another phone shows up without a reopen.
+  Future<void> _loadMenuArea() async {
+    final seq = ++_areaSeq;
+    final ctx = await fetchMenuAreaContext(
+        ref.read(socketServiceProvider), _areaWhere());
+    // Null: the desk could not be asked — keep what is hidden now.
+    if (!mounted || seq != _areaSeq || ctx == null) return;
+    setState(() => _area = ctx);
+  }
+
+  Future<void> _hideForArea(MenuItem item) async {
+    final area = _area.areaLabel;
+    if (area == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Hide for $area?'),
+        content: Text(
+            'Nobody can order "${item.name}" here until it is shown again from Hidden here.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Hide')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final error = await setMenuAreaBlocked(
+      ref.read(socketServiceProvider),
+      _areaWhere(),
+      targetType: 'item',
+      targetId: item.id,
+      blocked: true,
+    );
+    if (!mounted) return;
+    if (error != null) {
+      DynamicToast.show(context, message: error, kind: ToastKind.error);
+      return;
+    }
+    // Anything already in the cart would only be refused on send.
+    final cart = ref.read(cartProvider.notifier);
+    for (final line in ref.read(cartProvider)) {
+      if (line.item.id == item.id) cart.removeByUid(line.uid);
+    }
+    DynamicToast.show(context,
+        message: '${item.name} hidden for $area', kind: ToastKind.warning);
+    await _loadMenuArea();
   }
 
   Future<void> _joinPresence() async {
@@ -388,6 +454,20 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                 ),
               ],
             ),
+            if (_area.canToggle && _area.areaLabel != null) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.visibility_off_outlined, size: 18),
+                  label: Text('Hide for ${_area.areaLabel}'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _hideForArea(item);
+                  },
+                ),
+              ),
+            ],
             SizedBox(height: context.sheetBottomInset),
           ],
         ),
@@ -397,8 +477,17 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(menuProvider, (_, __) => _loadMenuArea());
+    ref.listen(flagsProvider, (_, __) => _loadMenuArea());
     final sortedBySection = ref.watch(sortedMenuBySectionProvider);
-    final allSections = ref.watch(orderedCategoryNamesProvider);
+    final allSections = ref
+        .watch(orderedCategoryNamesProvider)
+        .where((s) => (sortedBySection[s] ?? const <MenuItem>[])
+            .any((m) => !_area.isHidden(m.id)))
+        .toList(growable: false);
+    // A section the area-wise menu just emptied cannot stay selected.
+    final activeSection =
+        allSections.contains(_activeSection) ? _activeSection : null;
 
     final menu = ref.watch(menuProvider);
 
@@ -409,12 +498,12 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     final query = _query.trim().toLowerCase();
     final sections = <String, List<MenuItem>>{};
     for (final entry in sortedBySection.entries) {
-      if (_activeSection != null && entry.key != _activeSection) continue;
-      final items = query.isEmpty
-          ? entry.value
-          : entry.value
-              .where((m) => m.name.toLowerCase().contains(query))
-              .toList(growable: false);
+      if (activeSection != null && entry.key != activeSection) continue;
+      final items = entry.value
+          .where((m) =>
+              !_area.isHidden(m.id) &&
+              (query.isEmpty || m.name.toLowerCase().contains(query)))
+          .toList(growable: false);
       if (items.isNotEmpty) sections[entry.key] = items;
     }
 
@@ -669,7 +758,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           final isLinked = linkGroups.values
                               .any((ids) => ids.contains(widget.tableId));
                           final flags = ref.watch(flagsProvider);
-                          if (!isTableAction && !flags.packages) {
+                          if (!isTableAction &&
+                              !flags.packages &&
+                              !_area.canToggle) {
                             return const SizedBox.shrink();
                           }
                           return PopupMenuButton<String>(
@@ -689,7 +780,16 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                   }
                                   break;
                                 case 'packages':
-                                  PackageSheet.show(context);
+                                  PackageSheet.show(context,
+                                      hiddenItemIds: _area.hiddenItemIds);
+                                  break;
+                                case 'hidden':
+                                  AreaHiddenSheet.show(
+                                    context,
+                                    area: _area,
+                                    where: _areaWhere(),
+                                    onChanged: _loadMenuArea,
+                                  );
                                   break;
                                 case 'clear_cart':
                                   _confirmClearCart();
@@ -737,6 +837,23 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                       const SizedBox(width: 8),
                                       const Text('Packages',
                                           style: AppTypography.bodyMd),
+                                    ],
+                                  ),
+                                ),
+                              if (_area.canToggle)
+                                PopupMenuItem(
+                                  value: 'hidden',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.visibility_off_outlined,
+                                          size: 18, color: ctx.palette.ink70),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _area.entries.isEmpty
+                                            ? 'Hidden here'
+                                            : 'Hidden here (${_area.entries.length})',
+                                        style: AppTypography.bodyMd,
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -847,7 +964,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                         children: [
                           _SectionChip(
                             label: 'All',
-                            selected: _activeSection == null,
+                            selected: activeSection == null,
                             onTap: () {
                               ref
                                   .read(feedbackServiceProvider)
@@ -859,7 +976,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           for (final s in allSections) ...[
                             _SectionChip(
                               label: s,
-                              selected: _activeSection == s,
+                              selected: activeSection == s,
                               onTap: () {
                                 ref
                                     .read(feedbackServiceProvider)
@@ -895,9 +1012,14 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     visible: !_searchOpen,
                     scroll: _scrollCollapse,
                     child: Builder(builder: (context) {
-                      final pinned = ref.watch(fastAddPinnedProvider);
-                      final auto = ref.watch(fastAddAutoProvider);
-                      final recent = ref.watch(recentItemsProvider);
+                      bool shown(MenuItem m) => !_area.isHidden(m.id);
+                      final pinned = ref
+                          .watch(fastAddPinnedProvider)
+                          .where(shown)
+                          .toList();
+                      final auto = ref.watch(fastAddAutoProvider).where(shown);
+                      final recent =
+                          ref.watch(recentItemsProvider).where(shown);
 
                       final pinnedIds = pinned.map((m) => m.id).toSet();
                       final seen = <String>{...pinnedIds};
@@ -912,7 +1034,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                         for (final m in recent)
                           if (seen.add(m.id)) m,
                       ];
-                      if (merged.isEmpty) merged.addAll(menu.take(6));
+                      if (merged.isEmpty) {
+                        merged.addAll(menu.where(shown).take(6));
+                      }
                       if (merged.isEmpty) return const SizedBox.shrink();
                       final chips = merged.take(12).toList();
                       return SizedBox(
@@ -1028,8 +1152,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                     Text(
                                       _query.isNotEmpty
                                           ? 'No results for "$_query"'
-                                          : _activeSection != null
-                                              ? 'Nothing in "$_activeSection"'
+                                          : activeSection != null
+                                              ? 'Nothing in "$activeSection"'
                                               : sortedBySection.isEmpty
                                                   ? 'Menu not loaded yet'
                                                   : 'No items match',
@@ -1040,7 +1164,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                     Text(
                                       _query.isNotEmpty
                                           ? 'Try searching something else'
-                                          : _activeSection != null
+                                          : activeSection != null
                                               ? 'Try a different section'
                                               : 'Menu will appear once synced',
                                       style: AppTypography.caption,
@@ -1266,8 +1390,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                             horizontal: 16, vertical: 13),
                                         decoration: const BoxDecoration(
                                           color: AppColors.terra,
-                                          borderRadius: BorderRadius.all(
-                                              AppRadii.md),
+                                          borderRadius:
+                                              BorderRadius.all(AppRadii.md),
                                         ),
                                         child: Row(
                                           children: [

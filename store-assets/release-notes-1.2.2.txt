@@ -1,0 +1,7 @@
+What's new in 1.2.2
+
+- Rooms now show their real state — dirty, being cleaned, awaiting inspection or blocked — instead of all reading "Free".
+- A room held for a guest arriving today shows "Held" with the guest's name and arrival time, and an occupied room shows who is checking in next.
+- Tapping a held room, or one that is not ready yet, tells you why instead of opening an order.
+- Search finds a room by the name of the guest it is held for.
+- Room tiles grow with larger text sizes, so nothing gets cut off.

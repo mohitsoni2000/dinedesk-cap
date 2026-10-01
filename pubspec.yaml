@@ -1,7 +1,7 @@
 name: restro
 description: Restro Operator — Indian restaurant POS for waiters..
 publish_to: 'none'
-version: 1.2.1+20
+version: 1.2.2+21
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -31,7 +31,10 @@ dependencies:
 
   # Utility
   collection: ^1.18.0
-  socket_io_client: ^3.0.2
+  # Pinned to the 3.1.4 line: SocketService.nudgeEngine reaches into
+  # socket.io.engine.onClose to keep connection-state recovery alive (see
+  # test/socket_recovery_api_test.dart). Review that before bumping.
+  socket_io_client: ~3.1.4
   shared_preferences: ^2.2.3
   sensors_plus: ^6.1.0
 

@@ -1,4 +1,6 @@
 import '../data/money.dart';
+import '../services/log.dart';
+import 'room_arrival_hold.dart';
 import 'wire.dart';
 
 class ServerTable {
@@ -92,6 +94,7 @@ class ServerRoom {
   final int activeBillCount;
   final int orderItemCount;
   final int kotCount;
+  final RoomArrivalHold? arrivalHold;
 
   const ServerRoom({
     required this.id,
@@ -105,11 +108,17 @@ class ServerRoom {
     this.activeBillCount = 0,
     this.orderItemCount = 0,
     this.kotCount = 0,
+    this.arrivalHold,
   });
 
   factory ServerRoom.fromMap(Map<String, dynamic> m) {
     const entity = 'ServerRoom';
     final id = requireString(m, 'id', entity);
+    final rawHold = m['arrival_hold'];
+    final hold = RoomArrivalHold.tryParse(rawHold);
+    if (rawHold != null && hold == null) {
+      logD('[Wire]', 'ServerRoom $id: ignored a malformed arrival_hold');
+    }
     return ServerRoom(
       id: id,
       name: stringOr(m, 'name', id),
@@ -122,6 +131,7 @@ class ServerRoom {
       activeBillCount: intOr(m, 'active_bill_count', 0),
       orderItemCount: intOr(m, 'order_item_count', 0),
       kotCount: intOr(m, 'kot_count', 0),
+      arrivalHold: hold,
     );
   }
 }

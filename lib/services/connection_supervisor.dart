@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import 'connection_health.dart';
+import 'link_monitor.dart';
 import 'log.dart';
 import 'socket_service.dart';
 
@@ -14,20 +15,21 @@ const String _tag = '[Supervisor]';
 /// on its own.
 ///
 /// [SocketService] deliberately stays a dumb transport and [ConnectionBootstrap]
-/// owns the pairing lifecycle; this sits between them and owns the three things
-/// neither had a home for:
+/// owns the pairing lifecycle; this sits between them and owns what neither had
+/// a home for:
 ///
 /// - **Liveness.** socket.io only learns a connection is dead when the desk's
-///   heartbeat lapses, `pingInterval + pingTimeout` = 40s away. Before this,
-///   the app's own first hint was an operator tapping something and waiting out
-///   an ack timeout — the connection was dead, but it looked like the app was
-///   hanging. A cheap app-level heartbeat turns 40s of ambiguity into ~5s.
-/// - **Link measurement.** Every ack that comes back feeds an [RttTracker],
-///   which widens the app's timeouts on a slow LAN instead of failing requests
-///   that were merely late. See [AdaptiveTimeoutPolicy].
-/// - **Network changes.** Wi-Fi coming back is the single most useful signal
-///   available for "try again now", and nothing was listening for it. socket.io
-///   just kept dialling on its own blind schedule.
+///   heartbeat lapses (`pingInterval + pingTimeout` away). A cheap app-level
+///   heartbeat turns that ambiguity into seconds. What a missed beat *means* is
+///   decided by the [LinkMonitor] (suspect → probe → dead), not here: one missed
+///   beat used to be a verdict, and the verdict was a full socket teardown.
+/// - **Link measurement.** Every ack that comes back feeds an [RttTracker], and
+///   every ack that does not feeds it a censored sample at the timeout. The
+///   estimate survives socket blips and is reset only when the network identity
+///   or the desk host changes (a different path).
+/// - **Network changes.** connectivity_plus and the native Wi-Fi binding both
+///   feed the monitor; a change is suspicion while connected and an immediate
+///   redial while not.
 class ConnectionSupervisor {
   ConnectionSupervisor(this._ref);
 
@@ -35,7 +37,14 @@ class ConnectionSupervisor {
   final RttTracker _rtt = RttTracker();
   late final AdaptiveTimeoutPolicy _policy = AdaptiveTimeoutPolicy(_rtt);
 
+  LinkMonitor? _monitor;
+
+  /// The monitor, once [start] has run. Exposed for the lifecycle hook in
+  /// `main.dart` (`onResume`) and the banner's "Retry now".
+  LinkMonitor get monitor => _monitor!;
+
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  StreamSubscription<NetworkEvent>? _wifiSub;
   StreamSubscription<SocketState>? _socketSub;
   Timer? _heartbeatTimer;
   Timer? _connectivityDebounce;
@@ -44,29 +53,25 @@ class ConnectionSupervisor {
   bool _appForeground = true;
 
   /// Cleared the first time a heartbeat goes unanswered on a desk that is
-  /// demonstrably reachable — see [_onHeartbeatSilence]. Stays cleared for the
-  /// life of the app process, so a desk upgraded mid-shift only regains
-  /// heartbeats after the operator next relaunches. That is deliberate: the
-  /// alternative is re-paying the ~5s probe on every reconnect for every desk
-  /// that will never answer, and the fallback in the meantime is simply the
-  /// behaviour this app shipped with before heartbeats existed.
+  /// demonstrably reachable and has never answered one — see the monitor's
+  /// probe. Stays cleared for the life of the app process: the alternative is
+  /// re-paying the probe on every reconnect for every desk that will never
+  /// answer, and the fallback is simply the behaviour this app shipped with
+  /// before heartbeats existed (such a desk is never declared dead from
+  /// heartbeat silence).
   bool _heartbeatSupported = true;
   int _heartbeatSuccesses = 0;
 
   /// On a slow link [_policy] can widen a beat's timeout past the interval
-  /// between beats. Without this the timer would stack overlapping probes and,
-  /// on a genuine outage, fire [_onHeartbeatSilence] — and so a full reconnect —
-  /// several times over for the same failure.
+  /// between beats; don't stack overlapping probes.
   bool _beatInFlight = false;
 
-  /// Tight enough that a dead link is caught within a few seconds of the
-  /// operator's next glance at the screen, loose enough to be invisible on the
-  /// battery. Backgrounded, nobody is looking, so the interval relaxes.
+  String? _rttHost;
+  String? _networkId;
+  String? _connectivitySignature;
+
   static const Duration _foregroundInterval = Duration(seconds: 12);
   static const Duration _backgroundInterval = Duration(seconds: 30);
-
-  /// Base for the heartbeat's own ack timeout, before the measured link widens
-  /// it. Small: a heartbeat is one round trip with an empty payload.
   static const Duration _heartbeatBaseTimeout = Duration(seconds: 5);
 
   /// Connectivity streams are chatty — an interface change can arrive as three
@@ -83,6 +88,37 @@ class ConnectionSupervisor {
     socket.timeoutPolicy = _policy;
     socket.onAckRtt = _rtt.record;
 
+    final monitor = _monitor = LinkMonitor(
+      probeHeartbeat: _probeHeartbeat,
+      probePing: _probePing,
+      nudgeEngine: (why) =>
+          _ref.read(socketServiceProvider).nudgeEngine('monitor: $why'),
+      retryConnect: () => _ref.read(connectionBootstrapProvider.notifier).retry(),
+      rediscover: () =>
+          _ref.read(connectionBootstrapProvider.notifier).rediscoverNow(),
+      reconnectIfNeeded: () =>
+          _ref.read(socketServiceProvider).reconnectIfNeeded(),
+      heartbeatSupported: () => _heartbeatSupported,
+      heartbeatProven: () => _heartbeatSuccesses > 0,
+      onHeartbeatUnsupported: () {
+        logD(_tag, 'desk has no $heartbeatEvent handler — heartbeat disabled');
+        _heartbeatSupported = false;
+        _stopHeartbeat();
+      },
+      ackTimeoutFor: _policy.forAck,
+      onHealthChanged: (health) {
+        _ref.read(linkHealthProvider.notifier).state = health;
+      },
+      log: (message) => logD(_tag, message),
+    );
+
+    // A timeout is evidence, not a verdict: feed the estimate (censored at the
+    // timeout) and let the monitor decide whether to probe.
+    socket.onAckTimeout = (event, timeout) {
+      _rtt.recordTimeout(timeout);
+      monitor.onAckTimeout(event);
+    };
+
     _socketSub = socket.stateStream.listen(_onSocketState);
 
     _connectivitySub = Connectivity()
@@ -90,6 +126,13 @@ class ConnectionSupervisor {
         .listen(_onConnectivityChanged, onError: (Object err) {
       logE(_tag, 'connectivity stream failed', err);
     });
+
+    _wifiSub = _ref.read(wifiBindingProvider).events.listen(
+      _onWifiEvent,
+      onError: (Object err) {
+        logE(_tag, 'wifi binding events failed', err);
+      },
+    );
 
     logD(_tag, 'watching');
   }
@@ -102,17 +145,39 @@ class ConnectionSupervisor {
     if (_heartbeatTimer != null) _restartHeartbeat();
   }
 
+  /// The banner's "Retry now" (and the disconnected screen's retry): do
+  /// everything that could help, immediately.
+  void retryNow() {
+    final socket = _ref.read(socketServiceProvider);
+    if (socket.state == SocketState.verified) {
+      _monitor?.probeNow();
+      return;
+    }
+    socket.reconnectIfNeeded();
+    _ref.read(connectionBootstrapProvider.notifier).retry();
+  }
+
   void _onSocketState(SocketState state) {
+    _monitor?.onSocketState(state);
     if (state == SocketState.verified) {
       _restartHeartbeat();
     } else if (state == SocketState.disconnected) {
       _stopHeartbeat();
-      // The estimate belongs to a link that is gone. Carrying it across a
-      // reconnect would size the new link's timeouts off the old one's worst
-      // moments — which, since the estimate is built from the traffic just
-      // before a failure, are always the worst moments it ever saw.
+    } else if (state == SocketState.connecting) {
+      _resetRttIfHostChanged();
+    }
+  }
+
+  void _resetRttIfHostChanged() {
+    final pairing =
+        _ref.read(connectionBootstrapProvider.notifier).currentPairing;
+    if (pairing == null) return;
+    final host = '${pairing.host}:${pairing.port}';
+    if (_rttHost != null && _rttHost != host) {
+      logD(_tag, 'desk host changed — link estimate reset');
       _rtt.reset();
     }
+    _rttHost = host;
   }
 
   // ---------------------------------------------------------------- heartbeat
@@ -129,69 +194,54 @@ class ConnectionSupervisor {
     _heartbeatTimer = null;
   }
 
+  /// One scheduled beat. Its outcome only ever *informs* the monitor.
   Future<void> _beat() async {
     if (_beatInFlight) return;
     final socket = _ref.read(socketServiceProvider);
     if (socket.state != SocketState.verified) return;
-    // A re-verify (PinVerifySheet, change-PIN) streams a sync-sized reply;
-    // the heartbeat's ack queues behind it and can miss its 5s budget on a
-    // slow link, and "silence" ends in markDead + retry — a new socket that
-    // makes the desk drop the one carrying the verify. Skip this beat.
+    // A re-verify streams a sync-sized reply that this ack would queue behind.
     if (socket.isVerifyInFlight) return;
+    // Don't pile a routine beat onto an investigation already under way.
+    if (_monitor?.health != LinkHealth.healthy) return;
     _beatInFlight = true;
     try {
-      // emitAckProbe, not emitAck: silence here is ambiguous (see
-      // [_onHeartbeatSilence]) and must not be allowed to tear the session down
-      // by itself.
-      final response = await socket.emitAckProbe(
-        heartbeatEvent,
-        const <String, dynamic>{},
-        timeout: _policy.forAck(_heartbeatBaseTimeout),
-      );
-
-      if (!isTransportFailure(response)) {
-        _heartbeatSuccesses++;
-        return;
-      }
-      await _onHeartbeatSilence(socket);
+      final ok = await _probeHeartbeat(_policy.forAck(_heartbeatBaseTimeout));
+      _monitor?.onBeat(ok: ok);
     } finally {
       _beatInFlight = false;
     }
   }
 
-  /// A heartbeat went unanswered. That means one of two very different things,
-  /// and guessing wrong is expensive either way:
-  ///
-  /// - the socket is a zombie and the session needs rebuilding, or
-  /// - this desk is running a build older than [heartbeatEvent], so it will
-  ///   *never* answer, and tearing down on that would put every un-upgraded
-  ///   desk into a permanent reconnect loop of our own making.
-  ///
-  /// Only the first failure is ambiguous — a desk that has answered before
-  /// clearly supports the event, so silence from it now is real. For that first
-  /// one, the unauthenticated HTTP `/ping` endpoint (present on every desk
-  /// build) settles it: reachable means the desk is fine and simply doesn't
-  /// know this event, so stand down permanently and let the pre-existing
-  /// timeout paths do their job.
-  Future<void> _onHeartbeatSilence(SocketService socket) async {
-    if (_heartbeatSuccesses == 0) {
-      final pairing =
-          _ref.read(connectionBootstrapProvider.notifier).currentPairing;
-      if (pairing != null) {
-        final reachable = await SocketService.ping(pairing.host, pairing.port);
-        if (reachable is PingOk) {
-          logD(
-              _tag, 'desk has no $heartbeatEvent handler — heartbeat disabled');
-          _heartbeatSupported = false;
-          _stopHeartbeat();
-          return;
-        }
-      }
+  /// One heartbeat round trip; true iff the desk answered in time.
+  /// emitAckProbe, not emitAck: silence here is ambiguous (an old desk never
+  /// answers) and must not report itself as an ack timeout.
+  Future<bool> _probeHeartbeat(Duration timeout) async {
+    final socket = _ref.read(socketServiceProvider);
+    if (socket.state != SocketState.verified) return false;
+    // While a verify owns the socket its reply hogs the link; the verify has
+    // its own drop detection. Treat as alive rather than risk a teardown.
+    if (socket.isVerifyInFlight) return true;
+    final response = await socket.emitAckProbe(
+      heartbeatEvent,
+      const <String, dynamic>{},
+      timeout: timeout,
+    );
+    final ok = !isTransportFailure(response);
+    if (ok) {
+      _heartbeatSuccesses++;
+    } else {
+      _rtt.recordTimeout(timeout);
     }
+    return ok;
+  }
 
-    logD(_tag, 'heartbeat unanswered — treating the socket as dead');
-    socket.markDead();
-    _ref.read(connectionBootstrapProvider.notifier).retry();
+  Future<bool> _probePing(Duration timeout) async {
+    final pairing =
+        _ref.read(connectionBootstrapProvider.notifier).currentPairing;
+    if (pairing == null) return false;
+    final result =
+        await SocketService.ping(pairing.host, pairing.port, timeout: timeout);
+    return result is PingOk;
   }
 
   // ------------------------------------------------------------- connectivity
@@ -201,15 +251,49 @@ class ConnectionSupervisor {
         results.any((result) => result != ConnectivityResult.none);
     logD(_tag, 'connectivity: ${results.map((r) => r.name).join(",")}');
     _connectivityDebounce?.cancel();
-    if (!hasNetwork) return;
-    _connectivityDebounce = Timer(_connectivitySettle, _onNetworkAvailable);
+
+    final signature = (results.map((r) => r.name).toList()..sort()).join(',');
+    if (_connectivitySignature != null && _connectivitySignature != signature) {
+      // A different kind of network (wifi <-> mobile): a different path.
+      _rtt.reset();
+    }
+    _connectivitySignature = signature;
+
+    if (!hasNetwork) {
+      _monitor?.onNetworkEvent(const NetworkEvent(NetworkEventType.lost));
+      return;
+    }
+    _connectivityDebounce = Timer(
+      _connectivitySettle,
+      () => _onNetworkAvailable(const NetworkEvent(NetworkEventType.changed)),
+    );
   }
 
-  void _onNetworkAvailable() {
+  /// Native Wi-Fi binding events. An `available`/`changed` with a *different*
+  /// network id means the phone roamed to another AP or network: the old RTT
+  /// history describes a path it is no longer on.
+  void _onWifiEvent(NetworkEvent event) {
+    final id = event.networkId;
+    if (id != null &&
+        event.type != NetworkEventType.lost &&
+        _networkId != null &&
+        _networkId != id) {
+      logD(_tag, 'network identity changed — link estimate reset');
+      _rtt.reset();
+    }
+    if (id != null && event.type != NetworkEventType.lost) _networkId = id;
+    if (event.type == NetworkEventType.lost) {
+      _monitor?.onNetworkEvent(event);
+      return;
+    }
+    _onNetworkAvailable(event);
+  }
+
+  void _onNetworkAvailable(NetworkEvent event) {
     final socket = _ref.read(socketServiceProvider);
+    _monitor?.onNetworkEvent(event);
     if (socket.state != SocketState.disconnected) return;
     logD(_tag, 'network available while disconnected — reconnecting now');
-    _rtt.reset();
     // Nudge the existing socket first: if the desk never moved, this is the
     // whole fix and it lands in one round trip. The rescan behind it covers the
     // case where the address changed with the network.
@@ -220,14 +304,17 @@ class ConnectionSupervisor {
   void dispose() {
     _stopHeartbeat();
     _connectivityDebounce?.cancel();
+    _monitor?.dispose();
     unawaited(_socketSub?.cancel());
     unawaited(_connectivitySub?.cancel());
+    unawaited(_wifiSub?.cancel());
     try {
       // Provider teardown order isn't guaranteed — the socket may already be
       // disposed. Restoring its defaults is tidiness, not correctness.
       final socket = _ref.read(socketServiceProvider);
       socket.timeoutPolicy = const FixedTimeoutPolicy();
       socket.onAckRtt = null;
+      socket.onAckTimeout = null;
     } catch (_) {}
     _started = false;
   }

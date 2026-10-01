@@ -25,6 +25,18 @@ class RttTracker {
     if (_samplesMs.length > window) _samplesMs.removeAt(0);
   }
 
+  /// A request that got no answer within [timeout]. Its real round trip is
+  /// unknown but at least that long, so it is recorded *at* the timeout — a
+  /// censored sample. Dropping timeouts from the estimate would make the slowest
+  /// link look the fastest (only its lucky replies would be counted), and the
+  /// timeouts would never widen.
+  void recordTimeout(Duration timeout) => record(timeout);
+
+  /// Forget everything. Only for a change of network identity or of desk host —
+  /// the estimate then describes a path we are no longer on. A mere socket
+  /// blip keeps it: the link is the same weak link, and resetting on every
+  /// disconnect (as this used to) sent timeouts back to base exactly when the
+  /// link had just proven it needed them wide.
   void reset() => _samplesMs.clear();
 
   /// Null until [_minSamples] have been seen.

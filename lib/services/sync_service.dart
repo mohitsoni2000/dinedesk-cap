@@ -25,6 +25,23 @@ import 'trace.dart';
 
 const _tag = '[Sync]';
 
+RoomState mapRoomStatus(String status) {
+  switch (status.trim().toLowerCase()) {
+    case 'occupied':
+      return RoomState.occupied;
+    case 'dirty':
+      return RoomState.dirty;
+    case 'cleaning':
+      return RoomState.cleaning;
+    case 'clean':
+      return RoomState.inspect;
+    case 'blocked':
+      return RoomState.blocked;
+    default:
+      return RoomState.free;
+  }
+}
+
 TableState mapTableStatus(
     String status, String? currentOperatorId, List<String> tableOperatorIds) {
   switch (status.toLowerCase()) {
@@ -1003,14 +1020,13 @@ class SyncService {
       id: sr.name,
       serverId: sr.id,
       capacity: sr.capacity,
-      state: sr.status.toLowerCase() == 'occupied'
-          ? RoomState.occupied
-          : RoomState.free,
+      state: mapRoomStatus(sr.status),
       guestName: sr.guestName,
       activeOrderId: sr.activeOrderId,
       activeBillCount: sr.activeBillCount,
       orderItemCount: sr.orderItemCount,
       bill: sr.activeOrderId == null ? null : (sr.orderTotal ?? Money.zero),
+      arrivalHold: sr.arrivalHold,
     );
   }
 

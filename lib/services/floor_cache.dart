@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/money.dart';
 import '../data/providers.dart';
+import '../models/room_arrival_hold.dart';
 import 'log.dart';
 
 const String _tag = '[FloorCache]';
@@ -116,32 +117,44 @@ class FloorCache {
     }
   }
 
+  // 'state' stays one of 1.2.1's three names so an older build can still
+  // read the cache; the real status rides in 'status'.
+  static String _legacyRoomState(RoomState s) => switch (s) {
+        RoomState.mine => 'mine',
+        RoomState.occupied => 'occupied',
+        _ => 'free',
+      };
+
   static Map<String, dynamic> _roomToJson(RestaurantRoom r) =>
       <String, dynamic>{
         'id': r.id,
         'server_id': r.serverId,
         'capacity': r.capacity,
-        'state': r.state.name,
+        'state': _legacyRoomState(r.state),
+        'status': r.state.name,
         'guest_name': r.guestName,
         'active_order_id': r.activeOrderId,
         'active_bill_count': r.activeBillCount,
         'order_item_count': r.orderItemCount,
         'bill_paise': r.bill?.paise,
+        'arrival_hold': r.arrivalHold?.toJson(),
       };
 
   static RestaurantRoom? _roomFromJson(Map<String, dynamic> m) {
     try {
       final billPaise = m['bill_paise'] as int?;
+      final names = RoomState.values.asNameMap();
       return RestaurantRoom(
         id: m['id'] as String,
         serverId: m['server_id'] as String,
         capacity: m['capacity'] as int,
-        state: RoomState.values.byName(m['state'] as String),
+        state: names[m['status']] ?? names[m['state']] ?? RoomState.free,
         guestName: m['guest_name'] as String?,
         activeOrderId: m['active_order_id'] as String?,
         activeBillCount: m['active_bill_count'] as int? ?? 0,
         orderItemCount: m['order_item_count'] as int? ?? 0,
         bill: billPaise == null ? null : Money(billPaise),
+        arrivalHold: RoomArrivalHold.tryParse(m['arrival_hold']),
       );
     } catch (e) {
       logD(_tag, 'dropping one malformed cached room: $e');

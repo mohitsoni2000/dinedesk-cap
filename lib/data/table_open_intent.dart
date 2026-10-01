@@ -1,4 +1,6 @@
+import 'ist_time.dart';
 import 'providers.dart';
+import 'room_card_view.dart';
 
 enum TableOpenAction { createDraft, openOrder, blocked }
 
@@ -30,13 +32,29 @@ TableOpenIntent resolveTableOpenIntent(RestaurantTable table) {
   return TableOpenIntent.openOrder(table.serverId);
 }
 
-TableOpenIntent resolveRoomOpenIntent(RestaurantRoom room) {
-  if (room.state == RoomState.free &&
-      (room.activeOrderId == null || room.activeOrderId!.isEmpty)) {
-    return TableOpenIntent._(TableOpenAction.createDraft,
-        route: '/order/room/${room.serverId}');
+TableOpenIntent resolveRoomOpenIntent(RestaurantRoom room, {DateTime? now}) {
+  final view = roomCardView(room, istDateOf(now ?? DateTime.now()));
+  switch (view.state) {
+    case RoomCardState.held:
+      return TableOpenIntent.blocked(
+          'Held for ${view.guest} \u2014 desk checks the guest in first');
+    case RoomCardState.dirty:
+      return const TableOpenIntent.blocked('Room needs cleaning');
+    case RoomCardState.cleaning:
+      return const TableOpenIntent.blocked('Room is being cleaned');
+    case RoomCardState.inspect:
+      return const TableOpenIntent.blocked('Room is awaiting inspection');
+    case RoomCardState.blocked:
+      return const TableOpenIntent.blocked('Room is blocked');
+    case RoomCardState.free:
+    case RoomCardState.mine:
+    case RoomCardState.occupied:
+      break;
   }
-
-  return TableOpenIntent._(TableOpenAction.openOrder,
-      route: '/order/room/${room.serverId}');
+  final route = '/order/room/${room.serverId}';
+  if (view.state == RoomCardState.free &&
+      (room.activeOrderId == null || room.activeOrderId!.isEmpty)) {
+    return TableOpenIntent._(TableOpenAction.createDraft, route: route);
+  }
+  return TableOpenIntent._(TableOpenAction.openOrder, route: route);
 }

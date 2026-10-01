@@ -122,10 +122,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
             maxCrossAxisExtent: context.tableTileExtent,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            mainAxisExtent: context.tableTileExtent /
-                    1.3 *
-                    context.effectiveTextScale.clamp(1.0, 1.55) +
-                8,
+            mainAxisExtent: context.tableTileMainExtent,
           ),
           itemCount: list.length,
           itemBuilder: (_, i) {

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/providers.dart';
 import '../services/biometric_service.dart';
+import '../services/network_keepalive.dart';
 import '../services/trace.dart';
 import '../theme/perf_mode.dart';
 import '../theme/theme_mode_provider.dart';
@@ -147,6 +148,8 @@ class SettingsScreen extends ConsumerWidget {
                         ),
                         Divider(height: 1, color: context.palette.hairline),
                         const _BiometricRow(),
+                        Divider(height: 1, color: context.palette.hairline),
+                        const _KeepAliveRow(),
                         Divider(height: 1, color: context.palette.hairline),
                         _SettingsRow(
                           icon: Icons.speed_outlined,
@@ -773,6 +776,54 @@ class _BiometricRowState extends ConsumerState<_BiometricRow> {
       title: 'Biometric unlock',
       subtitle: subtitle,
       onTap: _tap,
+    );
+  }
+}
+
+/// "Keep connection alive in background" (default ON). Android only; the
+/// foreground service behind it is a no-op on iOS, so the row is hidden there.
+class _KeepAliveRow extends ConsumerStatefulWidget {
+  const _KeepAliveRow();
+  @override
+  ConsumerState<_KeepAliveRow> createState() => _KeepAliveRowState();
+}
+
+class _KeepAliveRowState extends ConsumerState<_KeepAliveRow> {
+  bool? _enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final enabled = await NetworkKeepAlive.isEnabled();
+    if (mounted) setState(() => _enabled = enabled);
+  }
+
+  Future<void> _toggle(bool v) async {
+    setState(() => _enabled = v);
+    await NetworkKeepAlive.setEnabled(v,
+        restaurant: ref.read(restaurantProvider)?.name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return const SizedBox.shrink();
+    }
+    return SwitchListTile(
+      value: _enabled ?? true,
+      activeThumbColor: AppColors.terra500,
+      secondary: Icon(Icons.wifi_tethering, color: context.palette.ink70),
+      title: const Text('Keep connection alive in background',
+          style: AppTypography.bodyMd),
+      subtitle: const Text(
+          'Stays connected to the desk with the screen off. Shows a small '
+          'notification and uses a little more battery.',
+          style: AppTypography.caption),
+      onChanged: _enabled == null ? null : (v) => unawaited(_toggle(v)),
     );
   }
 }

@@ -1,11 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/feature_flags.dart';
 import '../models/server_models.dart';
+import '../models/room_arrival_hold.dart';
 import '../services/connection_bootstrap.dart';
 import '../services/connection_supervisor.dart';
 import '../services/customer_link_service.dart';
+import '../services/link_monitor.dart';
 import '../services/socket_service.dart';
 import '../services/sync_service.dart';
+import '../services/wifi_binding.dart';
 import 'money.dart';
 
 enum TableState { mine, other, dirty, reserved, free }
@@ -97,7 +100,7 @@ class RestaurantTable {
       );
 }
 
-enum RoomState { mine, occupied, free }
+enum RoomState { mine, occupied, free, dirty, cleaning, inspect, blocked }
 
 class RestaurantRoom {
   static const _absent = Object();
@@ -111,6 +114,7 @@ class RestaurantRoom {
   final int activeBillCount;
   final int orderItemCount;
   final Money? bill;
+  final RoomArrivalHold? arrivalHold;
   const RestaurantRoom({
     required this.id,
     required this.serverId,
@@ -121,7 +125,13 @@ class RestaurantRoom {
     this.activeBillCount = 0,
     this.orderItemCount = 0,
     this.bill,
+    this.arrivalHold,
   });
+
+  RoomArrivalHold? activeHold(String istToday) {
+    final hold = arrivalHold;
+    return hold != null && hold.holdsNight(istToday) ? hold : null;
+  }
 
   RestaurantRoom copyWith({
     String? id,
@@ -133,6 +143,7 @@ class RestaurantRoom {
     int? activeBillCount,
     int? orderItemCount,
     Object? bill = _absent,
+    Object? arrivalHold = _absent,
   }) =>
       RestaurantRoom(
         id: id ?? this.id,
@@ -146,6 +157,9 @@ class RestaurantRoom {
         activeBillCount: activeBillCount ?? this.activeBillCount,
         orderItemCount: orderItemCount ?? this.orderItemCount,
         bill: bill == _absent ? this.bill : bill as Money?,
+        arrivalHold: arrivalHold == _absent
+            ? this.arrivalHold
+            : arrivalHold as RoomArrivalHold?,
       );
 }
 
@@ -892,6 +906,25 @@ final connectionSupervisorProvider = Provider<ConnectionSupervisor>((ref) {
   ref.onDispose(supervisor.dispose);
   return supervisor;
 });
+
+/// The link monitor's current verdict (healthy / suspect / dead). Written only
+/// by [ConnectionSupervisor]; the banner reads it to show "Weak connection".
+final linkHealthProvider =
+    StateProvider<LinkHealth>((_) => LinkHealth.healthy);
+
+/// Pins sockets to Wi-Fi (Android) and reports network changes. Overridden with
+/// a fake in tests; the no-op on iOS.
+final wifiBindingProvider =
+    Provider<WifiBinding>((_) => createPlatformWifiBinding());
+
+/// Server ids of tables that have an order submission sitting in the offline
+/// outbox, so the table card can show "queued" instead of looking untouched.
+/// Fed by [OfflineOrderQueueService].
+final pendingTableIdsProvider = StateProvider<Set<String>>((_) => const {});
+
+/// Items waiting in the outbox (order submissions + KOTs) — the "N queued" in
+/// the offline pill.
+final outboxPendingCountProvider = StateProvider<int>((_) => 0);
 
 final tablePresencesProvider = StateProvider<Map<String, String>>((_) => {});
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import 'connection_health.dart';
@@ -63,7 +64,9 @@ enum ReconnectAction {
   deferForVerify,
 
   /// We flagged the socket dead but socket.io still thinks it is connected —
-  /// a zombie that no socket.io event will ever revive. Rebuild the engine.
+  /// a zombie that no socket.io event will ever revive. Close the engine so
+  /// the Manager redials under the same io.Socket (see
+  /// [SocketService.nudgeEngine]).
   forceReconnect,
 
   /// socket.io's own reconnect loop still owns this socket (it may be
@@ -95,28 +98,97 @@ class SocketService {
   static String namespaceUrl(String host, int port, {bool useTls = false}) =>
       '${useTls ? 'https' : 'http'}://$host:$port/operator';
 
+  /// Codes the desk's auth middleware uses when it genuinely refuses this
+  /// pairing. `VERIFICATION_UNAVAILABLE` is deliberately NOT here: it is a
+  /// transient desk-side DB error ("try again"), and treating it as a revoked
+  /// pairing used to stop the reconnect loop for good over a hiccup.
   static const Set<String> _authErrorCodes = <String>{
     'MISSING_TOKEN',
     'TOKEN_EXPIRED',
     'TOKEN_INVALID',
     'TOKEN_REVOKED',
     'OPERATOR_DEACTIVATED',
-    'VERIFICATION_UNAVAILABLE',
   };
 
-  static bool isAuthHandshakeError(Object? err) {
-    if (err is Map) {
-      final code = err['code'];
-      if (code is String) return _authErrorCodes.contains(code);
+  /// The structured code of a `connect_error`, or null.
+  ///
+  /// socket.io delivers a middleware `next(err)` as
+  /// `{message, data: {code, message}}` — the code lives under `data`, never at
+  /// the top level. This used to read `err['code']` only, which is always null
+  /// for a real desk, so every classification silently fell through to the
+  /// substring match. The top-level read is kept for the recovery/pairing
+  /// sockets' older shapes and for tests.
+  static String? handshakeErrorCode(Object? err) {
+    if (err is! Map) return null;
+    final top = err['code'];
+    if (top is String) return top;
+    final data = err['data'];
+    if (data is Map) {
+      final nested = data['code'];
+      if (nested is String) return nested;
     }
+    return null;
+  }
+
+  /// The human message of a `connect_error`, from either nesting level.
+  static String? handshakeErrorMessage(Object? err) {
+    if (err is! Map) return null;
+    final data = err['data'];
+    if (data is Map) {
+      final nested = data['message'];
+      if (nested is String && nested.isNotEmpty) return nested;
+    }
+    final top = err['message'];
+    return top is String && top.isNotEmpty ? top : null;
+  }
+
+  static bool isAuthHandshakeError(Object? err) {
+    final code = handshakeErrorCode(err);
+    // A code is authoritative: an unknown code is NOT an auth failure, whatever
+    // words its message happens to contain.
+    if (code != null) return _authErrorCodes.contains(code);
     final message = err.toString().toLowerCase();
     return message.contains('unauthorized') ||
-        message.contains('auth') ||
         message.contains('token') ||
-        message.contains('expired') ||
         message.contains('revoked') ||
         message.contains('deactivated');
   }
+
+  /// App version announced in the handshake (`app_version`). Cached once at
+  /// startup by [loadAppVersion] so [connect] itself can stay synchronous.
+  static String? _appVersion;
+
+  /// Capabilities this build announces. `recovery-offset-v1` tells the desk it
+  /// may append the recovery offset to our broadcasts and recover our session;
+  /// [stripRecoveryOffset] is what makes that safe to accept.
+  static const List<String> handshakeCaps = <String>['recovery-offset-v1'];
+
+  @visibleForTesting
+  static set debugAppVersion(String? value) => _appVersion = value;
+
+  static String? get appVersion => _appVersion;
+
+  /// Reads the pubspec version once. Never throws (no plugin host in tests,
+  /// platform-channel failure): a missing version just omits the field.
+  static Future<void> loadAppVersion() async {
+    if (_appVersion != null) return;
+    try {
+      final info = await PackageInfo.fromPlatform().timeout(
+        const Duration(seconds: 2),
+      );
+      if (info.version.isNotEmpty) _appVersion = info.version;
+    } catch (err) {
+      logD(_tag, 'app version unavailable: $err');
+    }
+  }
+
+  /// The operator-socket handshake auth (see the network contract, item 1).
+  static Map<String, dynamic> buildHandshakeAuth(String token) =>
+      <String, dynamic>{
+        'token': token,
+        if (_appVersion != null) 'app_version': _appVersion,
+        'caps': handshakeCaps,
+      };
 
   static Future<ProbeResult> probe(
     String host,
@@ -261,14 +333,9 @@ class SocketService {
     });
     recoverySocket.onConnectError((Object? err) {
       logD(_tag, 'recover: connect_error');
-      String? code;
-      var message = "Can't reach the desk — same Wi-Fi?";
-      if (err is Map) {
-        final c = err['code'];
-        if (c is String) code = c;
-        final m = err['message'];
-        if (m is String) message = m;
-      }
+      final code = handshakeErrorCode(err);
+      final message =
+          handshakeErrorMessage(err) ?? "Can't reach the desk — same Wi-Fi?";
       finish(RecoveryFailed(code, message));
     });
     recoverySocket.onError((_) {
@@ -332,14 +399,9 @@ class SocketService {
     });
     pairingSocket.onConnectError((Object? err) {
       logD(_tag, 'pairScanless: connect_error');
-      String? code;
-      var message = "Can't reach the desk — same Wi-Fi?";
-      if (err is Map) {
-        final c = err['code'];
-        if (c is String) code = c;
-        final m = err['message'];
-        if (m is String) message = m;
-      }
+      final code = handshakeErrorCode(err);
+      final message =
+          handshakeErrorMessage(err) ?? "Can't reach the desk — same Wi-Fi?";
       finish(RecoveryFailed(code, message));
     });
     pairingSocket.onError((_) {
@@ -376,6 +438,14 @@ class SocketService {
   /// dedicated probes.
   void Function(Duration)? onAckRtt;
 
+  /// Fired when a (non-probe) ack times out, with the event name and the
+  /// timeout that elapsed. A timeout is *evidence*, not a verdict: the socket
+  /// may merely be slow or busy. This class used to flip itself to
+  /// `disconnected` on any timeout, which left a zombie (io.Socket still
+  /// connected, so no onConnect ever fired again). Now it only reports; the
+  /// [LinkMonitor] decides, by probing, whether the link is really gone.
+  void Function(String event, Duration timeout)? onAckTimeout;
+
   /// Transports for the long-lived operator socket. Websocket only — and
   /// deliberately so, even though the Desk may accept long-polling too.
   ///
@@ -401,10 +471,20 @@ class SocketService {
   /// so nothing else here would need to change if that day comes.
   static const List<String> operatorTransports = <String>['websocket'];
 
-  /// Base handshake timeout, before [timeoutPolicy] widens it.
-  static const Duration connectTimeout = Duration(seconds: 3);
+  /// Base handshake timeout, before [timeoutPolicy] widens it. 3s was
+  /// effectively a fixed value (the adaptive policy only widens once it has
+  /// samples, and there are none on a fresh connect) and is shorter than a
+  /// weak-WiFi TLS-less websocket upgrade routinely takes at 1 bar; the
+  /// manager would then abandon an attempt that was about to succeed.
+  static const Duration connectTimeout = Duration(seconds: 8);
 
   Stream<SocketState> get stateStream => _stateController.stream;
+
+  /// Emits once per transition into [SocketState.verified]. The outbox drain
+  /// worker and anything else that must "act on every (re)verify" hang off
+  /// this instead of filtering [stateStream] themselves.
+  Stream<void> get verifiedStream =>
+      stateStream.where((s) => s == SocketState.verified);
   SocketState get state => _state;
   io.Socket? get socket => _socket;
 
@@ -481,29 +561,56 @@ class SocketService {
     }
   }
 
-  /// Rebuilds the engine under the *same* io.Socket, for a socket we have
-  /// concluded is dead while socket.io still reports it connected (an ack
-  /// timed out, or the supervisor's heartbeat went silent).
+  /// Rebuilds the *engine* under the same io.Socket, for a socket concluded
+  /// dead while socket.io still reports it connected (the [LinkMonitor] proved
+  /// the link half-open, or a network change broke it silently).
   ///
-  /// Flipping [state] alone — what this class used to do — left a zombie: the
-  /// io.Socket never emits another connect/disconnect, so every later emit
-  /// was refused at the `_emitAck` gate with "Connection lost", and
-  /// [reconnectIfNeeded]'s `connect()` returned immediately because socket.io
-  /// still thought it was connected. On the PIN screen nothing else ever
-  /// reconnects (ConnectionBootstrap only watches for drops once resumed), so
-  /// the operator was stuck on "Connection lost" for good.
+  /// Why not `socket.disconnect(); socket.connect()`: a client-side
+  /// `disconnect()` sends a namespace DISCONNECT packet, which socket.io never
+  /// persists for connection-state recovery, so the desk forgot the session and
+  /// we paid a full resync. Instead the engine is closed from underneath the
+  /// Manager: `Manager.onclose` (socket_io_client manager.dart) runs, sees
+  /// `reconnection && !skipReconnect` and schedules its own backoff redial on
+  /// the *same* io.Socket — which keeps `_pid`/`_lastOffset`, so the CONNECT
+  /// carries them and the desk can recover the session.
   ///
-  /// A client-side `disconnect()` closes the engine and stops socket.io's own
-  /// reconnect loop; `connect()` then opens exactly one new engine. Strictly
-  /// sequential — never two engines, never two CONNECTs for this token.
-  /// Listeners registered through [on] stay attached (same io.Socket).
+  /// `engine.onClose(...)` rather than `engine.close()`: the latter waits for
+  /// the write buffer to drain first (engine/socket.dart `close()`), and on a
+  /// half-open link the drain never comes — the very case this exists for.
+  /// `onClose` performs the whole cleanup immediately. Both are checked against
+  /// the pinned socket_io_client (~3.1.4); `socket_recovery_api_test.dart`
+  /// references them so an upgrade breaks loudly rather than silently
+  /// regressing to zombies.
   void _forceReconnect(String why) {
+    nudgeEngine(why);
+  }
+
+  /// Closes the engine (see [_forceReconnect]) and marks the socket down.
+  ///
+  /// No-op while an operator:verify is in flight: the desk drops a socket when
+  /// a newer one presents the same token, and tearing the engine down would
+  /// lose the verify's ack just the same.
+  /// Returns whether it acted.
+  bool nudgeEngine(String why) {
+    if (isVerifyInFlight) {
+      logD(_tag, 'nudgeEngine ignored — a PIN verify is in flight ($why)');
+      return false;
+    }
     final socket = _socket;
-    if (socket == null) return;
-    logD(_tag, 'forcing a fresh engine: $why');
+    if (socket == null) return false;
+    logD(_tag, 'nudging the engine: $why');
+    // Down first: every pending ack fails fast and nothing new is sent into
+    // the dead engine while it closes.
     _setState(SocketState.disconnected);
-    socket.disconnect();
-    socket.connect();
+    final engine = socket.io.engine;
+    if (engine != null && engine.readyState != 'closed') {
+      engine.onClose('client nudge: $why');
+    } else {
+      // No live engine to close (a connect attempt failed, or the Manager is
+      // between attempts): connect() is idempotent about not doubling CONNECT.
+      socket.connect();
+    }
+    return true;
   }
 
   void connect(String host, int port, String token, {bool useTls = false}) {
@@ -518,7 +625,7 @@ class SocketService {
       url,
       io.OptionBuilder()
           .setTransports(operatorTransports)
-          .setAuth(<String, dynamic>{'token': token})
+          .setAuth(buildHandshakeAuth(token))
           .enableReconnection()
           .setTimeout(timeoutPolicy.forConnect(connectTimeout).inMilliseconds)
           .setReconnectionDelay(400)
@@ -756,40 +863,87 @@ class SocketService {
       event,
       data,
       timeoutPolicy.forAck(timeout ?? ackTimeout),
-      markDeadOnTimeout: true,
+      reportTimeout: true,
     );
   }
 
-  /// [emitAck] without the "a timeout means the link is dead" conclusion.
-  ///
-  /// Needed for liveness probing, where a missing ack is genuinely ambiguous:
-  /// a desk build older than the event being probed for will never answer it,
-  /// and letting that tear down a perfectly healthy session would be a
-  /// self-inflicted outage on every un-upgraded desk. The caller decides what
-  /// silence means and calls [markDead] if it concludes the socket is gone.
+  /// [emitAck] for liveness probing. A timeout here is genuinely ambiguous (a
+  /// desk build older than the probed event never answers it) and the caller
+  /// is the one deciding what silence means, so it is not reported through
+  /// [onAckTimeout] — that would make the monitor probe because of its own
+  /// probe.
   Future<Map<String, dynamic>> emitAckProbe(
     String event,
     Map<String, dynamic> data, {
     Duration timeout = ackTimeout,
   }) =>
-      _emitAck(event, data, timeout, markDeadOnTimeout: false);
+      _emitAck(event, data, timeout, reportTimeout: false);
+
+  /// Acks currently awaiting an answer. Every one is failed the instant the
+  /// socket goes `disconnected` (see [_setState]): this Dart client never
+  /// rejects an ack whose socket went away, it only lets the timer run out, so
+  /// a user would otherwise stare at a spinner for the full timeout (up to 28s
+  /// for a sync) after the link was already known to be down.
+  final Set<Completer<Map<String, dynamic>>> _pendingAcks =
+      <Completer<Map<String, dynamic>>>{};
+
+  @visibleForTesting
+  int get pendingAckCount => _pendingAcks.length;
+
+  /// The raw socket.io emit-with-ack. Replaceable in tests so the timeout and
+  /// drop behaviour can be exercised without a live socket. Throws a
+  /// "timed out" error when no ack arrives in [timeout].
+  @visibleForTesting
+  Future<dynamic> Function(
+          String event, Map<String, dynamic> data, Duration timeout)?
+      rawEmitOverride;
+
+  Future<dynamic> _rawEmit(
+    String event,
+    Map<String, dynamic> data,
+    Duration timeout,
+  ) {
+    final override = rawEmitOverride;
+    if (override != null) return override(event, data, timeout);
+    return _socket!
+        .timeout(timeout.inMilliseconds)
+        .emitWithAckAsync(event, data);
+  }
 
   Future<Map<String, dynamic>> _emitAck(
     String event,
     Map<String, dynamic> data,
     Duration effectiveTimeout, {
-    required bool markDeadOnTimeout,
+    required bool reportTimeout,
   }) async {
-    final socket = _socket;
     logD(_tag, '-> $event ${summarizeShape(data)}');
-    if (socket == null || _state == SocketState.disconnected) {
+    if ((_socket == null && rawEmitOverride == null) ||
+        _state == SocketState.disconnected) {
       return _errorAck(AckCode.connectionLost, 'Connection lost');
     }
+    final pending = Completer<Map<String, dynamic>>();
+    _pendingAcks.add(pending);
+    unawaited(_runAck(event, data, effectiveTimeout, reportTimeout, pending)
+        .then((response) {
+      if (!pending.isCompleted) pending.complete(response);
+    }));
+    try {
+      return await pending.future;
+    } finally {
+      _pendingAcks.remove(pending);
+    }
+  }
+
+  Future<Map<String, dynamic>> _runAck(
+    String event,
+    Map<String, dynamic> data,
+    Duration effectiveTimeout,
+    bool reportTimeout,
+    Completer<Map<String, dynamic>> pending,
+  ) async {
     final stopwatch = Stopwatch()..start();
     try {
-      final raw = await socket
-          .timeout(effectiveTimeout.inMilliseconds)
-          .emitWithAckAsync(event, data);
+      final raw = await _rawEmit(event, data, effectiveTimeout);
       if (raw is! Map) {
         logE(_tag, '$event ack was not a Map');
         return _errorAck(AckCode.badResponse, 'Invalid server response');
@@ -801,18 +955,14 @@ class SocketService {
     } catch (err, stack) {
       if (err.toString().contains('timed out')) {
         logE(_tag, '$event ack timed out');
-        // A real ack timeout is definitive proof the transport isn't
-        // answering, even if the underlying io.Socket (or Android, after
-        // resuming a suspended isolate) still thinks it's connected. Flip
-        // `_state` here so every caller that gates on it — reconnectIfNeeded,
-        // ConnectionBootstrap, SyncService's reconnect listener — sees the
-        // truth instead of a stale "verified" that never self-corrects.
-        // Not while a verify is in flight: its sync-sized reply holds up every
-        // ack queued behind it, so an unrelated timeout then is evidence of a
-        // busy link, not a dead one — and flipping state would make the
-        // bootstrap/resume paths replace the socket carrying the PIN.
-        if (markDeadOnTimeout && !isVerifyInFlight) {
-          _setState(SocketState.disconnected);
+        // Evidence, not a verdict: report it and leave the state alone. Not
+        // while a verify is in flight — its sync-sized reply holds up every
+        // ack queued behind it, so an unrelated timeout then says "busy", not
+        // "dead".
+        // Nor if the ack was already failed by a disconnect: that timer firing
+        // late says nothing about the *current* connection.
+        if (reportTimeout && !isVerifyInFlight && !pending.isCompleted) {
+          onAckTimeout?.call(event, effectiveTimeout);
         }
         return _errorAck(
           AckCode.timeout,
@@ -821,6 +971,17 @@ class SocketService {
       }
       logE(_tag, '$event failed', err, stack);
       return _errorAck(AckCode.connectionLost, 'Connection lost');
+    }
+  }
+
+  void _failPendingAcks() {
+    if (_pendingAcks.isEmpty) return;
+    final pending = _pendingAcks.toList();
+    _pendingAcks.clear();
+    for (final completer in pending) {
+      if (!completer.isCompleted) {
+        completer.complete(_errorAck(AckCode.connectionLost, 'Connection lost'));
+      }
     }
   }
 
@@ -834,8 +995,9 @@ class SocketService {
       logD(_tag, 'markDead ignored — a PIN verify is in flight');
       return;
     }
-    logD(_tag, 'marked dead by supervisor');
-    _setState(SocketState.disconnected);
+    // Not a bare state flip: that is what produced zombies. Close the engine
+    // so socket.io actually redials.
+    nudgeEngine('marked dead from outside');
   }
 
   /// Like [emitAck], but a transport failure (offline, or the ack timed out
@@ -865,27 +1027,36 @@ class SocketService {
     return response;
   }
 
+  /// What a recovery offset looks like: socket.io's base64url-ish id.
+  static final RegExp _offsetLike = RegExp(r'^[0-9A-Za-z_-]{6,}$');
+
   /// Strips the per-packet offset socket.io appends to every broadcast once the
-  /// desk enables `connectionStateRecovery`.
+  /// desk enables `connectionStateRecovery` for a capable client.
   ///
-  /// With recovery on, the server sends `[payload, offsetString]` rather than
-  /// `[payload]`, and socket_io_client hands a multi-arg event to the listener
-  /// as a List (`socket.dart` → `emitEvent`, the `args.length > 2` branch).
+  /// socket_io_client (`socket.dart` → `emitEvent`) hands the listener
+  /// `[args..., offset]` as a List whenever an event carries a payload plus the
+  /// offset, and the bare offset String when the event had no payload at all.
   /// Every handler in `sync_service.dart` expects the payload Map, so without
   /// this the entire live-update layer would go quiet the moment recovery was
   /// switched on — silently, since `asMap` on a List just yields nothing.
   ///
-  /// The shape test is deliberately narrow: exactly two elements, a Map first
-  /// and a String last. No broadcast this app consumes is itself a two-element
-  /// list, so nothing legitimate matches.
+  /// - `[Map, offset]` → the Map (the overwhelmingly common case).
+  /// - `[a, …, offset]` where the last element is offset-like → the list
+  ///   without it (a single remaining element is unwrapped).
+  /// - a bare offset-like String → `{}` (an event that carried no payload).
+  /// - anything else is returned untouched, so a payload that merely happens to
+  ///   be a list or a string is never truncated.
   static dynamic stripRecoveryOffset(dynamic data) {
-    if (data is List &&
-        data.length == 2 &&
-        data.first is Map &&
-        data.last is String) {
-      return data.first;
+    if (data is String) {
+      return _offsetLike.hasMatch(data) ? <String, dynamic>{} : data;
     }
-    return data;
+    if (data is! List || data.length < 2) return data;
+    final last = data.last;
+    if (last is! String) return data;
+    final isPayloadPair = data.length == 2 && data.first is Map;
+    if (!isPayloadPair && !_offsetLike.hasMatch(last)) return data;
+    final rest = data.sublist(0, data.length - 1);
+    return rest.length == 1 ? rest.first : rest;
   }
 
   void on(String event, void Function(dynamic) handler) {
@@ -931,6 +1102,9 @@ class SocketService {
     if (_state == next) return;
     logD(_tag, 'state: $_state -> $next');
     _state = next;
+    // Before listeners hear about it, so anything awaiting an ack has already
+    // been answered "connection lost" by the time a state handler reacts.
+    if (next == SocketState.disconnected) _failPendingAcks();
     if (!_stateController.isClosed) _stateController.add(next);
   }
 

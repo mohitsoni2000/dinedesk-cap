@@ -664,6 +664,9 @@ extension AdaptiveContext on BuildContext {
 
   double get tableTileExtent => adaptive(phone: 182, tablet: 192);
 
+  double get tableTileMainExtent =>
+      tableTileExtent / 1.3 * effectiveTextScale.clamp(1.0, 1.55) + 8;
+
   double get sheetBottomInset => math.max(
         MediaQuery.viewInsetsOf(this).bottom,
         MediaQuery.viewPaddingOf(this).bottom,

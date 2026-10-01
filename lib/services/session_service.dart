@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'biometric_service.dart';
 import 'log.dart';
+import 'network_keepalive.dart';
 
 const String _tag = '[Session]';
 
@@ -86,6 +87,9 @@ class SessionService {
       await _secureStore.write(
           key: _keyDeskInstanceId, value: info.deskInstanceId);
     }
+    // Pairing happens in the foreground, the only place a foreground service
+    // may be started from on Android 12+. Honours the settings toggle.
+    await NetworkKeepAlive.start();
     logD(_tag, '✓ Pairing saved');
   }
 
@@ -152,6 +156,8 @@ class SessionService {
     await _secureStore.delete(key: _keyDeviceSecret);
     await _secureStore.delete(key: _keyDeskInstanceId);
     await BiometricService().forget();
+    // The keep-alive service only makes sense while paired.
+    await NetworkKeepAlive.stop();
     logD(_tag, 'Pairing cleared');
   }
 }

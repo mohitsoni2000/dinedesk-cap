@@ -10,6 +10,8 @@ import 'motion/app_scroll_behavior.dart';
 import 'motion/motion.dart';
 import 'router.dart';
 import 'services/app_messenger.dart';
+import 'services/network_keepalive.dart';
+import 'services/session_service.dart';
 import 'services/platform_surfaces.dart';
 import 'services/socket_service.dart';
 import 'services/trace.dart';
@@ -17,6 +19,7 @@ import 'services/update_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/perf_scope.dart';
 import 'theme/theme_mode_provider.dart';
+import 'widgets/battery_optimization_dialog.dart';
 
 void main() {
   Trace.reset();
@@ -77,6 +80,8 @@ class _RestroAppState extends ConsumerState<RestroApp>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       unawaited(_checkForUpdate());
+      unawaited(NetworkKeepAlive.setLowLatencyLock(true));
+      unawaited(_syncKeepAlive());
 
       try {
         await ref.read(feedbackServiceProvider).init();
@@ -103,9 +108,35 @@ class _RestroAppState extends ConsumerState<RestroApp>
     ref
         .read(connectionSupervisorProvider)
         .setAppForeground(state == AppLifecycleState.resumed);
+    // Low-latency Wi-Fi lock only while on screen (the OS ignores it
+    // otherwise); the foreground service's own lock covers screen-off.
+    unawaited(NetworkKeepAlive.setLowLatencyLock(
+        state == AppLifecycleState.resumed));
     if (state == AppLifecycleState.resumed) {
+      unawaited(_syncKeepAlive());
       unawaited(_verifyConnectionOnResume());
       _checkForUpdate();
+    }
+  }
+
+  /// Runs the keep-alive foreground service while paired (and the settings
+  /// toggle is on; `start` checks it). Called only from the foreground, since
+  /// Android 12+ refuses a foreground-service start from the background. Stop
+  /// on unpair lives in `SessionService.clearPairing`, which every unpair and
+  /// logout path goes through.
+  Future<void> _syncKeepAlive() async {
+    try {
+      final paired = await SessionService().getSavedPairing() != null;
+      if (!paired) {
+        await NetworkKeepAlive.stop();
+        return;
+      }
+      if (NetworkKeepAlive.isRunning) return;
+      final started = await NetworkKeepAlive.start(
+          restaurant: ref.read(restaurantProvider)?.name);
+      if (started) unawaited(maybeShowBatteryOptimizationDialog());
+    } catch (err) {
+      debugPrint('Keep-alive sync error: $err');
     }
   }
 

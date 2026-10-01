@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:flutter/rendering.dart';
@@ -6,6 +8,8 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../data/ist_time.dart';
+import '../data/room_card_view.dart';
 import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
@@ -26,6 +30,31 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
 
   bool _hasScrolled = false;
   String? _openingRoomId;
+  Timer? _midnight;
+
+  @override
+  void initState() {
+    super.initState();
+    _armMidnight();
+  }
+
+  @override
+  void dispose() {
+    _midnight?.cancel();
+    super.dispose();
+  }
+
+  // Tonight's arrivals start holding their rooms at IST midnight, even on an
+  // idle or offline screen.
+  void _armMidnight() {
+    _midnight?.cancel();
+    _midnight = Timer(
+        untilNextIstMidnight(DateTime.now()) + const Duration(seconds: 1), () {
+      if (!mounted) return;
+      setState(() {});
+      _armMidnight();
+    });
+  }
 
   void _onRoomTap(RestaurantRoom r) async {
     if (_openingRoom) return;
@@ -98,11 +127,14 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
     final rooms = ref.watch(roomsProvider);
     final connOnline = ref.watch(connectionProvider.select((c) => c.online));
 
+    final today = istDateOf(DateTime.now());
     final query = _query.toLowerCase();
     final filtered = rooms.where((r) {
       if (query.isEmpty) return true;
       return r.id.toLowerCase().contains(query) ||
-          (r.guestName?.toLowerCase().contains(query) ?? false);
+          (r.guestName?.toLowerCase().contains(query) ?? false) ||
+          (r.activeHold(today)?.guestName.toLowerCase().contains(query) ??
+              false);
     }).toList();
 
     return Scaffold(
@@ -232,13 +264,14 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
                                   maxCrossAxisExtent: context.tableTileExtent,
                                   mainAxisSpacing: 12,
                                   crossAxisSpacing: 12,
-                                  childAspectRatio: 1.05,
+                                  mainAxisExtent: context.tableTileMainExtent,
                                 ),
                                 itemCount: filtered.length,
                                 itemBuilder: (context, i) {
                                   final r = filtered[i];
                                   final card = _RoomCard(
                                     room: r,
+                                    view: roomCardView(r, today),
                                     isLoading: _openingRoom &&
                                         _openingRoomId == r.serverId,
                                     onTap: () => _onRoomTap(r),
@@ -271,47 +304,96 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
 
 class _RoomCard extends StatelessWidget {
   final RestaurantRoom room;
+  final RoomCardView view;
   final bool isLoading;
   final VoidCallback onTap;
   const _RoomCard({
     required this.room,
+    required this.view,
     required this.isLoading,
     required this.onTap,
   });
 
   Color _bg(BuildContext context) {
     final palette = context.palette;
-    switch (room.state) {
-      case RoomState.mine:
+    switch (view.state) {
+      case RoomCardState.mine:
         return palette.tableMineBg;
-      case RoomState.occupied:
+      case RoomCardState.occupied:
         return palette.tableOtherBg;
-      case RoomState.free:
+      case RoomCardState.free:
         return palette.tableFreeBg;
+      case RoomCardState.held:
+        return palette.tableReservedBg;
+      case RoomCardState.dirty:
+      case RoomCardState.cleaning:
+      case RoomCardState.inspect:
+        return palette.tableDirtyBg;
+      case RoomCardState.blocked:
+        return palette.dangerBg;
     }
   }
 
   Color _border() {
-    switch (room.state) {
-      case RoomState.mine:
+    switch (view.state) {
+      case RoomCardState.mine:
         return AppColors.terra400.withValues(alpha: 0.45);
-      case RoomState.occupied:
+      case RoomCardState.occupied:
         return AppColors.info.withValues(alpha: 0.4);
-      case RoomState.free:
+      case RoomCardState.free:
         return AppColors.success.withValues(alpha: 0.32);
+      case RoomCardState.held:
+        return AppColors.violet.withValues(alpha: 0.4);
+      case RoomCardState.dirty:
+      case RoomCardState.cleaning:
+      case RoomCardState.inspect:
+        return AppColors.warn.withValues(alpha: 0.45);
+      case RoomCardState.blocked:
+        return AppColors.danger.withValues(alpha: 0.4);
     }
   }
 
-  String _stateLabel() {
-    if (room.activeBillCount > 0) return 'BILL PENDING';
-    switch (room.state) {
-      case RoomState.mine:
-        return 'MINE';
-      case RoomState.occupied:
-        return 'OCCUPIED';
-      case RoomState.free:
-        return 'FREE';
+  Color? _tagColor(BuildContext context) {
+    final palette = context.palette;
+    switch (view.state) {
+      case RoomCardState.held:
+        return palette.tableReservedText;
+      case RoomCardState.dirty:
+      case RoomCardState.cleaning:
+      case RoomCardState.inspect:
+        return palette.tableDirtyText;
+      case RoomCardState.blocked:
+        return palette.dangerText;
+      case RoomCardState.mine:
+      case RoomCardState.occupied:
+      case RoomCardState.free:
+        return null;
     }
+  }
+
+  Widget? _note(BuildContext context) {
+    final note = view.note;
+    if (note == null) return null;
+    final palette = context.palette;
+    if (view.state == RoomCardState.held) {
+      final color = view.lateNote ? palette.warnText : palette.ink70;
+      return Row(
+        children: [
+          Icon(Icons.schedule, size: 12, color: color),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(note,
+                style: AppTypography.caption.copyWith(color: color),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      );
+    }
+    return Text(note,
+        style: AppTypography.caption.copyWith(color: palette.tableReservedText),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis);
   }
 
   @override
@@ -335,11 +417,14 @@ class _RoomCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        room.id,
-                        style: AppTypography.displayMd.copyWith(fontSize: 24),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      child: Opacity(
+                        opacity: view.unavailable ? 0.55 : 1,
+                        child: Text(
+                          room.id,
+                          style: AppTypography.displayMd.copyWith(fontSize: 24),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -348,16 +433,21 @@ class _RoomCard extends StatelessWidget {
                   ],
                 ),
                 const Spacer(),
-                Text(_stateLabel(),
-                    style: AppTypography.micro,
+                Text(view.tag,
+                    style:
+                        AppTypography.micro.copyWith(color: _tagColor(context)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis),
-                if (room.guestName != null && room.guestName!.isNotEmpty) ...[
+                if (view.guest != null && view.guest!.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  Text(room.guestName!,
+                  Text(view.guest!,
                       style: AppTypography.caption,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
+                ],
+                if (_note(context) case final note?) ...[
+                  const SizedBox(height: 2),
+                  note,
                 ],
                 if (room.bill != null) ...[
                   const SizedBox(height: 4),

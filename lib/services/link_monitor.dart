@@ -127,6 +127,7 @@ class LinkMonitor {
     required this.retryConnect,
     required this.rediscover,
     required this.reconnectIfNeeded,
+    this.standDown = _never,
     this.heartbeatSupported = _always,
     this.heartbeatProven = _never,
     this.onHeartbeatUnsupported,
@@ -156,6 +157,12 @@ class LinkMonitor {
 
   /// Idempotent "if socket.io isn't already redialling, poke it".
   final void Function() reconnectIfNeeded;
+
+  /// True while nothing automatic may dial the desk: the pairing was refused,
+  /// the device was force-disconnected, or it was signed out. The ladder and the
+  /// watchdog check it before every action, so a refused or ended session is
+  /// never resurrected by them (a person's explicit retry is not routed here).
+  final bool Function() standDown;
 
   /// False once this desk is known never to answer heartbeats (old build).
   final bool Function() heartbeatSupported;
@@ -260,7 +267,7 @@ class LinkMonitor {
     } else if (_state == SocketState.disconnected &&
         event.type != NetworkEventType.lost) {
       _log('network ${event.type.name} while disconnected — poking now');
-      reconnectIfNeeded();
+      _poke();
       _restartLadder();
     }
   }
@@ -277,9 +284,14 @@ class LinkMonitor {
         _suspect('resumed after ${backgroundedFor.inSeconds}s in background');
       }
     } else if (_state == SocketState.disconnected) {
-      reconnectIfNeeded();
+      _poke();
       _restartLadder();
     }
+  }
+
+  /// [reconnectIfNeeded] unless the session was refused / ended.
+  void _poke() {
+    if (!standDown()) reconnectIfNeeded();
   }
 
   // ----------------------------------------------------------------- probing
@@ -392,7 +404,7 @@ class LinkMonitor {
       return await done.future;
     } finally {
       timer.cancel();
-      await sub.cancel();
+      unawaited(sub.cancel());
     }
   }
 
@@ -402,10 +414,12 @@ class LinkMonitor {
   ///  3. rediscover the desk, then keep cycling 2-3 with growing pauses.
   /// There is deliberately no terminal state.
   Future<void> _runLadder({required bool nudgeFirst, String? why}) async {
-    if (_ladderActive || _disposed) return;
+    if (_ladderActive || _disposed || standDown()) return;
     _ladderActive = true;
     final epoch = _ladderEpoch;
-    bool live() => !_disposed && epoch == _ladderEpoch;
+    // Also false once the session is refused / ended mid-ladder: the loop below
+    // never gives up by design, so this is the only thing that ends it.
+    bool live() => !_disposed && epoch == _ladderEpoch && !standDown();
     try {
       if (nudgeFirst) {
         _log('ladder 1: nudging the engine (${why ?? 'link dead'})');
@@ -440,8 +454,8 @@ class LinkMonitor {
 
       var round = 0;
       while (live()) {
-        final pause =
-            config.ladderBackoff[math.min(round, config.ladderBackoff.length - 1)];
+        final pause = config
+            .ladderBackoff[math.min(round, config.ladderBackoff.length - 1)];
         round++;
         await Future<void>.delayed(pause);
         if (!live() || _up) return;
@@ -462,7 +476,7 @@ class LinkMonitor {
   void _startWatchdog() {
     if (_watchdog != null) return;
     _watchdog = Timer.periodic(config.watchdogInterval, (_) {
-      if (_state == SocketState.disconnected) reconnectIfNeeded();
+      if (_state == SocketState.disconnected) _poke();
     });
   }
 

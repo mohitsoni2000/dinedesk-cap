@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'biometric_service.dart';
 import 'log.dart';
 import 'network_keepalive.dart';
+import 'offline_session.dart';
+import 'offline_snapshot.dart';
 
 const String _tag = '[Session]';
 
@@ -68,6 +70,7 @@ class SessionService {
   static const _keyDeviceSecret = 'pairing_device_secret';
   static const _keyDeskInstanceId = 'pairing_desk_instance_id';
   static const _keyAltHosts = 'pairing_alt_hosts';
+  static const _keyOfflineSession = 'offline_session_v1';
 
   final _secureStore = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -146,6 +149,31 @@ class SessionService {
         altHosts: altHosts);
   }
 
+  /// The last operator session the desk confirmed, for cold-start offline. No
+  /// PIN or PIN hash is ever stored here — see [OfflineSession].
+  Future<void> saveOfflineSession(OfflineSession session) =>
+      _secureStore.write(key: _keyOfflineSession, value: session.encode());
+
+  Future<OfflineSession?> getOfflineSession() async {
+    try {
+      return OfflineSession.tryDecode(
+          await _secureStore.read(key: _keyOfflineSession));
+    } catch (e) {
+      logD(_tag, 'Offline session unreadable: $e');
+      return null;
+    }
+  }
+
+  /// Sign-out, `force:disconnect` and unpairing all end the offline session: a
+  /// phone that was signed out must not be resumable from disk afterwards.
+  Future<void> clearOfflineSession() async {
+    try {
+      await _secureStore.delete(key: _keyOfflineSession);
+    } catch (e) {
+      logD(_tag, 'Offline session clear failed: $e');
+    }
+  }
+
   Future<void> clearPairing() async {
     logD(_tag, 'Clearing pairing data');
     final prefs = await SharedPreferences.getInstance();
@@ -155,6 +183,11 @@ class SessionService {
     await _secureStore.delete(key: _keyToken);
     await _secureStore.delete(key: _keyDeviceSecret);
     await _secureStore.delete(key: _keyDeskInstanceId);
+    await clearOfflineSession();
+    // The cached menu/orders belong to the desk being unpaired from.
+    try {
+      await OfflineSnapshotStore().clear();
+    } catch (_) {}
     await BiometricService().forget();
     // The keep-alive service only makes sense while paired.
     await NetworkKeepAlive.stop();

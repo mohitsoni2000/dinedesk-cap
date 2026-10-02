@@ -17,7 +17,6 @@ class FeatureFlags {
   final bool operatorPinAuth;
   final String operatorPinMode;
   final int operatorPinSessionMinutes;
-  final int operatorReconnectWindowMinutes;
   final bool operatorPinKot;
   final bool operatorPinHold;
   final bool operatorPinKotAndBill;
@@ -100,7 +99,6 @@ class FeatureFlags {
     this.operatorPinAuth = true,
     this.operatorPinMode = 'per_action',
     this.operatorPinSessionMinutes = 15,
-    this.operatorReconnectWindowMinutes = 15,
     this.operatorPinKot = false,
     this.operatorPinHold = false,
     this.operatorPinKotAndBill = false,
@@ -194,8 +192,6 @@ class FeatureFlags {
       operatorPinMode: map['operator_pin_mode']?.toString() ?? 'per_action',
       operatorPinSessionMinutes:
           int.tryParse('${map['operator_pin_session_minutes']}') ?? 15,
-      operatorReconnectWindowMinutes:
-          int.tryParse('${map['operator_pin_reconnect_window_minutes']}') ?? 15,
       operatorPinKot: flag('operator_pin_kot'),
       operatorPinHold: flag('operator_pin_hold'),
       operatorPinKotAndBill: flag('operator_pin_kot_and_bill'),

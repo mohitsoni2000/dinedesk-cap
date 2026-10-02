@@ -4,15 +4,16 @@ import 'package:restro/services/socket_service.dart';
 void main() {
   group('isAuthHandshakeError — structured code first, substring as fallback',
       () {
-    test('recognizes every structured code the desk can send', () {
-      for (final code in <String>[
-        'MISSING_TOKEN',
-        'TOKEN_EXPIRED',
-        'TOKEN_INVALID',
-        'TOKEN_REVOKED',
-        'OPERATOR_DEACTIVATED',
-        'VERIFICATION_UNAVAILABLE',
-      ]) {
+    const authCodes = <String>[
+      'MISSING_TOKEN',
+      'TOKEN_EXPIRED',
+      'TOKEN_INVALID',
+      'TOKEN_REVOKED',
+      'OPERATOR_DEACTIVATED',
+    ];
+
+    test('recognizes every auth code at the top level', () {
+      for (final code in authCodes) {
         expect(
           SocketService.isAuthHandshakeError(<String, dynamic>{
             'code': code,
@@ -24,34 +25,107 @@ void main() {
       }
     });
 
-    test('does not misclassify an unrecognized structured code', () {
+    test('reads the code where socket.io really puts it: err.data.code', () {
+      // A middleware next(err) arrives as {message, data: {code, message}}.
+      for (final code in authCodes) {
+        final err = <String, dynamic>{
+          'message': 'whatever words the desk used',
+          'data': <String, dynamic>{'code': code, 'message': 'nested'},
+        };
+        expect(SocketService.handshakeErrorCode(err), code);
+        expect(SocketService.isAuthHandshakeError(err), isTrue);
+      }
+    });
+
+    test('VERIFICATION_UNAVAILABLE is a transient desk error, not auth', () {
+      final err = <String, dynamic>{
+        'message': 'Token verification unavailable',
+        'data': <String, dynamic>{
+          'code': 'VERIFICATION_UNAVAILABLE',
+          'message': 'Token verification unavailable',
+        },
+      };
+      expect(SocketService.handshakeErrorCode(err), 'VERIFICATION_UNAVAILABLE');
+      // Even though the message contains the word "token": a code decides.
+      expect(SocketService.isAuthHandshakeError(err), isFalse);
       expect(
         SocketService.isAuthHandshakeError(<String, dynamic>{
-          'code': 'SOME_FUTURE_CODE',
-          'message': 'server had a burp',
+          'code': 'VERIFICATION_UNAVAILABLE',
         }),
         isFalse,
       );
     });
 
+    test('a present-but-unknown code is decided by the set alone', () {
+      expect(
+        SocketService.isAuthHandshakeError(<String, dynamic>{
+          'message': 'Unauthorized token revoked',
+          'data': <String, dynamic>{'code': 'SOME_FUTURE_CODE'},
+        }),
+        isFalse,
+      );
+    });
+
+    test('handshakeErrorMessage prefers the nested message', () {
+      expect(
+        SocketService.handshakeErrorMessage(<String, dynamic>{
+          'message': 'outer',
+          'data': <String, dynamic>{'code': 'X', 'message': 'inner'},
+        }),
+        'inner',
+      );
+      expect(SocketService.handshakeErrorMessage(<String, dynamic>{'message': 'outer'}),
+          'outer');
+      expect(SocketService.handshakeErrorMessage('plain string'), isNull);
+    });
+
     test(
-        'falls back to substring matching for a bare-string error (older desk build)',
+        'falls back to a narrowed substring match when there is no code (older desk)',
         () {
-      expect(
-        SocketService.isAuthHandshakeError(
-            Exception('Token expired or invalid')),
-        isTrue,
-      );
-      expect(
-        SocketService.isAuthHandshakeError(Exception('Operator deactivated')),
-        isTrue,
-      );
+      for (final text in <String>[
+        'Token expired or invalid',
+        'Operator deactivated',
+        'Unauthorized',
+        'Token revoked',
+      ]) {
+        expect(SocketService.isAuthHandshakeError(Exception(text)), isTrue,
+            reason: text);
+      }
+    });
+
+    test('the old over-broad substrings no longer count as auth', () {
+      // "auth" and "expired" alone used to be enough; a transport hiccup that
+      // mentions either must not stop the reconnect loop.
+      expect(SocketService.isAuthHandshakeError(Exception('authority lookup failed')),
+          isFalse);
+      expect(SocketService.isAuthHandshakeError(Exception('connection expired')),
+          isFalse);
     });
 
     test('does not classify a generic transport failure as an auth error', () {
       expect(SocketService.isAuthHandshakeError(Exception('xhr poll error')),
           isFalse);
       expect(SocketService.isAuthHandshakeError(Exception('websocket error')),
+          isFalse);
+      expect(SocketService.isAuthHandshakeError('timeout'), isFalse);
+    });
+  });
+
+  group('buildHandshakeAuth — the contract', () {
+    tearDown(() => SocketService.debugAppVersion = null);
+
+    test('carries token, app_version and the recovery capability', () {
+      SocketService.debugAppVersion = '1.2.3';
+      expect(SocketService.buildHandshakeAuth('tok'), <String, dynamic>{
+        'token': 'tok',
+        'app_version': '1.2.3',
+        'caps': <String>['recovery-offset-v1'],
+      });
+    });
+
+    test('omits app_version when it could not be read', () {
+      SocketService.debugAppVersion = null;
+      expect(SocketService.buildHandshakeAuth('tok').containsKey('app_version'),
           isFalse);
     });
   });
@@ -89,13 +163,39 @@ void main() {
       );
     });
 
-    test('leaves a list of the wrong length alone', () {
-      final three = <dynamic>[
+    test('strips an offset-like last element from a longer list', () {
+      final payload = <String, dynamic>{'k': 1};
+      expect(
+        SocketService.stripRecoveryOffset(<dynamic>[payload, 'mid', 'AbCdEf12']),
+        equals(<dynamic>[payload, 'mid']),
+      );
+      // A single remaining element is unwrapped.
+      expect(
+        SocketService.stripRecoveryOffset(<dynamic>[7, 'AbCdEf12']),
+        7,
+      );
+    });
+
+    test('a bare offset-like string (event without a payload) becomes {}', () {
+      expect(SocketService.stripRecoveryOffset('AbCdEf12_-'),
+          equals(<String, dynamic>{}));
+    });
+
+    test('leaves short strings, non-offset strings and other shapes alone', () {
+      expect(SocketService.stripRecoveryOffset('abc'), 'abc');
+      expect(SocketService.stripRecoveryOffset('has spaces here'),
+          'has spaces here');
+      expect(SocketService.stripRecoveryOffset(null), isNull);
+      expect(SocketService.stripRecoveryOffset(42), 42);
+      final longerNoOffset = <dynamic>[
         <String, dynamic>{'k': 1},
         'mid',
-        'offset',
+        'no',
       ];
-      expect(SocketService.stripRecoveryOffset(three), equals(three));
+      expect(SocketService.stripRecoveryOffset(longerNoOffset),
+          equals(longerNoOffset));
+      final oneElement = <dynamic>['AbCdEf12'];
+      expect(SocketService.stripRecoveryOffset(oneElement), equals(oneElement));
     });
   });
 

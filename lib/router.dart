@@ -21,6 +21,7 @@ import 'screens/change_pin_screen.dart';
 import 'screens/disconnected_screen.dart';
 import 'screens/recovery_login_screen.dart';
 import 'screens/force_disconnected_screen.dart';
+import 'services/connection_bootstrap.dart';
 import 'theme/tokens.dart';
 import 'widgets/connection_banner.dart';
 import 'widgets/page_transitions.dart';
@@ -34,6 +35,13 @@ class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(Ref ref) {
     ref.listen(isAuthenticatedProvider, (_, __) => notifyListeners());
     ref.listen(forceDisconnectedProvider, (_, __) => notifyListeners());
+    // Only the edge into / out of "the desk refused this device" matters to
+    // routing; every other bootstrap change (connecting, resumed…) must not
+    // re-run the redirect.
+    ref.listen<bool>(
+      connectionBootstrapProvider.select((o) => o is BootstrapPairingRejected),
+      (_, __) => notifyListeners(),
+    );
   }
 }
 
@@ -54,6 +62,17 @@ final routerProvider = Provider<GoRouter>((ref) {
           loc == '/disconnected' || loc == '/force-disconnected';
       if (forceDisconnected && loc != '/force-disconnected') {
         return '/force-disconnected';
+      }
+      // The one connection state that ends in a screen of its own: the desk has
+      // refused this device's token repeatedly. Anything weaker (a dropped or
+      // slow link) is only ever a banner — see ConnectionBanner.
+      final pairingRejected =
+          ref.read(connectionBootstrapProvider) is BootstrapPairingRejected;
+      if (pairingRejected &&
+          !onAuthFlow &&
+          !onDisconnect &&
+          !loc.startsWith('/recovery-login')) {
+        return '/disconnected';
       }
       if (!ref.read(flagsProvider).rooms &&
           (loc == '/rooms' || loc.startsWith('/order/room'))) {
@@ -194,8 +213,11 @@ final routerProvider = Provider<GoRouter>((ref) {
               child: const ConnectionBanner(child: ChangePinScreen()))),
       GoRoute(
           path: '/disconnected',
-          pageBuilder: (_, s) =>
-              liquidPage(key: s.pageKey, child: const DisconnectedScreen())),
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              child: DisconnectedScreen(
+                  reason: DisconnectedScreen.reasonFromQuery(
+                      s.uri.queryParameters['reason'])))),
       GoRoute(
           path: '/recovery-login',
           pageBuilder: (_, s) =>

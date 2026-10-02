@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
+import '../services/offline_guard.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
@@ -193,6 +194,7 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                     onPressed: (_pickedServerId == null || _submitting)
                         ? null
                         : () async {
+                            if (!requireDesk(context, ref)) return;
                             final pinOk = await requirePinIfNeeded(
                                 context, ref, 'table_merge');
                             if (!pinOk || !mounted) return;
@@ -200,7 +202,7 @@ class _TableMergeSheetState extends ConsumerState<TableMergeSheet> {
                             unawaited(HapticFeedback.heavyImpact());
                             final response = await ref
                                 .read(socketServiceProvider)
-                                .emitAck('table:merge', {
+                                .emitAckIdempotent('table:merge', {
                               'primary_table_id': widget.origin.serverId,
                               'absorbed_table_id': _pickedServerId,
                             });

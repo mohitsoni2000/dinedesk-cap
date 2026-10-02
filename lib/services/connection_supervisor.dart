@@ -40,7 +40,7 @@ class ConnectionSupervisor {
   LinkMonitor? _monitor;
 
   /// The monitor, once [start] has run. Exposed for the lifecycle hook in
-  /// `main.dart` (`onResume`) and the banner's "Retry now".
+  /// `main.dart` (`onResume`); the banner's "Retry now" goes through [retryNow].
   LinkMonitor get monitor => _monitor!;
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
@@ -93,7 +93,12 @@ class ConnectionSupervisor {
       probePing: _probePing,
       nudgeEngine: (why) =>
           _ref.read(socketServiceProvider).nudgeEngine('monitor: $why'),
-      retryConnect: () => _ref.read(connectionBootstrapProvider.notifier).retry(),
+      // `automatic`: the ladder is not a person, so it must never resurrect a
+      // pairing the desk refused (see ConnectionBootstrap.retry).
+      retryConnect: () =>
+          _ref.read(connectionBootstrapProvider.notifier).retry(automatic: true),
+      standDown: () =>
+          _ref.read(connectionBootstrapProvider.notifier).isStoodDown,
       rediscover: () =>
           _ref.read(connectionBootstrapProvider.notifier).rediscoverNow(),
       reconnectIfNeeded: () =>
@@ -145,8 +150,10 @@ class ConnectionSupervisor {
     if (_heartbeatTimer != null) _restartHeartbeat();
   }
 
-  /// The banner's "Retry now" (and the disconnected screen's retry): do
-  /// everything that could help, immediately.
+  /// The banner's "Retry now" and the disconnected screen's "Try reconnect": do
+  /// everything that could help, immediately. A person pressed it, so the
+  /// bootstrap retry is deliberately not `automatic` and goes through even for
+  /// a pairing the desk refused.
   void retryNow() {
     final socket = _ref.read(socketServiceProvider);
     if (socket.state == SocketState.verified) {
@@ -157,12 +164,28 @@ class ConnectionSupervisor {
     _ref.read(connectionBootstrapProvider.notifier).retry();
   }
 
+  /// Whether the socket was verified before it last dropped: only then did the
+  /// desk vouch for the operator moments ago (see `touchOfflineSession`).
+  bool _wasVerified = false;
+
   void _onSocketState(SocketState state) {
     _monitor?.onSocketState(state);
     if (state == SocketState.verified) {
+      _wasVerified = true;
       _restartHeartbeat();
     } else if (state == SocketState.disconnected) {
       _stopHeartbeat();
+      // The last moment the desk was demonstrably with this phone — what a
+      // cold start offline measures its grace window from.
+      // Not after a revocation / sign-out: then the desk did NOT vouch for the
+      // operator and there is no session to refresh (SyncService gates the
+      // write too; this keeps the intent explicit).
+      if (_wasVerified) {
+        _wasVerified = false;
+        if (!_ref.read(forceDisconnectedProvider)) {
+          _ref.read(syncServiceProvider).touchOfflineSession(force: true);
+        }
+      }
     } else if (state == SocketState.connecting) {
       _resetRttIfHostChanged();
     }
@@ -207,6 +230,9 @@ class ConnectionSupervisor {
     try {
       final ok = await _probeHeartbeat(_policy.forAck(_heartbeatBaseTimeout));
       _monitor?.onBeat(ok: ok);
+      // A beat the desk answered is fresh evidence for the offline session
+      // (throttled to once a minute inside).
+      if (ok) _ref.read(syncServiceProvider).touchOfflineSession();
     } finally {
       _beatInFlight = false;
     }

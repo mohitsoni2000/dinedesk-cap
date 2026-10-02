@@ -4,6 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../widgets/pin_verify_sheet.dart';
 
+/// Whether the operator has to (and did) enter their PIN for [action].
+///
+/// Purely about PINs. Whether the desk must be reachable at all is a separate
+/// question the caller answers first, explicitly: every desk-confirmed action
+/// (bill, payment, cancel, shifts, holds) calls `requireDesk` before this, and
+/// the plain KOT send does not, because it queues in the outbox. That used to be
+/// hidden in here behind an `action != 'kot'` special case.
 Future<bool> requirePinIfNeeded(
   BuildContext context,
   WidgetRef ref,

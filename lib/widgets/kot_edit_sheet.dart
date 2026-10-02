@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
 import '../data/money.dart';
+import '../services/offline_guard.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
@@ -59,6 +62,7 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
 
   Future<void> _submit() async {
     if (!_hasChanges || _submitting) return;
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'kot_edit');
     if (!pinOk || !mounted) return;
     setState(() => _submitting = true);
@@ -80,11 +84,11 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
     }
 
     final socketService = ref.read(socketServiceProvider);
-    socketService.emit('kot:edit', <String, dynamic>{
+    unawaited(socketService.emitAckIdempotent('kot:edit', <String, dynamic>{
       'order_id': widget.order.orderId,
       'changes': changes,
       'reason': reason.isNotEmpty ? reason : 'Modified from waiter app',
-    }, onAck: (response) {
+    }).then((response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() => _submitting = false);
@@ -96,7 +100,7 @@ class _KotEditSheetState extends ConsumerState<KotEditSheet> {
         DynamicToast.show(context,
             message: 'KOT updated', kind: ToastKind.success);
       }
-    });
+    }));
   }
 
   @override

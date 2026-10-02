@@ -40,9 +40,12 @@ Pair flow: `/splash → /scan → /connecting → /auth → /tables`
 QR pairing hands the app a `{host, port, token}` triple; `SocketService.connect()`
 opens a `socket_io_client` connection to `http://host:port/operator` with the
 token in the auth payload, then `operator:verify` exchanges the operator's PIN
-for a verified session. A network drop starts a 2-minute reconnect grace
-(countdown banner). If it expires, the user is sent to `/disconnected` and
-must re-pair via QR. An admin-initiated kick routes to `/force-disconnected`.
+for a verified session. A network drop never ends the session: the app keeps
+reconnecting and the connection banner shows a "Weak connection" or
+"Offline · N queued" pill, with no deadline. `/disconnected` appears only when
+the desk refuses the device (its token was rejected repeatedly); an
+admin-initiated kick routes to `/force-disconnected`. See
+[Offline & weak Wi-Fi](#offline--weak-wi-fi).
 
 ## Stack
 
@@ -102,7 +105,7 @@ database; every screen reads from Riverpod `StateProvider`s that
 │  │  ├─ package_sheet.dart
 │  │  ├─ kot_edit_sheet.dart / kot_history_sheet.dart
 │  │  ├─ pin_pad.dart / pin_verify_sheet.dart
-│  │  ├─ connection_banner.dart       # 2:00 reconnect countdown ring
+│  │  ├─ connection_banner.dart       # "Weak connection" / "Offline · N queued" pills
 │  │  ├─ ready_orders_banner.dart
 │  │  ├─ confetti_burst.dart / animated_check_draw.dart
 │  │  ├─ page_transitions.dart
@@ -168,10 +171,42 @@ database; every screen reads from Riverpod `StateProvider`s that
    so operator can confirm correct pairing
 5. **Tables** — main app starts. `/tables`, `/history`, `/profile`, `/settings`
    live in the persistent shell with the connection banner overlay
-6. **Disconnect** — banner shows `Reconnecting · 1:47 remaining`. At 0:00 →
-   `/disconnected` (timeout). Admin kick → `/force-disconnected`
+6. **Disconnect** — a weak or dropped link only shows a banner pill ("Weak
+   connection" / "Offline · N queued") while the app keeps reconnecting; there
+   is no countdown. `/disconnected` is reached only when the desk refuses the
+   device. Admin kick → `/force-disconnected`
 7. Both disconnect screens have **`Scan QR` as the primary action** — no
    stale-session shortcut back to `/auth`
+
+## Offline & weak Wi-Fi
+
+The connection layer never gives up and never ends a shift on its own:
+
+- **Wi-Fi binding.** On Android the process is bound to the Wi-Fi network
+  (`wifi_binding.dart`), so LAN traffic to the desk is not rerouted over mobile
+  data when the access point has no internet. It is unbound on sign-out/unpair.
+- **Keep-alive service.** While paired, a foreground service
+  (`NetworkKeepAliveService`) holds the Wi-Fi and multicast locks so the radio
+  does not power-save the socket to death with the screen off. It stops when the
+  pairing is cleared or the app is swiped away.
+- **Link monitor.** `ConnectionSupervisor` + `LinkMonitor` heartbeat the desk,
+  treat one missed beat as suspicion rather than a verdict, and escalate
+  (nudge the engine, rebuild the connection, rediscover the desk) forever with
+  backoff. They stand down only when the desk refused the pairing, force-
+  disconnected the device, or the user signed out.
+- **Cold-start offline.** If the desk is unreachable at launch and the last
+  confirmed operator session is still inside the desk's PIN grace window (and
+  the biometric gate, when enabled, passes), the app opens on the cached
+  floor, menu and orders, flagged as stale. A reachable desk takes over through
+  the normal resume path and asks for the PIN if its own grace has run out.
+- **Direct KOT printing.** With the desk's synced print routing, an order sent
+  while offline is printed straight to the kitchen LAN printers from the phone
+  (slip marked offline, with an `offline_ref`); the desk prints only the
+  stations that failed when the order syncs.
+- **Outbox.** Orders and KOTs taken offline are queued on the phone and drained
+  automatically, in order and idempotently (one `client_request_id` per intent),
+  once the session is verified again. Bills, payments, cancels, shifts and
+  discounts need the desk and say so immediately instead of waiting.
 
 ## Liquid Glass guidelines (HIG-aligned)
 

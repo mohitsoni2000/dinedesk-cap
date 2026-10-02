@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/providers.dart';
 import '../services/biometric_service.dart';
 import '../services/network_keepalive.dart';
+import '../services/offline_kot_coordinator.dart';
 import '../services/trace.dart';
 import '../theme/perf_mode.dart';
 import '../theme/theme_mode_provider.dart';
@@ -151,6 +152,8 @@ class SettingsScreen extends ConsumerWidget {
                         Divider(height: 1, color: context.palette.hairline),
                         const _KeepAliveRow(),
                         Divider(height: 1, color: context.palette.hairline),
+                        const _DirectPrintRow(),
+                        Divider(height: 1, color: context.palette.hairline),
                         _SettingsRow(
                           icon: Icons.speed_outlined,
                           title: 'Performance mode',
@@ -199,7 +202,7 @@ class SettingsScreen extends ConsumerWidget {
                             subtitle: Text(
                               conn.online
                                   ? 'Tap to drop the WS connection'
-                                  : 'Banner countdown active · 15:00 → /disconnected',
+                                  : 'Offline pill shows after 2.5s · no countdown',
                               style: AppTypography.caption,
                             ),
                             onChanged: (v) {
@@ -207,8 +210,7 @@ class SettingsScreen extends ConsumerWidget {
                               ref.read(connectionProvider.notifier).state = v
                                   ? const ConnectionStatus(
                                       online: false,
-                                      label: 'Last sync 12s ago',
-                                      secondsRemaining: 900)
+                                      label: 'Last sync 12s ago')
                                   : ConnectionStatus(
                                       online: true,
                                       label:
@@ -219,7 +221,7 @@ class SettingsScreen extends ConsumerWidget {
                           _SettingsRow(
                             icon: Icons.wifi_off_rounded,
                             title: 'Disconnected screen',
-                            subtitle: 'Preview the timeout state',
+                            subtitle: 'Preview the pairing-lost state',
                             danger: true,
                             onTap: () => context.push('/disconnected'),
                           ),
@@ -822,6 +824,59 @@ class _KeepAliveRowState extends ConsumerState<_KeepAliveRow> {
       subtitle: const Text(
           'Stays connected to the desk with the screen off. Shows a small '
           'notification and uses a little more battery.',
+          style: AppTypography.caption),
+      onChanged: _enabled == null ? null : (v) => unawaited(_toggle(v)),
+    );
+  }
+}
+
+/// "Print KOT directly when desk is offline" (default ON). When the desk can't
+/// be reached and a KOT would only be queued, the phone prints it itself on the
+/// kitchen's LAN printers using the routing the desk last shared. Without that
+/// routing (print groups off, or no network printer configured on the desk) it
+/// cannot, and this row says so.
+class _DirectPrintRow extends ConsumerStatefulWidget {
+  const _DirectPrintRow();
+  @override
+  ConsumerState<_DirectPrintRow> createState() => _DirectPrintRowState();
+}
+
+class _DirectPrintRowState extends ConsumerState<_DirectPrintRow> {
+  bool? _enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final enabled = await DirectKotPrintSetting.isEnabled();
+    if (mounted) setState(() => _enabled = enabled);
+  }
+
+  Future<void> _toggle(bool v) async {
+    setState(() => _enabled = v);
+    await DirectKotPrintSetting.setEnabled(v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final config = ref.watch(kotPrintConfigProvider);
+    final available = config != null && config.hasDestinations;
+    return SwitchListTile(
+      value: _enabled ?? true,
+      activeThumbColor: AppColors.terra500,
+      secondary: Icon(Icons.print_outlined, color: context.palette.ink70),
+      title: const Text('Print KOT directly when desk is offline',
+          style: AppTypography.bodyMd),
+      subtitle: Text(
+          available
+              ? 'If the desk can\'t be reached, the KOT prints on the kitchen '
+                  'printer from this phone and syncs when the desk is back.'
+              : 'Not available right now: the desk hasn\'t shared a network '
+                  'printer setup (it needs print groups on and a network '
+                  'printer).',
           style: AppTypography.caption),
       onChanged: _enabled == null ? null : (v) => unawaited(_toggle(v)),
     );

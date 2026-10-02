@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
+import '../services/offline_guard.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
@@ -44,13 +45,14 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
     final picked = _pickedServerId;
     if (picked == null || _submitting) return;
 
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'table_shift');
     if (!pinOk || !mounted) return;
 
     setState(() => _submitting = true);
     unawaited(HapticFeedback.heavyImpact());
 
-    final response = await ref.read(socketServiceProvider).emitAck(
+    final response = await ref.read(socketServiceProvider).emitAckIdempotent(
       'table:link',
       {
         'table_a_id': widget.origin.serverId,
@@ -73,13 +75,14 @@ class _TableLinkSheetState extends ConsumerState<TableLinkSheet> {
   Future<void> _unlink() async {
     if (_submitting) return;
 
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'table_shift');
     if (!pinOk || !mounted) return;
 
     setState(() => _submitting = true);
     unawaited(HapticFeedback.heavyImpact());
 
-    final response = await ref.read(socketServiceProvider).emitAck(
+    final response = await ref.read(socketServiceProvider).emitAckIdempotent(
       'table:unlink',
       {'table_id': widget.origin.serverId},
     );

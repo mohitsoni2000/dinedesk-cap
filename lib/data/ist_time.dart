@@ -44,6 +44,21 @@ String formatIstTime(DateTime instant) {
   return '$hour:${_two(d.minute)} ${d.hour < 12 ? 'am' : 'pm'}';
 }
 
+/// `05 Oct 2026` — the date line of a printed slip, in IST.
+String formatIstSlipDate(DateTime instant) {
+  final d = _istFields(instant);
+  return '${_two(d.day)} ${_months[d.month - 1]} ${d.year}';
+}
+
+/// `10:15:00 am` — the time line of a printed slip, in IST (zero-padded hour,
+/// with seconds; [formatIstTime] is the compact on-screen form).
+String formatIstSlipTime(DateTime instant) {
+  final d = _istFields(instant);
+  final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  return '${_two(hour)}:${_two(d.minute)}:${_two(d.second)} '
+      '${d.hour < 12 ? 'am' : 'pm'}';
+}
+
 String formatIstDayTime(DateTime instant) {
   final d = _istFields(instant);
   return '${d.day} ${_months[d.month - 1]}, ${formatIstTime(instant)}';

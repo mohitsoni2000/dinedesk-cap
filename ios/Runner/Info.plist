@@ -50,7 +50,14 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Restro needs camera access to scan the QR code on the admin desktop for device pairing.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Restro connects to the admin desktop on your local network for live restaurant operations.</string>
+	<string>Command.Crew connects to your restaurant's desk computer over your local Wi-Fi to send orders and receive live updates. No data leaves your network.</string>
+	<!-- Reserved for future Bonjour discovery of the desk. Harmless today.
+	     Deliberately NO com.apple.developer.networking.multicast entitlement:
+	     it needs Apple approval and nothing here needs it yet. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_commanddesk._tcp</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

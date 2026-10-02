@@ -1,10 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
-import '../services/session_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
 
@@ -74,7 +75,9 @@ class ForceDisconnectedScreen extends ConsumerWidget {
                         leadingIcon: Icons.qr_code_scanner,
                         onPressed: () {
                           HapticFeedback.mediumImpact();
-                          SessionService().clearPairing();
+                          unawaited(ref
+                              .read(connectionBootstrapProvider.notifier)
+                              .signOut());
                           ref.read(forceDisconnectedProvider.notifier).state =
                               false;
                           context.go('/scan');

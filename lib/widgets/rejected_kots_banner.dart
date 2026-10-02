@@ -55,8 +55,8 @@ class _RejectedBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = count == 1
-        ? '1 KOT never reached the kitchen'
-        : '$count KOTs never reached the kitchen';
+        ? '1 order or KOT never reached the kitchen'
+        : '$count orders or KOTs never reached the kitchen';
 
     return Pressable(
       onTap: onTap,
@@ -180,8 +180,17 @@ class _RejectedRow extends ConsumerWidget {
         .watch(activeOrdersProvider)
         .where((o) => o.id == orderId)
         .firstOrNull;
-    final slot = order == null
+    // An order that never reached the desk has no order id yet, only the table
+    // (or room) it was for — see OfflineOrderQueueService._deadLetter.
+    final queuedFor = rejected.payload['table_id']?.toString();
+    final queuedTable = queuedFor == null
         ? null
+        : ref
+            .watch(tablesProvider)
+            .where((t) => t.serverId == queuedFor)
+            .firstOrNull;
+    final slot = order == null
+        ? queuedTable?.id
         : (order.roomId.isNotEmpty ? order.roomId : order.tableId);
 
     final at = rejected.rejectedAt;

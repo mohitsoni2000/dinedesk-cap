@@ -14,6 +14,7 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../services/menu_area.dart';
 import '../services/socket_service.dart';
+import '../services/offline_guard.dart';
 import '../models/server_models.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
@@ -219,6 +220,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
 
   Future<void> _saveAndExitDraft() async {
     if (_isSaving) return;
+    // A draft lives on the desk; offline, the order is built and sent as a KOT
+    // (which queues), not parked.
+    if (!requireDesk(context, ref)) return;
     setState(() => _isSaving = true);
 
     final socketService = ref.read(socketServiceProvider);

@@ -7,8 +7,8 @@ import '../data/currency.dart';
 import '../data/money.dart';
 import '../data/providers.dart';
 import '../models/server_models.dart';
+import '../services/offline_guard.dart';
 import '../services/pin_guard.dart';
-import '../utils/request_id.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
 import 'dynamic_toast.dart';
@@ -135,11 +135,6 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
 
   final Set<String> _settledBillIds = <String>{};
 
-  final Map<String, String> _requestIds = <String, String>{};
-
-  String _requestIdFor(String billId) =>
-      _requestIds.putIfAbsent(billId, newRequestId);
-
   Future<void> _pay() async {
     if (_submitting) return;
     if (_isCreditBlocked) {
@@ -159,6 +154,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       return;
     }
 
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'payment');
     if (!pinOk || !mounted) return;
 
@@ -215,12 +211,16 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       final payments = perBillPayments[bill.id]!;
       if (payments.isEmpty) continue;
 
-      final response = await socketService.emitAck(
+      // emitAckIdempotent owns the `client_request_id`: one per intent (bill +
+      // payments), the same on a retry after a lost ack so the desk replays the
+      // charge instead of repeating it, retired on success and expired when
+      // unanswered. A per-widget id map here used to do that by hand, without
+      // the retirement or the expiry.
+      final response = await socketService.emitAckIdempotent(
         'bill:payment',
         <String, dynamic>{
           'bill_id': bill.id,
           'payments': payments,
-          'client_request_id': _requestIdFor(bill.id),
         },
         timeout: const Duration(seconds: 15),
       );

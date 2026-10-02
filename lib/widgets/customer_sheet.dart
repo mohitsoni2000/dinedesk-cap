@@ -180,7 +180,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
     };
 
     final socket = ref.read(socketServiceProvider);
-    socket.emit('customer:create', data, onAck: (response) {
+    unawaited(socket.emitAckIdempotent('customer:create', data).then((response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() {
@@ -196,7 +196,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
       } else {
         Navigator.of(context).pop(Map<String, dynamic>.from(response));
       }
-    });
+    }));
   }
 
   void _submitEdit() {
@@ -233,7 +233,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
     };
 
     final socket = ref.read(socketServiceProvider);
-    socket.emit('customer:update', data, onAck: (response) {
+    unawaited(socket.emitAckIdempotent('customer:update', data).then((response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() {
@@ -249,7 +249,7 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
       } else {
         Navigator.of(context).pop(Map<String, dynamic>.from(response));
       }
-    });
+    }));
   }
 
   @override

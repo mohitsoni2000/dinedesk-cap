@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
+import '../services/offline_guard.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
@@ -37,13 +38,14 @@ class _TableShiftSheetState extends ConsumerState<TableShiftSheet> {
     final picked = _pickedServerId;
     if (picked == null || _submitting) return;
 
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'table_shift');
     if (!pinOk || !mounted) return;
 
     setState(() => _submitting = true);
     unawaited(HapticFeedback.heavyImpact());
 
-    final response = await ref.read(socketServiceProvider).emitAck(
+    final response = await ref.read(socketServiceProvider).emitAckIdempotent(
       'table:shift',
       {
         'from_table_id': widget.origin.serverId,

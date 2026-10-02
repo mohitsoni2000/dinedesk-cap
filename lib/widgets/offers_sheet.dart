@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../data/money.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
+import '../services/offline_guard.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
 import '../utils/socket_helpers.dart';
@@ -93,6 +95,7 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
   void _submit(Map<String, dynamic> payload,
       {required String pendingKey, String event = 'offer:apply'}) {
     if (_submitting) return;
+    if (!requireDesk(context, ref)) return;
     setState(() {
       _submitting = true;
       _pendingOfferId = pendingKey;
@@ -100,7 +103,7 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
     HapticFeedback.selectionClick();
 
     final socketService = ref.read(socketServiceProvider);
-    socketService.emit(event, payload, onAck: (response) {
+    unawaited(socketService.emitAckIdempotent(event, payload).then((response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() {
@@ -128,7 +131,7 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
                     _AppliedOffer.fromMap(Map<String, dynamic>.from(m))));
         }
       });
-    });
+    }));
 
     scheduleSocketTimeout(
       duration: const Duration(seconds: 10),

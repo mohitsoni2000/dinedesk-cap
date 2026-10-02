@@ -172,6 +172,11 @@ class ServerOrder {
   final List<ServerOrderItem> items;
   final List<ServerBill> bills;
 
+  /// The desk's JSON this order was parsed from, kept so the offline snapshot
+  /// can persist exactly what the desk sent (and hydrate it back through
+  /// [ServerOrder.fromMap]) instead of re-serialising the parsed model.
+  final Map<String, dynamic>? raw;
+
   bool get isRoom => roomId.isNotEmpty;
 
   bool get hasBills => bills.isNotEmpty;
@@ -193,6 +198,7 @@ class ServerOrder {
     this.createdBy,
     this.customerId,
     this.customerName,
+    this.raw,
   });
 
   factory ServerOrder.fromMap(Map<String, dynamic> m) {
@@ -226,6 +232,7 @@ class ServerOrder {
       createdBy: optionalStringAny(m, <String>['created_by', 'operator_id']),
       customerId: optionalString(m, 'customer_id'),
       customerName: optionalString(m, 'customer_name'),
+      raw: m,
     );
   }
 }

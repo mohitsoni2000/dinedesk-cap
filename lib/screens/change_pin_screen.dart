@@ -89,10 +89,10 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
           setState(() => _verifying = true);
           final socketService = ref.read(socketServiceProvider);
 
-          socketService.emit('operator:change_pin', {
+          unawaited(socketService.emitAckIdempotent('operator:change_pin', {
             'current_pin': _currentPin,
             'new_pin': _newPin,
-          }, onAck: (response) {
+          }).then((response) {
             if (!mounted) return;
             if (response['kind'] == 'error') {
               setState(() {
@@ -111,7 +111,7 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
               HapticFeedback.heavyImpact();
               _showSuccessAndExit();
             }
-          });
+          }));
         }
         break;
     }

@@ -1,11 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/feature_flags.dart';
+import '../models/kot_print_config.dart';
 import '../models/server_models.dart';
 import '../models/room_arrival_hold.dart';
 import '../services/connection_bootstrap.dart';
 import '../services/connection_supervisor.dart';
 import '../services/customer_link_service.dart';
 import '../services/link_monitor.dart';
+import '../services/offline_snapshot.dart';
 import '../services/socket_service.dart';
 import '../services/sync_service.dart';
 import '../services/wifi_binding.dart';
@@ -496,11 +498,9 @@ class RestaurantInfo {
 class ConnectionStatus {
   final bool online;
   final String label;
-  final int? secondsRemaining;
   const ConnectionStatus({
     required this.online,
     required this.label,
-    this.secondsRemaining,
   });
 }
 
@@ -957,3 +957,24 @@ class ReadyTicket {
 }
 
 final readyOrdersProvider = StateProvider<List<ReadyTicket>>((_) => []);
+
+/// The desk's KOT print routing (print groups -> LAN printers), as last synced.
+/// Null until the desk shares one — and the desk shares one only when print
+/// groups are on and at least one network printer exists — in which case the
+/// phone cannot print a KOT on its own (see OfflineKotPrinter).
+final kotPrintConfigProvider = StateProvider<KotPrintConfig?>((_) => null);
+
+/// table / room server id -> floor id. The cached tables only carry the floor's
+/// NAME, but routing a KOT to floor-scoped print groups needs the id.
+final slotFloorIdsProvider =
+    StateProvider<Map<String, String>>((_) => const <String, String>{});
+
+/// True while the app is running on a cold-start offline session: the operator
+/// was restored from the last confirmed session and the menu/orders come from
+/// the on-disk snapshot, not from a live desk. Cleared the moment a live sync
+/// lands (or the PIN prompt on reconnect is cancelled).
+final offlineResumedProvider = StateProvider<bool>((_) => false);
+
+/// The on-disk snapshot for cold-start offline. Overridden in tests.
+final offlineSnapshotStoreProvider =
+    Provider<OfflineSnapshotStore>((_) => OfflineSnapshotStore());

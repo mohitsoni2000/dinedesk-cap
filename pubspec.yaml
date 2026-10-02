@@ -34,8 +34,10 @@ dependencies:
   # Pinned to the 3.1.4 line: SocketService.nudgeEngine reaches into
   # socket.io.engine.onClose to keep connection-state recovery alive (see
   # test/socket_recovery_api_test.dart). Review that before bumping.
-  socket_io_client: ~3.1.4
+  socket_io_client: ">=3.1.4 <3.2.0"
   shared_preferences: ^2.2.3
+  # App-support directory for the offline snapshot (gzip JSON, cold-start offline)
+  path_provider: ^2.1.5
   sensors_plus: ^6.1.0
 
   # Network-change stream — drives instant reconnect on Wi-Fi return instead

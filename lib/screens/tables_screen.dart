@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
+import '../services/offline_guard.dart';
 import '../data/currency.dart';
 import '../data/table_selectors.dart';
 import '../data/recent_tables.dart';
@@ -176,7 +177,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     }
     ref.read(selectedTableIdProvider.notifier).state = t.serverId;
 
-    if (intent.action == TableOpenAction.createDraft) {
+    // Offline there is no desk to create the draft order on; the table opens
+    // empty and the order is created when its KOT is sent (it queues, and the
+    // outbox replays create + KOT together).
+    if (intent.action == TableOpenAction.createDraft && !isDeskOffline(ref)) {
       setState(() {
         _openingTable = true;
         _openingTableId = t.serverId;
@@ -1175,6 +1179,43 @@ class _ReadyChip extends StatelessWidget {
   }
 }
 
+/// An order for this table is waiting in the offline outbox: it is saved on
+/// this phone and will reach the kitchen when the link is back. Without it the
+/// table looks untouched and the operator re-enters the order.
+class _QueuedChip extends StatelessWidget {
+  const _QueuedChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Order queued, will send when connected',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.warn.withValues(alpha: 0.16),
+          border: Border.all(color: AppColors.warn.withValues(alpha: 0.5)),
+          borderRadius: const BorderRadius.all(AppRadii.pill),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.schedule_send_rounded, size: 10, color: AppColors.warn),
+            SizedBox(width: 3),
+            Text('QUEUED',
+                style: TextStyle(
+                  fontFamily: AppTypography.inter,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 9,
+                  color: AppColors.warn,
+                  letterSpacing: 0.4,
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _TimerChip extends StatefulWidget {
   final DateTime since;
   const _TimerChip({required this.since});
@@ -1304,6 +1345,8 @@ class _TableCard extends ConsumerWidget {
         linkedTableIdsProvider.select((ids) => ids.contains(table.serverId)));
     final isReady = ref.watch(
         readyTableIdsProvider.select((ids) => ids.contains(table.serverId)));
+    final isQueued = ref.watch(
+        pendingTableIdsProvider.select((ids) => ids.contains(table.serverId)));
     final isMine = table.state == TableState.mine;
     final tag =
         _statusTagFor(table.state, table.orderItemCount, table.activeBillCount);
@@ -1386,6 +1429,10 @@ class _TableCard extends ConsumerWidget {
                             const SizedBox(height: 4),
                             const AttentionPulse(
                                 scale: 1.06, child: _ReadyChip()),
+                          ],
+                          if (isQueued) ...[
+                            const SizedBox(height: 4),
+                            const _QueuedChip(),
                           ],
                           if (isMine && occupiedSince != null) ...[
                             const SizedBox(height: 4),

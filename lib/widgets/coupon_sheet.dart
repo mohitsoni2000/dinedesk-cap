@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
+import '../services/offline_guard.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
 import 'liquid_chrome.dart';
@@ -46,19 +49,20 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
       setState(() => _error = 'Enter a coupon code');
       return;
     }
+    if (!requireDesk(context, ref)) return;
     setState(() {
       _applying = true;
       _error = null;
     });
 
     final socketService = ref.read(socketServiceProvider);
-    socketService.emit(
+    unawaited(socketService.emitAckIdempotent(
         'discount:apply',
         <String, dynamic>{
           'order_id': widget.orderId,
           'coupon_code': code,
         },
-        timeout: const Duration(seconds: 15), onAck: (response) {
+        timeout: const Duration(seconds: 15)).then((response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() {
@@ -74,7 +78,7 @@ class _CouponSheetState extends ConsumerState<CouponSheet> {
           if (mounted) Navigator.of(context).pop(response);
         });
       }
-    });
+    }));
   }
 
   @override

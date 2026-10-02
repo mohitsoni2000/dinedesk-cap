@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/currency.dart';
 import '../data/money.dart';
 import '../data/providers.dart';
+import '../services/offline_guard.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import 'app_surface.dart';
@@ -126,13 +127,14 @@ class _KotShiftSheetState extends ConsumerState<KotShiftSheet> {
     final table = _pickedTableServerId;
     if (table == null || _picked.isEmpty || _submitting) return;
 
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'kot_shift');
     if (!pinOk || !mounted) return;
 
     setState(() => _submitting = true);
     unawaited(HapticFeedback.heavyImpact());
 
-    final response = await ref.read(socketServiceProvider).emitAck(
+    final response = await ref.read(socketServiceProvider).emitAckIdempotent(
       'kot:shift',
       {
         'order_id': widget.order.orderId,

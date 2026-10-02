@@ -9,7 +9,9 @@ import '../data/providers.dart';
 import '../data/currency.dart';
 import '../motion/motion.dart';
 import '../services/kot_queue_service.dart';
+import '../services/offline_kot_coordinator.dart';
 import '../services/offline_order_queue_service.dart';
+import '../services/offline_guard.dart';
 import '../services/pin_guard.dart';
 import '../services/socket_service.dart';
 import '../services/platform_surfaces.dart';
@@ -52,8 +54,15 @@ final class _OrderFlowStepResult {
   /// needs to say "queued", not imply it already reached the kitchen.
   final bool isQueued;
 
+  /// The queued KOT was already put on the kitchen's printer directly (desk
+  /// unreachable), so the message is good news rather than a warning.
+  final bool printedDirect;
+
   const _OrderFlowStepResult(
-      {this.failedStep, this.errorMessage, this.isQueued = false});
+      {this.failedStep,
+      this.errorMessage,
+      this.isQueued = false,
+      this.printedDirect = false});
   bool get isSuccess => failedStep == null || isQueued;
 }
 
@@ -68,11 +77,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   Map<String, dynamic>? _customer;
   _OrderType _orderType = _OrderType.dineIn;
   StateController<String>? _notesNotifier;
-
-  final Map<String, String> _quickSettleRequestIds = <String, String>{};
-
-  String _quickSettleRequestIdFor(String billId) =>
-      _quickSettleRequestIds.putIfAbsent(billId, newRequestId);
 
   @override
   void initState() {
@@ -111,6 +115,33 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   String? _pendingKotRequestId;
 
   bool _running = false;
+
+  /// What the emergency direct print did for the KOT being sent right now, if
+  /// it was tried (the desk was unreachable and the KOT got queued).
+  OfflineKotAttempt? _offlinePrint;
+
+  /// Runs when the KOT is about to be parked in the outbox: puts it on the
+  /// kitchen's LAN printer straight away and hands the outbox the
+  /// `printed_offline` marker to persist WITH the entry, so the desk, on
+  /// replay, knows not to print it again.
+  BeforeQueueHook _directPrintHook(List<CartLine> cart) {
+    final coordinator = ref.read(offlineKotCoordinatorProvider);
+    final notes = _notes.text;
+    final slotId = widget.tableId;
+    final isRoom = widget.isRoom;
+    final isTakeaway = !widget.isRoom && _orderType == _OrderType.takeaway;
+    return () async {
+      final attempt = await coordinator.printForQueuedKot(
+        cart: cart,
+        slotId: slotId,
+        isRoom: isRoom,
+        isTakeaway: isTakeaway,
+        orderNotes: notes,
+      );
+      _offlinePrint = attempt;
+      return attempt.fields;
+    };
+  }
 
   Map<String, dynamic>? _serverTotals;
   Timer? _totalsDebounce;
@@ -303,7 +334,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           subtitle: '${ref.read(cartProvider).length} items · sent to kitchen',
         );
 
-    if (!printKot) return;
+    // A KOT already printed on the kitchen printer from this phone must not be
+    // printed again by the desk.
+    if (!printKot || (_offlinePrint?.printedAnything ?? false)) return;
     socketService.emit(
       'print:kot',
       <String, dynamic>{'order_id': orderId},
@@ -326,6 +359,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final cart = ref.read(cartProvider);
     final socketService = ref.read(socketServiceProvider);
     String? orderId;
+    _offlinePrint = null;
 
     if (_kotSentOrderId != null) {
       orderId = _kotSentOrderId;
@@ -366,6 +400,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               socketService,
               <String, dynamic>{'order_id': orderId},
               clientRequestId: kotRequestId,
+              beforeQueue: _directPrintHook(cart),
             );
       } catch (_) {
         ref.read(cartProvider.notifier).setSyncStatusFailed();
@@ -378,11 +413,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         _kotSentOrderId = orderId;
         _pendingOrderRequestId = null;
         _pendingKotRequestId = null;
-        return const _OrderFlowStepResult(
+        return _OrderFlowStepResult(
           isQueued: true,
-          errorMessage:
+          printedDirect: _offlinePrint?.printedAnything ?? false,
+          errorMessage: _offlinePrint?.message ??
               'Desk unreachable — KOT queued on this phone and will fire '
-              'automatically the moment we reconnect.',
+                  '$kAutoWhenDeskBack',
         );
       }
       if (kotResponse.isRejected) {
@@ -443,6 +479,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               orderPayload: orderPayload,
               orderRequestId: orderRequestId,
               kotRequestId: kotRequestId,
+              tableId: widget.tableId,
+              beforeQueue: _directPrintHook(cart),
             );
       } catch (_) {
         ref.read(cartProvider.notifier).setSyncStatusFailed();
@@ -455,11 +493,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       if (submitResult.isQueued) {
         _pendingOrderRequestId = null;
         _pendingKotRequestId = null;
-        return const _OrderFlowStepResult(
+        return _OrderFlowStepResult(
           isQueued: true,
-          errorMessage:
+          printedDirect: _offlinePrint?.printedAnything ?? false,
+          errorMessage: _offlinePrint?.message ??
               'Desk unreachable — order queued on this phone and will send '
-              'automatically the moment we reconnect.',
+                  '$kAutoWhenDeskBack',
         );
       }
       if (submitResult.isRejected) {
@@ -499,11 +538,21 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
       _rememberKotLabel(submitResult.kotAck);
       _afterKotSent(socketService, orderId, printKot);
+      // The order reached the desk but its KOT was parked (the link dropped in
+      // between) and printed directly: say so rather than a bare "sent".
+      final offlinePrint = _offlinePrint;
+      if (offlinePrint != null && offlinePrint.attempted && !generateBill) {
+        return _OrderFlowStepResult(
+          isQueued: true,
+          printedDirect: offlinePrint.printedAnything,
+          errorMessage: offlinePrint.message,
+        );
+      }
     }
 
     if (!generateBill) return const _OrderFlowStepResult();
 
-    final billResponse = await socketService.emitAck(
+    final billResponse = await socketService.emitAckIdempotent(
       'bill:generate',
       <String, dynamic>{'order_id': orderId},
       timeout: const Duration(seconds: 15),
@@ -547,14 +596,16 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               'Bill total missing — please settle from the bill screen',
         );
       }
-      final paymentResponse = await socketService.emitAck(
+      // Idempotent: the id is per intent (bill + mode + amount), reused on a
+      // retry, retired on success, expired when unanswered (see
+      // SocketService.emitAckIdempotent).
+      final paymentResponse = await socketService.emitAckIdempotent(
         'bill:payment',
         <String, dynamic>{
           'bill_id': billId,
           'payments': [
             {'payment_mode': quickSettleMode, 'amount': billTotal.toWire()}
           ],
-          'client_request_id': _quickSettleRequestIdFor(billId),
         },
         timeout: const Duration(seconds: 15),
       );
@@ -586,10 +637,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     // desk still knows exactly who sent it once it syncs. Money actions
     // (generate_bill, payment, ...) are untouched and still always verify
     // PIN live before proceeding.
-    final socket = ref.read(socketServiceProvider);
-    final pinOk = socket.state == SocketState.verified
-        ? await requirePinIfNeeded(context, ref, 'kot')
-        : true;
+    final pinOk = isDeskOffline(ref)
+        ? true
+        : await requirePinIfNeeded(context, ref, 'kot');
     if (!pinOk || !mounted) return;
     await _submitWithFlow(generateBill: false, collectPayment: false);
   }
@@ -635,8 +685,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           DynamicToast.show(context,
               message: result.errorMessage ??
                   'Desk unreachable — queued on this phone and will send '
-                      'automatically the moment we reconnect.',
-              kind: ToastKind.warning);
+                      '$kAutoWhenDeskBack',
+              kind: result.printedDirect ? ToastKind.success : ToastKind.warning,
+              duration: const Duration(seconds: 4));
           context.go(returnToBuilder ? _builderRoute : _successRoute);
           return;
         }
@@ -680,10 +731,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   Future<void> _submitOnlyKot() async {
     // Same reasoning as _submit(): skip the live PIN round-trip only when
     // offline, only for this money-free path — see the comment there.
-    final socket = ref.read(socketServiceProvider);
-    final pinOk = socket.state == SocketState.verified
-        ? await requirePinIfNeeded(context, ref, 'kot')
-        : true;
+    final pinOk = isDeskOffline(ref)
+        ? true
+        : await requirePinIfNeeded(context, ref, 'kot');
     if (!pinOk || !mounted) return;
     await _submitWithFlow(
       generateBill: false,
@@ -694,6 +744,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   }
 
   Future<void> _holdOrder() async {
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'hold');
     if (!pinOk || !mounted) return;
     if (_running) return;
@@ -735,7 +786,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
       final holdResponse = await ref
           .read(socketServiceProvider)
-          .emitAck('order:hold', <String, dynamic>{'order_id': orderId});
+          .emitAckIdempotent('order:hold', <String, dynamic>{'order_id': orderId});
       if (holdResponse['kind'] == 'error') {
         if (mounted) {
           DynamicToast.show(context,
@@ -762,12 +813,14 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   }
 
   Future<void> _submitKotAndBill() async {
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'kot_and_bill');
     if (!pinOk || !mounted) return;
     await _submitWithFlow(generateBill: true, collectPayment: false);
   }
 
   Future<void> _quickSettle() async {
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'quick_settle');
     if (!pinOk || !mounted) return;
 

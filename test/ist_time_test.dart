@@ -49,6 +49,17 @@ void main() {
       expect(formatIstDayTime(DateTime.utc(2026, 9, 30, 20)), '1 Oct, 1:30 am');
     });
 
+    test('slip date/time: zero-padded, with seconds, shifted to IST', () {
+      // 04:45:09 UTC = 10:15:09 IST; 19:00:00 UTC = 00:30 IST the next day.
+      expect(formatIstSlipDate(DateTime.utc(2026, 10, 5, 4, 45, 9)),
+          '05 Oct 2026');
+      expect(formatIstSlipTime(DateTime.utc(2026, 10, 5, 4, 45, 9)),
+          '10:15:09 am');
+      expect(formatIstSlipDate(DateTime.utc(2026, 10, 5, 19)), '06 Oct 2026');
+      expect(formatIstSlipTime(DateTime.utc(2026, 10, 5, 19)), '12:30:00 am');
+      expect(formatIstSlipTime(DateTime.utc(2026, 10, 5, 6, 30)), '12:00:00 pm');
+    });
+
     test('time to the next IST midnight', () {
       expect(untilNextIstMidnight(DateTime.utc(2026, 9, 30, 18)),
           const Duration(minutes: 30));

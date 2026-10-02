@@ -14,6 +14,93 @@ final Provider<KotQueueService> kotQueueProvider =
   return service;
 });
 
+/// The desk wants the operator's PIN again before it accepts anything. The
+/// stable signal is `code: 'reauth_required'`; the message match covers a desk
+/// build that predates the code.
+bool isReauthRequired(Map<String, dynamic> ack) {
+  if (ack['kind'] != 'error') return false;
+  if (ack['code'] == 'reauth_required') return true;
+  final message = ack['message']?.toString().toLowerCase() ?? '';
+  return message.contains('pin verification required');
+}
+
+/// `kot:send` found nothing left to send: the KOT it was queued for already
+/// reached the kitchen (an earlier attempt landed but its ack was lost). That
+/// is success, not a rejection. The desk now sends `code: 'nothing_to_send'`;
+/// older builds only have the message.
+bool isNothingToSend(Map<String, dynamic> ack) {
+  if (ack['kind'] != 'error') return false;
+  if (ack['code'] == 'nothing_to_send') return true;
+  final message = ack['message']?.toString().toLowerCase() ?? '';
+  return message.contains('no pending items');
+}
+
+/// Pause/prompt state shared by the outbox queues for `reauth_required`.
+///
+/// A refused-for-PIN item is not a bad item: it must stay queued, untouched,
+/// and the queue must stop hammering the desk until the operator has typed
+/// their PIN. Quarantining it (what any other non-transport error does) would
+/// throw away a perfectly good order over a lapsed session.
+class ReauthGate {
+  /// Asks the operator for their PIN; true once they have entered it.
+  Future<bool> Function()? onReauthRequired;
+
+  /// Called when the PIN was accepted and the queue may run again.
+  void Function()? onUnpaused;
+
+  bool _paused = false;
+  bool _prompting = false;
+  DateTime? _declinedAt;
+
+  /// How long after a dismissed prompt a later flush may raise it again, so
+  /// queued items can't be stranded behind one cancelled dialog.
+  static const Duration reprompt = Duration(seconds: 60);
+
+  bool get isPaused => _paused;
+
+  /// True when a flush must not run right now.
+  bool get blocksFlush {
+    if (!_paused) return false;
+    final declined = _declinedAt;
+    if (!_prompting &&
+        declined != null &&
+        DateTime.now().difference(declined) > reprompt) {
+      trip();
+    }
+    return true;
+  }
+
+  void trip() {
+    _paused = true;
+    if (_prompting) return;
+    _prompting = true;
+    unawaited(_prompt());
+  }
+
+  Future<void> _prompt() async {
+    try {
+      final ok = await (onReauthRequired?.call() ?? Future<bool>.value(false));
+      if (ok) {
+        _paused = false;
+        _declinedAt = null;
+        onUnpaused?.call();
+      } else {
+        _declinedAt = DateTime.now();
+      }
+    } catch (_) {
+      _declinedAt = DateTime.now();
+    } finally {
+      _prompting = false;
+    }
+  }
+
+  /// A fresh verified session is as good as a PIN prompt answered.
+  void resume() {
+    _paused = false;
+    _declinedAt = null;
+  }
+}
+
 class RejectedKot {
   final Map<String, dynamic> payload;
   final String reason;
@@ -58,6 +145,26 @@ class KotSendResult {
   String? get message => ack['message']?.toString();
 }
 
+/// Called right before a KOT is persisted to the outbox because the desk could
+/// not take it. Whatever it returns is merged into the queued payload, so it
+/// survives the replay — this is how a KOT that was printed straight to the
+/// kitchen's LAN printer tells the desk (`printed_offline`, `offline_ref`,
+/// `printed_at`, `failed_group_ids`) not to print it a second time. It may take
+/// seconds (it talks to printers), so it runs outside the queue lock; it must
+/// not throw (a throw is treated as "nothing to add").
+typedef BeforeQueueHook = Future<Map<String, dynamic>> Function();
+
+/// Runs [hook] for [KotQueueService] and [OfflineOrderQueueService] alike.
+Future<Map<String, dynamic>> runBeforeQueueHook(BeforeQueueHook? hook) async {
+  if (hook == null) return const <String, dynamic>{};
+  try {
+    return await hook();
+  } catch (error) {
+    logE('[KotQueue]', 'before-queue hook failed', error);
+    return const <String, dynamic>{};
+  }
+}
+
 class KotQueueService {
   static const String _queueKey = 'pending_kots_v2';
   static const String _deadLetterKey = 'rejected_kots_v1';
@@ -72,6 +179,27 @@ class KotQueueService {
   Future<void> _lock = Future<void>.value();
 
   Future<void>? _flushFuture;
+
+  final ReauthGate _gate = ReauthGate();
+
+  /// See [ReauthGate.onReauthRequired].
+  set onReauthRequired(Future<bool> Function()? hook) =>
+      _gate.onReauthRequired = hook;
+
+  /// Fired when a PIN prompt this queue raised was answered.
+  set onUnpaused(void Function()? hook) => _gate.onUnpaused = hook;
+
+  bool get isPaused => _gate.isPaused;
+
+  /// Clears a reauth pause (a new verified session).
+  void resume() => _gate.resume();
+
+  /// The signed-in operator's id, for stamping entries and refusing to replay
+  /// one queued under somebody else. Wired by SyncService.
+  String? Function()? currentOperatorId;
+
+  /// Fired after the persisted queue changes, so the UI can mirror its size.
+  void Function()? onChanged;
 
   final StreamController<RejectedKot> _rejections =
       StreamController<RejectedKot>.broadcast();
@@ -111,7 +239,15 @@ class KotQueueService {
       key,
       items.map(jsonEncode).toList(growable: false),
     );
+    if (key == _queueKey) onChanged?.call();
   }
+
+  /// Puts something that will never be sent into the same dead-letter store
+  /// (and so the same RejectedKotsBanner) a refused KOT goes to. For the order
+  /// queue, whose rejected orders used to vanish with only a toast.
+  Future<void> quarantineExternal(
+          Map<String, dynamic> payload, String reason) =>
+      _synchronized(() => _quarantine(payload, reason));
 
   Future<void> _quarantine(
     Map<String, dynamic> payload,
@@ -147,28 +283,29 @@ class KotQueueService {
     SocketService socket,
     Map<String, dynamic> payload, {
     required String clientRequestId,
+    BeforeQueueHook? beforeQueue,
   }) async {
     final stamped = <String, dynamic>{
       ...payload,
       'client_request_id': clientRequestId,
     };
 
-    if (socket.state != SocketState.verified) {
-      await _enqueue(stamped);
+    // The one place a KOT is parked: [beforeQueue] gets its chance first (direct
+    // printing), and what it adds is persisted WITH the entry.
+    Future<KotSendResult> queue() async {
+      final extra = await runBeforeQueueHook(beforeQueue);
+      await _enqueue(<String, dynamic>{...stamped, ...extra});
       return const KotSendResult(
         KotSendOutcome.queued,
         <String, dynamic>{'kind': 'queued'},
       );
     }
 
+    if (socket.state != SocketState.verified) return queue();
+
+    // `await flush` first so older queued KOTs go out ahead of this one.
     final drained = await flush(socket);
-    if (!drained) {
-      await _enqueue(stamped);
-      return const KotSendResult(
-        KotSendOutcome.queued,
-        <String, dynamic>{'kind': 'queued'},
-      );
-    }
+    if (!drained) return queue();
 
     final ack = await socket.emitAck(
       'kot:send',
@@ -178,13 +315,13 @@ class KotQueueService {
 
     if (ack['kind'] != 'error') return KotSendResult(KotSendOutcome.sent, ack);
 
-    if (isTransportFailure(ack)) {
-      await _enqueue(stamped);
-      return const KotSendResult(
-        KotSendOutcome.queued,
-        <String, dynamic>{'kind': 'queued'},
-      );
+    if (isTransportFailure(ack) || isReauthRequired(ack)) {
+      if (isReauthRequired(ack)) _gate.trip();
+      return queue();
     }
+
+    // The earlier attempt landed and only its ack was lost: already sent.
+    if (isNothingToSend(ack)) return KotSendResult(KotSendOutcome.sent, ack);
 
     return KotSendResult(KotSendOutcome.rejected, ack);
   }
@@ -199,6 +336,7 @@ class KotQueueService {
         items.add(<String, dynamic>{
           'payload': payload,
           'queued_at': DateTime.now().toIso8601String(),
+          'operator_id': currentOperatorId?.call(),
         });
         await _writeRaw(_queueKey, items);
         logD(_tag, 'queued KOT (${items.length} pending)');
@@ -206,6 +344,7 @@ class KotQueueService {
 
   Future<bool> flush(SocketService socket) {
     if (socket.state != SocketState.verified) return Future<bool>.value(false);
+    if (_gate.blocksFlush) return Future<bool>.value(false);
     final existing = _flushFuture;
     if (existing != null) {
       return existing.then((_) => pendingCount().then((n) => n == 0));
@@ -246,6 +385,18 @@ class KotQueueService {
         continue;
       }
 
+      // Queued under another operator: replaying it now would attribute it to
+      // whoever is signed in. Dead-letter it for a human instead.
+      final queuedBy = next['operator_id'];
+      final current = currentOperatorId?.call();
+      if (queuedBy is String &&
+          current != null &&
+          current.isNotEmpty &&
+          queuedBy != current) {
+        await _dropHead('Queued by a different operator — not sent');
+        continue;
+      }
+
       if (socket.state != SocketState.verified) return false;
 
       final ack = await socket.emitAck(
@@ -259,24 +410,18 @@ class KotQueueService {
           logD(_tag, 'flush paused — desk unreachable');
           return false;
         }
-        final message = ack['message']?.toString().toLowerCase() ?? '';
-        final isDuplicate =
-            message.contains('duplicate') || message.contains('already');
-        if (isDuplicate) {
+        if (isReauthRequired(ack)) {
+          logD(_tag, 'flush paused — the desk wants the PIN again');
+          _gate.trip();
+          return false;
+        }
+        if (isNothingToSend(ack)) {
+          // Already on the kitchen's printer: this is the success path of a
+          // retry whose first ack was lost. Drop quietly.
           await _dropHead(null);
           continue;
         }
-        await _synchronized(() async {
-          await _quarantine(
-            payload,
-            ack['message']?.toString() ?? 'Rejected by the desk',
-          );
-          final items = await _readRaw(_queueKey);
-          if (items.isNotEmpty) {
-            items.removeAt(0);
-            await _writeRaw(_queueKey, items);
-          }
-        });
+        await _dropHead(ack['message']?.toString() ?? 'Rejected by the desk');
         continue;
       }
 

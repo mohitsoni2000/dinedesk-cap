@@ -13,7 +13,6 @@ import 'services/app_messenger.dart';
 import 'services/network_keepalive.dart';
 import 'services/session_service.dart';
 import 'services/platform_surfaces.dart';
-import 'services/socket_service.dart';
 import 'services/trace.dart';
 import 'services/update_service.dart';
 import 'theme/app_theme.dart';
@@ -103,6 +102,9 @@ class _RestroAppState extends ConsumerState<RestroApp>
     super.dispose();
   }
 
+  /// When the app last left the foreground, or null while it is in it.
+  DateTime? _backgroundedAt;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     ref
@@ -114,8 +116,10 @@ class _RestroAppState extends ConsumerState<RestroApp>
         state == AppLifecycleState.resumed));
     if (state == AppLifecycleState.resumed) {
       unawaited(_syncKeepAlive());
-      unawaited(_verifyConnectionOnResume());
+      _onResumed();
       _checkForUpdate();
+    } else {
+      _backgroundedAt ??= DateTime.now();
     }
   }
 
@@ -140,31 +144,23 @@ class _RestroAppState extends ConsumerState<RestroApp>
     }
   }
 
-  /// Android can suspend the isolate while this app is backgrounded and kill
-  /// the socket transport underneath it without ever running onDisconnect —
-  /// `SocketService.state` then keeps claiming "verified" after resume even
-  /// though nothing is actually listening on the other end.
-  /// `reconnectIfNeeded()` alone can't catch that (its guard trusts the same
-  /// stale `state`), so first confirm the connection is real with a live
-  /// resync — which also refreshes tables and flushes queued
-  /// orders/KOTs as a bonus if it succeeds. `SocketService.emitAck` flips
-  /// `state` to disconnected on a genuine ack timeout, so a dead socket
-  /// surfaces here as `state == disconnected` afterward and gets a full,
-  /// clean reconnect through the same path the manual "retry" button uses.
-  Future<void> _verifyConnectionOnResume() async {
-    final socket = ref.read(socketServiceProvider);
-    // Mid-PIN (the operator switched apps with the verify in flight): a
-    // concurrent resync would race it, and its timeout would rebuild the
-    // socket out from under it. The verify settles the link state itself.
-    if (socket.isVerifyInFlight) return;
-    if (socket.state == SocketState.disconnected) {
-      socket.reconnectIfNeeded();
-      return;
-    }
-    await ref.read(syncServiceProvider).requestResync();
-    if (ref.read(socketServiceProvider).state == SocketState.disconnected) {
-      ref.read(connectionBootstrapProvider.notifier).retry();
-    }
+  /// Android can suspend the isolate while the app is backgrounded and kill the
+  /// socket transport underneath it without ever running onDisconnect, so
+  /// `SocketService.state` can keep claiming "verified" after resume.
+  ///
+  /// This used to answer that with a full resync on every resume — a multi-
+  /// hundred-KB payload down a link that might be dead, and (because a timed-out
+  /// ack then flipped the state) a full socket teardown if it was merely slow.
+  /// Now the link monitor decides: after a long absence it probes (a one-line
+  /// heartbeat plus an HTTP ping) and only escalates if the link is proven
+  /// dead; a short absence costs nothing; a socket that is already down gets
+  /// poked and its recovery ladder restarted. A PIN verify in flight is
+  /// respected by every step the monitor can take.
+  void _onResumed() {
+    final since = _backgroundedAt;
+    _backgroundedAt = null;
+    final away = since == null ? Duration.zero : DateTime.now().difference(since);
+    ref.read(connectionSupervisorProvider).monitor.onResume(away);
   }
 
   Future<void> _checkForUpdate() async {

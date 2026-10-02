@@ -9,6 +9,7 @@ import '../data/money.dart';
 import '../data/providers.dart';
 import '../data/rejected_kots.dart';
 import '../models/feature_flags.dart';
+import '../models/kot_print_config.dart';
 import '../models/server_models.dart';
 import '../models/wire.dart';
 import '../motion/feedback_kind.dart';
@@ -19,7 +20,10 @@ import 'kot_queue_service.dart';
 import 'log.dart';
 import 'menu_parser.dart';
 import 'offline_order_queue_service.dart';
+import 'offline_session.dart';
+import 'offline_snapshot.dart';
 import 'platform_surfaces.dart';
+import 'session_service.dart';
 import 'socket_service.dart';
 import 'trace.dart';
 
@@ -92,6 +96,10 @@ class SyncService {
 
   bool _liveSyncApplied = false;
 
+  /// Whether a live desk sync has landed in this process (cold-start offline
+  /// hydration only applies before that).
+  bool get liveSyncApplied => _liveSyncApplied;
+
   String? _lastMenuVersion;
 
   /// The version of the menu currently applied, or null when none is (cold
@@ -119,7 +127,15 @@ class SyncService {
     _applyPendingFastAdd();
   }
 
-  SyncService(this._socket, this._ref);
+  SyncService(this._socket, this._ref) {
+    // The active orders are what moves most while a shift runs; persist them
+    // (debounced) so a cold start with the desk unreachable still shows the
+    // tables' running orders.
+    _ordersSub = _ref.listen<List<ServerOrder>>(
+        activeOrdersProvider, (_, __) => _scheduleOrdersSave());
+  }
+
+  ProviderSubscription<List<ServerOrder>>? _ordersSub;
 
   static const List<String> broadcastEvents = <String>[
     'table:updated',
@@ -136,6 +152,7 @@ class SyncService {
     'flags:updated',
     'menu:access:updated',
     'menu:updated',
+    'print_config:updated',
     'fast-add:updated',
     'table:shifted',
     'table:merged',
@@ -164,17 +181,17 @@ class SyncService {
           label: 'Connected · ${restaurant?.name ?? "Restaurant"}',
         );
 
-        // A recovered session already had its missed broadcasts replayed by
-        // socket.io, so the providers are current — resyncing would re-download
-        // the full initial-sync payload for nothing.
-        if (state == SocketState.connected &&
-            _ref.read(isAuthenticatedProvider) &&
-            !_socket.wasRecovered) {
-          unawaited(_requestResync());
-        }
+        // No resync here. ConnectionBootstrap is the single owner of the
+        // post-connect resync (it also knows whether the session was
+        // recovered, in which case none is needed). This listener used to fire
+        // its own on `connected` while the bootstrap fired one too — two full
+        // initial-sync payloads down a link that had just proven weak.
       } else if (state == SocketState.disconnected) {
-        final rejected =
-            _socket.lastConnectFailure == ConnectFailure.authRejected;
+        // Only a refusal that has repeated is a dead pairing; a single one is
+        // treated as a blip (see ConnectionBootstrap._onConnectFailure).
+        final rejected = _socket.lastConnectFailure ==
+                ConnectFailure.authRejected &&
+            _socket.authRejectionStreak >= 2;
         _ref.read(connectionProvider.notifier).state = ConnectionStatus(
           online: false,
           label: rejected
@@ -185,6 +202,11 @@ class SyncService {
     });
 
     _ref.read(rejectedKotsProvider);
+    // The outbox queues pause and ask for the PIN through us when the desk
+    // answers `reauth_required` (see KotQueueService.onReauthRequired).
+    _ref.read(kotQueueProvider).onReauthRequired = handleReauthRequired;
+    _ref.read(offlineOrderQueueProvider).onReauthRequired =
+        handleReauthRequired;
     _kotRejectionSubscription =
         _ref.read(kotQueueProvider).rejections.listen((rejected) {
       showAppToast('A KOT could not be sent: ${rejected.reason}');
@@ -408,6 +430,7 @@ class SyncService {
       final unchanged = _lastFlagsMap != null &&
           flagsEquality.equals(_lastFlagsMap, flagsMap);
       _lastFlagsMap = flagsMap;
+      _snapFlags = Map<String, dynamic>.from(flagsMap);
       if (!unchanged) unawaited(_requestResync());
     });
 
@@ -432,7 +455,16 @@ class SyncService {
         final parsed = await _parseMenuOffThread(map);
 
         if (seq != _menuParseSeq) return;
-        _applyParsedMenu(parsed, map);
+        // Keep the version we hold unless the broadcast brings its own. This
+        // used to pass none, which nulled `_lastMenuVersion` and made the next
+        // resync/verify re-download the whole menu for nothing. A stale
+        // version is safe to keep: if the desk's menu really moved on, its
+        // version differs from ours and it sends the menu anyway.
+        final broadcastVersion = map['menu_version'];
+        _applyParsedMenu(parsed, map,
+            version:
+                broadcastVersion is String ? broadcastVersion : _lastMenuVersion);
+        unawaited(saveSnapshot());
       } catch (e, st) {
         logD(_tag, 'menu:updated parse error: $e $st');
       } finally {
@@ -444,7 +476,15 @@ class SyncService {
 
     _socket.on('fast-add:updated', (data) {
       final map = asMap(data);
+      _snapFastAdd = Map<String, dynamic>.from(map);
       _applyFastAddData(map);
+    });
+
+    // The desk's printers / print groups changed: the direct-print routing the
+    // phone holds must follow, or an emergency KOT would go to a stale printer.
+    _socket.on('print_config:updated', (data) {
+      _applyKotPrintConfig(asMap(data)['kot_print_config']);
+      unawaited(saveSnapshot());
     });
 
     _socket.on('table:shifted', (data) {
@@ -522,16 +562,7 @@ class SyncService {
             'Ignoring force:disconnect (duplicate_login) — socket.io will reconnect');
         return;
       }
-      unregisterListeners();
-      _ref.read(forceDisconnectedProvider.notifier).state = true;
-      _ref.read(isAuthenticatedProvider.notifier).state = false;
-      _ref.read(connectionProvider.notifier).state = ConnectionStatus(
-        online: false,
-        label: reason == 'token_revoked'
-            ? 'Disconnected by admin'
-            : 'Pairing expired — scan a new QR from the admin desktop',
-      );
-      _socket.disconnect();
+      unawaited(_handleForceDisconnect(reason));
     });
 
     _socket.on('kot:print:failed', (data) {
@@ -543,6 +574,46 @@ class SyncService {
         kotNumber: kotNumber,
       );
     });
+  }
+
+  /// Latched by a revoking `force:disconnect` (token revoked or pairing
+  /// expired): until a *new* verified session exists ([completeResume]) nothing
+  /// may write the offline session. Without it the supervisor's disconnect-edge
+  /// `touchOfflineSession(force: true)` (its `_wasVerified` was still true)
+  /// re-created, a moment after we cleared it, the very session that lets a
+  /// revoked phone resume offline at the next boot.
+  bool _sessionRevoked = false;
+
+  /// Test seam for the `force:disconnect` broadcast handler.
+  @visibleForTesting
+  Future<void> debugForceDisconnect(String? reason) =>
+      _handleForceDisconnect(reason);
+
+  Future<void> _handleForceDisconnect(String? reason) async {
+    unregisterListeners();
+    // Flags first, synchronously: every session write is gated on them, and
+    // `disconnect()` below is what makes the supervisor try to write one.
+    _sessionRevoked = true;
+    _lastSessionWrite = null;
+    _ref.read(offlineResumedProvider.notifier).state = false;
+    _ref.read(forceDisconnectedProvider.notifier).state = true;
+    _ref.read(isAuthenticatedProvider.notifier).state = false;
+    // The cached identity must not outlive the revocation either.
+    _ref.read(operatorProvider.notifier).state = null;
+    _ref.read(connectionProvider.notifier).state = ConnectionStatus(
+      online: false,
+      label: reason == 'token_revoked'
+          ? 'Disconnected by admin'
+          : 'Pairing expired — scan a new QR from the admin desktop',
+    );
+    _socket.disconnect();
+    // After the disconnect, and awaited: a write that the teardown itself
+    // provoked has already been refused by the latch, so this clear is final.
+    try {
+      await SessionService().clearOfflineSession();
+    } catch (e) {
+      logD(_tag, 'offline session clear failed: $e');
+    }
   }
 
   String _tableLabelForOrder(String? orderId) {
@@ -578,11 +649,14 @@ class SyncService {
 
   Future<void> applyInitialSync(Map<String, dynamic> data) async {
     _liveSyncApplied = true;
+    // Live data from the desk replaces whatever the cold-start snapshot showed.
+    _ref.read(offlineResumedProvider.notifier).state = false;
     logD(_tag, '── Applying initial sync ──');
     logD(_tag, '  Keys: ${data.keys.toList()}');
 
     final restaurantRaw = data['restaurant_info'] ?? data['restaurant'];
     if (restaurantRaw is Map) {
+      _snapRestaurant = Map<String, dynamic>.from(restaurantRaw);
       final info = ServerRestaurantInfo.fromMap(
           Map<String, dynamic>.from(restaurantRaw));
       _ref.read(restaurantProvider.notifier).state = RestaurantInfo(
@@ -596,6 +670,7 @@ class SyncService {
 
     final flagsRaw = data['feature_flags'] ?? data['flags'];
     if (flagsRaw is Map) {
+      _snapFlags = Map<String, dynamic>.from(flagsRaw);
       _ref.read(flagsProvider.notifier).state =
           FeatureFlags.fromMap(Map<String, dynamic>.from(flagsRaw));
       logD(_tag, '  Flags: loaded');
@@ -618,6 +693,7 @@ class SyncService {
 
     await _loadTimerCache();
     Trace.mark('timer_cache_loaded');
+    final slotFloors = <String, String>{};
     final tablesList = data['tables'];
     if (tablesList is List) {
       if (tablesList.isNotEmpty && tablesList.first is Map) {
@@ -629,11 +705,15 @@ class SyncService {
             'order_total=${sample['order_total']}, status=${sample['status']}');
       }
 
-      final tables = parseEach(
+      final parsedTables = parseEach(
         mapList(tablesList),
         ServerTable.fromMap,
         'ServerTable',
-      ).map(_serverTableToLocal).toList();
+      );
+      for (final st in parsedTables) {
+        if (st.floorId.isNotEmpty) slotFloors[st.id] = st.floorId;
+      }
+      final tables = parsedTables.map(_serverTableToLocal).toList();
       _ref.read(tablesProvider.notifier).state = tables;
 
       for (final t in tables.take(3)) {
@@ -647,13 +727,24 @@ class SyncService {
 
     final roomsList = data['rooms'];
     if (roomsList is List) {
-      final rooms = parseEach(
+      final parsedRooms = parseEach(
         mapList(roomsList),
         ServerRoom.fromMap,
         'ServerRoom',
-      ).map(_serverRoomToLocal).toList();
+      );
+      for (final sr in parsedRooms) {
+        final floorId = sr.floorId;
+        if (floorId != null && floorId.isNotEmpty) slotFloors[sr.id] = floorId;
+      }
+      final rooms = parsedRooms.map(_serverRoomToLocal).toList();
       _ref.read(roomsProvider.notifier).state = rooms;
       logD(_tag, '  Rooms: ${rooms.length} loaded');
+    }
+    if (slotFloors.isNotEmpty) {
+      _ref.read(slotFloorIdsProvider.notifier).state = <String, String>{
+        ..._ref.read(slotFloorIdsProvider),
+        ...slotFloors,
+      };
     }
 
     _ref.read(isFloorDataStaleProvider.notifier).state = false;
@@ -667,20 +758,11 @@ class SyncService {
 
     final offersList = data['offers'];
     if (offersList is List) {
-      final offers = <Offer>[];
-      for (final raw in offersList) {
-        if (raw is! Map) continue;
-        final m = Map<String, dynamic>.from(raw);
-        final offerId = optionalString(m, 'id');
-        if (offerId == null) continue;
-        offers.add(Offer(
-          id: offerId,
-          name: stringOr(m, 'name', 'Offer'),
-          ruleType: stringOr(m, 'rule_type', ''),
-          couponCode: optionalString(m, 'coupon_code'),
-          autoApply: boolOr(m, 'auto_apply', false),
-        ));
-      }
+      _snapOffers = <Map<String, dynamic>>[
+        for (final raw in offersList)
+          if (raw is Map) Map<String, dynamic>.from(raw),
+      ];
+      final offers = _parseOffers(offersList);
       _ref.read(offersProvider.notifier).state = offers;
       logD(_tag, '  Offers: ${offers.length} loaded');
     }
@@ -730,7 +812,25 @@ class SyncService {
 
     final fastAddRaw = data['fast_add'];
     if (fastAddRaw is Map) {
+      _snapFastAdd = Map<String, dynamic>.from(fastAddRaw);
       _applyFastAddData(Map<String, dynamic>.from(fastAddRaw));
+    }
+
+    // Direct-print routing. Present-but-null is the desk saying "no network
+    // printer / print groups off" (clear it); a reply without the key at all
+    // (a menu-only resync) leaves what we hold alone.
+    if (data.containsKey('kot_print_config')) {
+      _applyKotPrintConfig(data['kot_print_config']);
+    }
+    // The desk's PIN grace. A FULL sync without it is an older desk: grace 0,
+    // which fails closed (no offline resume). A partial reply says nothing.
+    final policyRaw = data['session_policy'];
+    if (policyRaw is Map) {
+      _snapPolicy = Map<String, dynamic>.from(policyRaw);
+      _pinGraceMinutes = intOr(_snapPolicy!, 'pin_grace_minutes', 0);
+    } else if (data.containsKey('tables')) {
+      _snapPolicy = null;
+      _pinGraceMinutes = 0;
     }
 
     final ordersList = data['active_orders'] ?? data['orders'];
@@ -771,8 +871,239 @@ class SyncService {
 
     _ref.read(widgetSyncProvider).schedule(_ref);
 
+    // The desk-confirmed state is now the freshest copy there is; make it the
+    // one a cold start finds. Not awaited: a slow disk must not hold up the
+    // sync that is unblocking the operator's PIN screen.
+    unawaited(saveSnapshot());
+
     logD(_tag, '── Initial sync complete ──');
   }
+
+  List<Offer> _parseOffers(List<dynamic> offersList) {
+    final offers = <Offer>[];
+    for (final raw in offersList) {
+      if (raw is! Map) continue;
+      final m = Map<String, dynamic>.from(raw);
+      final offerId = optionalString(m, 'id');
+      if (offerId == null) continue;
+      offers.add(Offer(
+        id: offerId,
+        name: stringOr(m, 'name', 'Offer'),
+        ruleType: stringOr(m, 'rule_type', ''),
+        couponCode: optionalString(m, 'coupon_code'),
+        autoApply: boolOr(m, 'auto_apply', false),
+      ));
+    }
+    return offers;
+  }
+
+  void _applyKotPrintConfig(Object? raw) {
+    final config = KotPrintConfig.tryParse(raw);
+    _snapKotConfig =
+        (config != null && raw is Map) ? Map<String, dynamic>.from(raw) : null;
+    _ref.read(kotPrintConfigProvider.notifier).state = config;
+    logD(
+        _tag,
+        config == null
+            ? '  KOT print config: none (direct printing unavailable)'
+            : '  KOT print config: ${config.groups.length} groups');
+  }
+
+  // ------------------------------------------------------- cold-start offline
+
+  Map<String, dynamic>? _snapRestaurant;
+  Map<String, dynamic>? _snapFlags;
+  Map<String, dynamic>? _snapFastAdd;
+  List<Map<String, dynamic>>? _snapOffers;
+  Map<String, dynamic>? _snapKotConfig;
+  Map<String, dynamic>? _snapPolicy;
+  int _pinGraceMinutes = 0;
+  Timer? _ordersSaveTimer;
+
+  /// Overrides the desk id read from the live pairing (tests).
+  @visibleForTesting
+  String? deskInstanceIdOverride;
+
+  /// The paired desk's id, or null when unknown (no pairing yet, a demo
+  /// pairing, a pairing from before desk ids): a snapshot is only ever written
+  /// for a desk it can later be matched to.
+  String? get _deskInstanceId {
+    if (deskInstanceIdOverride != null) return deskInstanceIdOverride;
+    final pairing = _ref.read(connectionBootstrapProvider.notifier).currentPairing;
+    if (pairing == null || pairing.token == 'demo-token') return null;
+    return pairing.deskInstanceId;
+  }
+
+  void _scheduleOrdersSave() {
+    if (!_liveSyncApplied || _deskInstanceId == null) return;
+    _ordersSaveTimer?.cancel();
+    _ordersSaveTimer =
+        Timer(const Duration(seconds: 3), () => unawaited(saveSnapshot()));
+  }
+
+  /// Writes the current desk-sourced state to disk. The menu part is only
+  /// re-encoded when the menu itself changed (see [OfflineSnapshotStore]).
+  /// A no-op until a live sync has landed — saving hydrated data back would
+  /// only re-stamp stale data as fresh.
+  Future<void> saveSnapshot() async {
+    _ordersSaveTimer?.cancel();
+    _ordersSaveTimer = null;
+    final deskId = _deskInstanceId;
+    if (!_liveSyncApplied || deskId == null) return;
+    try {
+      final rawMenu = _ref.read(rawMenuDataProvider);
+      await _ref.read(offlineSnapshotStoreProvider).save(OfflineSnapshot(
+            savedAt: DateTime.now(),
+            deskInstanceId: deskId,
+            restaurantInfo: _snapRestaurant,
+            featureFlags: _snapFlags,
+            menu: rawMenu.isEmpty ? null : rawMenu,
+            menuVersion: _lastMenuVersion,
+            fastAdd: _snapFastAdd,
+            offers: _snapOffers ?? const <Map<String, dynamic>>[],
+            activeOrders: <Map<String, dynamic>>[
+              for (final o in _ref.read(activeOrdersProvider))
+                if (o.raw != null) o.raw!,
+            ],
+            linkGroups: _ref.read(linkGroupsProvider),
+            kotPrintConfig: _snapKotConfig,
+            sessionPolicy: _snapPolicy ??
+                <String, dynamic>{'pin_grace_minutes': _pinGraceMinutes},
+            slotFloorIds: _ref.read(slotFloorIdsProvider),
+          ));
+    } catch (e) {
+      logD(_tag, 'snapshot save failed: $e');
+    }
+  }
+
+  /// Cold start with the desk unreachable: puts the last desk-confirmed data
+  /// on screen. Sets providers DIRECTLY — it must not go through
+  /// [applyInitialSync], which would treat the snapshot as a live sync (reset
+  /// the floor names the [FloorCache] already restored because the snapshot
+  /// carries no `floors`, and mark the data fresh). The data stays flagged stale
+  /// and the connection is never set online. Returns false when there is no
+  /// usable snapshot for this desk.
+  Future<bool> hydrateFromSnapshot({String? deskInstanceId}) async {
+    if (_liveSyncApplied) return false;
+    final snapshot = await _ref
+        .read(offlineSnapshotStoreProvider)
+        .load(deskInstanceId: deskInstanceId ?? _deskInstanceId);
+    if (snapshot == null || _liveSyncApplied) return false;
+
+    final restaurant = snapshot.restaurantInfo;
+    if (restaurant != null) {
+      _snapRestaurant = restaurant;
+      try {
+        final info = ServerRestaurantInfo.fromMap(restaurant);
+        _ref.read(restaurantProvider.notifier).state = RestaurantInfo(
+          name: info.name,
+          address: info.address,
+          adminDeviceLabel: '',
+          adminIp: '',
+        );
+      } on WireFormatException catch (e) {
+        logE(_tag, 'snapshot restaurant unreadable', e);
+      }
+    }
+    final flags = snapshot.featureFlags;
+    if (flags != null) {
+      _snapFlags = flags;
+      _lastFlagsMap = flags;
+      _ref.read(flagsProvider.notifier).state = FeatureFlags.fromMap(flags);
+    }
+
+    final menu = snapshot.menu;
+    if (menu != null) {
+      final seq = ++_menuParseSeq;
+      final parsed = await _parseMenuOffThread(menu);
+      if (seq == _menuParseSeq && !_liveSyncApplied) {
+        _applyParsedMenu(parsed, menu, version: snapshot.menuVersion);
+      }
+    }
+    final fastAdd = snapshot.fastAdd;
+    if (fastAdd != null) {
+      _snapFastAdd = fastAdd;
+      _applyFastAddData(fastAdd);
+    }
+    _snapOffers = snapshot.offers;
+    _ref.read(offersProvider.notifier).state = _parseOffers(snapshot.offers);
+
+    final orders = parseEach(
+      snapshot.activeOrders,
+      ServerOrder.fromMap,
+      'ServerOrder',
+    );
+    _ref.read(activeOrdersProvider.notifier).state = orders;
+    _setHistory(<HistoryOrder>[
+      for (final so in orders)
+        if (so.itemCount > 0) _serverOrderToHistory(so),
+    ]);
+
+    _ref.read(linkGroupsProvider.notifier).state = snapshot.linkGroups;
+    _snapPolicy = snapshot.sessionPolicy;
+    _pinGraceMinutes = snapshot.pinGraceMinutes;
+    _applyKotPrintConfig(snapshot.kotPrintConfig);
+    if (snapshot.slotFloorIds.isNotEmpty) {
+      _ref.read(slotFloorIdsProvider.notifier).state = snapshot.slotFloorIds;
+    }
+    _ref.read(isFloorDataStaleProvider.notifier).state = true;
+    logD(
+        _tag,
+        '  Snapshot: hydrated ${orders.length} orders, menu '
+        '${snapshot.menuVersion ?? 'none'} (stale, awaiting live sync)');
+    return true;
+  }
+
+  DateTime? _lastSessionWrite;
+
+  /// How often a heartbeat may rewrite the offline session's `lastSeenAt`.
+  static const Duration _sessionWriteEvery = Duration(seconds: 60);
+
+  /// Records "the desk confirmed this operator just now" for cold-start
+  /// offline. [force] skips the once-a-minute throttle (a session just became
+  /// verified, or the link just dropped). Never from an offline-resumed
+  /// session: that would extend the window with no desk evidence at all.
+  Future<void> persistOfflineSession({bool force = false}) async {
+    if (_ref.read(offlineResumedProvider)) return;
+    // Only a live, authenticated, un-revoked session is evidence the desk
+    // vouches for this operator. A signed-out or revoked phone must never
+    // re-create what its sign-out / revocation just cleared.
+    if (_sessionRevoked ||
+        _ref.read(forceDisconnectedProvider) ||
+        !_ref.read(isAuthenticatedProvider)) {
+      return;
+    }
+    final operator = _ref.read(operatorProvider);
+    if (operator == null || operator.id.isEmpty) return;
+    final pairing =
+        _ref.read(connectionBootstrapProvider.notifier).currentPairing;
+    if (pairing != null && pairing.token == 'demo-token') return;
+    final now = DateTime.now();
+    final last = _lastSessionWrite;
+    if (!force && last != null && now.difference(last) < _sessionWriteEvery) {
+      return;
+    }
+    _lastSessionWrite = now;
+    try {
+      await SessionService().saveOfflineSession(OfflineSession(
+        operatorId: operator.id,
+        name: operator.name,
+        role: operator.role,
+        shift: operator.shift,
+        employeeId: operator.employeeId,
+        deskInstanceId: pairing?.deskInstanceId ?? _deskInstanceId,
+        lastSeenAt: now,
+        pinGraceMinutes: _pinGraceMinutes,
+      ));
+    } catch (e) {
+      logD(_tag, 'offline session write failed: $e');
+    }
+  }
+
+  /// Fire-and-forget [persistOfflineSession] for the heartbeat and the
+  /// disconnect edge.
+  void touchOfflineSession({bool force = false}) =>
+      unawaited(persistOfflineSession(force: force));
 
   void applyOrderAck(
     Map<String, dynamic> response, {
@@ -825,7 +1156,90 @@ class SyncService {
   Future<bool> _requestMenuOnlyResync() =>
       _requestResync(sections: const ['menu']);
 
+  /// The menu-only resync `menu:access:updated` triggers (tests).
+  @visibleForTesting
+  Future<bool> debugRequestMenuOnlyResync() => _requestMenuOnlyResync();
+
+  Future<bool>? _resyncInFlight;
+  bool _resyncInFlightIsFull = false;
+
+  /// True when the last resync failed because the transport didn't answer (a
+  /// timeout or a drop), as opposed to the desk answering "no". The bootstrap
+  /// uses it to tell "weak link, try again" from "needs a PIN".
+  bool lastResyncWasTransportFailure = false;
+
+  /// Marks a session as resumed without a resync: verified socket,
+  /// authenticated app, outbox kicked. Used for a session the desk recovered
+  /// (every missed broadcast was replayed, nothing to re-download) and as the
+  /// tail of a successful resync.
+  void completeResume() {
+    _socket.markVerified();
+    _ref.read(isAuthenticatedProvider.notifier).state = true;
+    // Verified by the desk: no longer running on the cold-start snapshot, and
+    // this is the moment the offline session's clock restarts.
+    _ref.read(offlineResumedProvider.notifier).state = false;
+    // A verified session is the one thing that lifts the revocation latch.
+    _sessionRevoked = false;
+    touchOfflineSession(force: true);
+    unawaited(_ref.read(outboxDrainProvider).kick());
+  }
+
+  Future<bool>? _reauthInFlight;
+
+  /// Hook for the outbox queues: an ack came back `reauth_required`, so the
+  /// desk wants the operator's PIN again before it accepts anything. The queues
+  /// pause (keeping every item) and call this; true means the PIN was entered
+  /// and they may resume. Single-flight, so a burst of refused sends raises one
+  /// prompt, not one per item.
+  Future<bool> handleReauthRequired() => _reauthInFlight ??=
+      promptPinReverify().then((entered) {
+        // The desk wants the PIN and the operator declined. Two cases, one
+        // answer — back to the PIN screen (queued orders stay queued):
+        //  - a cold-start offline session was only ever a loan against the
+        //    grace window;
+        //  - a LIVE session that outlasted the desk's PIN grace. Left
+        //    authenticated, it sat on a socket that is connected but never
+        //    verified: the router ignores `NeedsAuth` for an authenticated app,
+        //    no banner shows, every desk action says "Needs the desk" and the
+        //    outbox never drains, with no way back short of a restart.
+        //    `isAuthenticated = false` hands the router the way out; the PIN
+        //    screen verifies on the already-connected socket.
+        if (!entered) {
+          if (_ref.read(offlineResumedProvider)) {
+            _ref.read(offlineResumedProvider.notifier).state = false;
+          }
+          _ref.read(isAuthenticatedProvider.notifier).state = false;
+        }
+        return entered;
+      }).whenComplete(() => _reauthInFlight = null);
+
+  /// Single-flight. Several things ask for a resync (the bootstrap on connect,
+  /// `flags:updated`, `menu:access:updated`, the app resuming), often within the
+  /// same second; each used to ship its own multi-hundred-KB reply down a link
+  /// that was likely weak. Now:
+  ///
+  /// - a full request while a full one runs shares its future;
+  /// - a menu-only request while any one runs shares it (a full sync carries
+  ///   the menu anyway; a menu-only one is already what was asked);
+  /// - a full request while a menu-only one runs waits for it, then runs its
+  ///   own: the menu-only reply cannot satisfy it.
   Future<bool> _requestResync({List<String>? sections}) {
+    final menuOnly = sections != null;
+    final running = _resyncInFlight;
+    if (running != null) {
+      if (_resyncInFlightIsFull || menuOnly) return running;
+      return running.then((_) => _requestResync(sections: sections));
+    }
+    _resyncInFlightIsFull = !menuOnly;
+    late final Future<bool> tracked;
+    tracked = _doResync(sections: sections).whenComplete(() {
+      if (identical(_resyncInFlight, tracked)) _resyncInFlight = null;
+    });
+    _resyncInFlight = tracked;
+    return tracked;
+  }
+
+  Future<bool> _doResync({List<String>? sections}) {
     _ref.read(connectionProvider.notifier).state = const ConnectionStatus(
       online: true,
       label: 'Syncing…',
@@ -842,6 +1256,8 @@ class SyncService {
             timeout: SocketService.syncBundledAckTimeout)
         .then((res) async {
       Trace.mark('resync_acked');
+      lastResyncWasTransportFailure =
+          res['kind'] == 'error' && isTransportFailure(res);
       if (res['kind'] == 'success') {
         final syncRaw = res['sync'];
         if (syncRaw is Map) {
@@ -859,16 +1275,13 @@ class SyncService {
           );
         }
 
-        _socket.markVerified();
-        _ref.read(isAuthenticatedProvider.notifier).state = true;
-        unawaited(_ref
-            .read(offlineOrderQueueProvider)
-            .flush(_socket)
-            .then((_) => _ref.read(kotQueueProvider).flush(_socket)));
+        completeResume();
         return true;
       } else if (res['code'] == 'reauth_required') {
-        if (await promptPinReverify()) {
-          return await _requestResync();
+        if (await handleReauthRequired()) {
+          // Directly, not via _requestResync: this IS the in-flight resync, and
+          // asking to share it would wait on itself forever.
+          return await _doResync(sections: sections);
         }
         return false;
       } else {
@@ -884,6 +1297,18 @@ class SyncService {
       );
       return false;
     });
+  }
+
+  /// The operator signed out / the device was unpaired: stop acting on the old
+  /// session. Cancels the pending snapshot save and stops the orders listener
+  /// from scheduling more (`_liveSyncApplied` gates it), so the snapshot the
+  /// unpair just cleared is not re-created from the old session's state.
+  void onSignedOut() {
+    unregisterListeners();
+    _ordersSaveTimer?.cancel();
+    _ordersSaveTimer = null;
+    _liveSyncApplied = false;
+    _lastSessionWrite = null;
   }
 
   void unregisterListeners() {
@@ -907,6 +1332,8 @@ class SyncService {
   void dispose() {
     unregisterListeners();
     _tablesFlushTimer?.cancel();
+    _ordersSaveTimer?.cancel();
+    _ordersSub?.close();
   }
 
   static const _timerKeyPrefix = 'table_timer_';

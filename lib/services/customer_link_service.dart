@@ -22,7 +22,7 @@ class CustomerLinkService {
     final customerId = customer['id']?.toString();
     if (customerId == null || customerId.isEmpty) return customer;
 
-    final response = await _socket.emitAck('customer:link_order', {
+    final response = await _socket.emitAckIdempotent('customer:link_order', {
       'order_id': orderId,
       'customer_id': customerId,
     });

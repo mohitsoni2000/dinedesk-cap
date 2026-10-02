@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
+import '../services/offline_guard.dart';
 import '../data/currency.dart';
 import '../data/ist_time.dart';
 import '../data/room_card_view.dart';
@@ -73,7 +74,8 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
     }
     ref.read(selectedTableIdProvider.notifier).state = r.serverId;
 
-    if (intent.action == TableOpenAction.createDraft) {
+    // Same as tables: offline, the order is created when its KOT is sent.
+    if (intent.action == TableOpenAction.createDraft && !isDeskOffline(ref)) {
       setState(() {
         _openingRoom = true;
         _openingRoomId = r.serverId;

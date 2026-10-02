@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -32,6 +34,32 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
 
   void _retry() => ref.read(connectionBootstrapProvider.notifier).retry();
 
+  /// The last confirmed session is inside the PIN grace window: the failure
+  /// screen may offer "Continue offline" (the boot path tries it on its own,
+  /// but a biometric the operator declined leaves them here).
+  bool _offlineEligible = false;
+
+  Future<void> _checkOfflineEligible() async {
+    final eligible = await ref
+        .read(connectionBootstrapProvider.notifier)
+        .offlineResumeEligible();
+    if (mounted && eligible != _offlineEligible) {
+      setState(() => _offlineEligible = eligible);
+    }
+  }
+
+  Future<void> _continueOffline() async {
+    // On success the bootstrap publishes BootstrapOfflineResumed and the
+    // listener below navigates.
+    await ref.read(connectionBootstrapProvider.notifier).resumeOffline();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_checkOfflineEligible());
+  }
+
   @override
   void dispose() {
     _spin.dispose();
@@ -42,12 +70,14 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
   Widget build(BuildContext context) {
     ref.listen<BootstrapOutcome>(connectionBootstrapProvider, (_, next) {
       if (!mounted) return;
-      if (next is BootstrapResumed) {
+      if (next is BootstrapResumed || next is BootstrapOfflineResumed) {
         context.go('/tables');
       } else if (next is BootstrapNeedsAuth) {
         context.go('/auth');
       } else if (next is BootstrapNoPairing) {
         context.go('/scan');
+      } else if (next is BootstrapFailed) {
+        unawaited(_checkOfflineEligible());
       }
     });
     final outcome = ref.watch(connectionBootstrapProvider);
@@ -183,6 +213,17 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
                             ),
                           ],
                         ),
+                      if (failed && !pairingRejected && _offlineEligible) ...[
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: _CardButton(
+                            label: 'Continue offline',
+                            filled: false,
+                            onTap: () => unawaited(_continueOffline()),
+                          ),
+                        ),
+                      ],
                     ] else ...[
                       Text('CONNECTING TO',
                           style: AppTypography.micro

@@ -10,8 +10,38 @@ import '../theme/tokens.dart';
 import '../widgets/app_surface.dart';
 import '../widgets/liquid_chrome.dart';
 
+/// Why the app ended up here. This screen is no longer a timeout: a weak or
+/// dropped connection never lands here (the connection layer keeps retrying
+/// forever and the banner just says so). It exists for the two cases where
+/// retrying cannot help because the desk has said no.
+enum DisconnectedReason {
+  /// The desk repeatedly refused this device's token at the handshake.
+  pairingRejected,
+
+  /// The desk told this device to disconnect (revoked or expired).
+  forced,
+}
+
 class DisconnectedScreen extends ConsumerWidget {
-  const DisconnectedScreen({super.key});
+  final DisconnectedReason reason;
+  const DisconnectedScreen(
+      {super.key, this.reason = DisconnectedReason.pairingRejected});
+
+  /// Maps the route's `?reason=` query to a [DisconnectedReason].
+  static DisconnectedReason reasonFromQuery(String? value) =>
+      value == 'forced'
+          ? DisconnectedReason.forced
+          : DisconnectedReason.pairingRejected;
+
+  void _tryReconnect(BuildContext context, WidgetRef ref) {
+    ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
+    // A person asked, so this goes through even for a pairing the desk refused
+    // (the monitor's own automatic retries never resurrect one).
+    ref.read(connectionSupervisorProvider).retryNow();
+    // Straight back into the app. The bootstrap state moves off "rejected"
+    // synchronously inside retry(), so the router does not bounce us back.
+    context.go('/tables');
+  }
 
   Future<void> _confirmScanQr(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
@@ -21,8 +51,8 @@ class DisconnectedScreen extends ConsumerWidget {
         title: const Text('Scan a new QR?', style: AppTypography.title),
         content: const Text(
           'This clears the current pairing — you\'ll need the admin desktop '
-          'to show a fresh QR code. If the WiFi has since come back, try '
-          '"Try reconnect once more" first instead.',
+          'to show a fresh QR code. If the admin has just re-enabled this '
+          'device, try "Try reconnect" first instead.',
           style: AppTypography.bodyMd,
         ),
         actions: [
@@ -40,7 +70,7 @@ class DisconnectedScreen extends ConsumerWidget {
     );
     if (confirmed != true || !context.mounted) return;
     ref.read(feedbackServiceProvider).fire(const FeedbackMedium());
-    unawaited(SessionService().clearPairing());
+    unawaited(ref.read(connectionBootstrapProvider.notifier).signOut());
     ref.read(isAuthenticatedProvider.notifier).state = false;
     ref.read(cartProvider.notifier).clear();
     context.go('/scan');
@@ -90,12 +120,21 @@ class DisconnectedScreen extends ConsumerWidget {
                               color: AppColors.warn, size: 32),
                         ),
                         const SizedBox(height: 20),
-                        const Text('Connection lost',
+                        Text(
+                            reason == DisconnectedReason.forced
+                                ? 'Disconnected by the desk'
+                                : 'This device needs pairing again',
+                            textAlign: TextAlign.center,
                             style: AppTypography.displayMd),
                         const SizedBox(height: 8),
                         Text(
-                          'Couldn\'t reconnect in time. '
-                          'Please scan the QR again to resume.',
+                          reason == DisconnectedReason.forced
+                              ? 'The desk ended this session — the pairing was '
+                                  'revoked or has expired. Scan a new QR from the '
+                                  'admin desktop to continue.'
+                              : 'The desk turned this device away — the pairing '
+                                  'expired, was revoked, or the account was '
+                                  'switched off. Wi-Fi is not the problem.',
                           textAlign: TextAlign.center,
                           style: AppTypography.bodyMd
                               .copyWith(color: context.palette.ink70),
@@ -108,7 +147,7 @@ class DisconnectedScreen extends ConsumerWidget {
                             color: AppColors.warn.withValues(alpha: 0.10),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text('CHECK WIFI · NETWORK · ADMIN PC',
+                          child: Text('ASK THE ADMIN FOR A NEW QR',
                               style: AppTypography.micro.copyWith(
                                 color: AppColors.warn,
                                 letterSpacing: 1.0,
@@ -116,10 +155,10 @@ class DisconnectedScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 24),
                         LiquidPrimaryButton(
-                          label: 'Try reconnect once more',
+                          label: 'Try reconnect',
                           fullWidth: true,
                           leadingIcon: Icons.refresh,
-                          onPressed: () => context.go('/connecting'),
+                          onPressed: () => _tryReconnect(context, ref),
                         ),
                         const SizedBox(height: 8),
                         LiquidSecondaryButton(

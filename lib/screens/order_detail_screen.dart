@@ -11,6 +11,7 @@ import '../models/server_models.dart';
 import '../models/wire.dart';
 import '../motion/motion.dart';
 import '../services/log.dart';
+import '../services/offline_guard.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import '../utils/socket_helpers.dart';
@@ -83,6 +84,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       };
 
   Future<void> _reprintKot(BuildContext context) async {
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'kot_reprint');
     if (!pinOk || !context.mounted) return;
 
@@ -125,6 +127,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   }
 
   Future<void> _printBill(BuildContext context) async {
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'bill_reprint');
     if (!pinOk || !context.mounted) return;
 
@@ -149,6 +152,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   }
 
   Future<void> _confirmCancel(BuildContext context, HistoryOrder order) async {
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'cancel_order');
     if (!pinOk || !context.mounted) return;
 
@@ -178,11 +182,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     unawaited(HapticFeedback.heavyImpact());
 
     final socketService = ref.read(socketServiceProvider);
-    socketService.emit('order:cancel', {
+    unawaited(socketService.emitAckIdempotent('order:cancel', {
       'order_id': order.orderId,
       'reason': 'Cancelled by waiter',
-    }, onAck: (response) {
-      if (!mounted) return;
+    }).then((response) {
+      if (!mounted || !context.mounted) return;
       if (response['kind'] == 'error') {
         DynamicToast.show(context,
             message: response['message']?.toString() ?? 'Cancel failed',
@@ -204,11 +208,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
         _close();
       }
-    });
+    }));
   }
 
   Future<void> _generateBill(HistoryOrder order) async {
     if (_generatingBill) return;
+    if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'generate_bill');
     if (!pinOk || !mounted) return;
     _generatingBill = true;
@@ -216,12 +221,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     unawaited(HapticFeedback.heavyImpact());
 
     final socketService = ref.read(socketServiceProvider);
-    socketService.emit(
+    unawaited(socketService.emitAckIdempotent(
         'bill:generate',
         {
           'order_id': order.orderId,
         },
-        timeout: const Duration(seconds: 15), onAck: (response) {
+        timeout: const Duration(seconds: 15)).then((response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() => _generatingBill = false);
@@ -281,7 +286,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 'Bill generated${_billNumber != null ? ' · $_billNumber' : ''}',
             kind: ToastKind.success);
       }
-    });
+    }));
 
     scheduleSocketTimeout(
       duration: const Duration(seconds: 10),

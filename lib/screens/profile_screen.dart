@@ -1,9 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
-import '../services/session_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/page_content_clamp.dart';
 import '../widgets/app_card.dart';
@@ -211,9 +212,12 @@ class ProfileScreen extends ConsumerWidget {
                       label: 'Sign out',
                       leadingIcon: Icons.logout,
                       onPressed: () {
-                        ref.read(syncServiceProvider).unregisterListeners();
-                        ref.read(socketServiceProvider).disconnect();
-                        SessionService().clearPairing();
+                        // One teardown for sign-out: stops the link ladder,
+                        // the snapshot saves and the Wi-Fi binding, then clears
+                        // the pairing (see ConnectionBootstrap.signOut).
+                        unawaited(ref
+                            .read(connectionBootstrapProvider.notifier)
+                            .signOut());
                         ref.read(cartProvider.notifier).clear();
                         ref.read(orderNotesProvider.notifier).state = '';
                         ref.read(selectedTableIdProvider.notifier).state = null;

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
+import '../services/offline_guard.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
 import '../utils/socket_helpers.dart';
@@ -82,6 +83,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
 
   Future<void> _apply() async {
     if (!_canApply) return;
+    if (!requireDesk(context, ref)) return;
     _submitting = true;
     setState(() {});
     unawaited(HapticFeedback.heavyImpact());
@@ -106,8 +108,10 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       };
     }
 
-    socketService.emit('discount:apply', payload,
-        timeout: const Duration(seconds: 15), onAck: (response) {
+    unawaited(socketService
+        .emitAckIdempotent('discount:apply', payload,
+            timeout: const Duration(seconds: 15))
+        .then((response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() => _submitting = false);
@@ -117,7 +121,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       } else {
         Navigator.of(context).pop(response);
       }
-    });
+    }));
 
     scheduleSocketTimeout(
       duration: const Duration(seconds: 10),

@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
+import '../utils/request_id.dart';
 import 'connection_health.dart';
 import 'log.dart';
 
@@ -427,6 +429,24 @@ class SocketService {
 
   ConnectFailure _lastConnectFailure = ConnectFailure.none;
 
+  /// How many handshakes in a row the desk refused with an auth-coded
+  /// `connect_error`. Reset by any successful connect. One refusal can be a
+  /// race (a token being rotated, the desk mid-restart); only a repeat is
+  /// treated as "this pairing is really dead" — see ConnectionBootstrap.
+  int _authRejectionStreak = 0;
+  int get authRejectionStreak => _authRejectionStreak;
+
+  @visibleForTesting
+  set debugAuthRejectionStreak(int value) => _authRejectionStreak = value;
+
+  final StreamController<ConnectFailure> _connectFailures =
+      StreamController<ConnectFailure>.broadcast();
+
+  /// One event per failed handshake attempt. [stateStream] can't carry this:
+  /// the state is already `disconnected` between retries, so the second and
+  /// third refusals produce no state change at all.
+  Stream<ConnectFailure> get connectFailureStream => _connectFailures.stream;
+
   /// How the measured link widens the timeouts below. Defaults to the fixed
   /// behaviour this class had before; [ConnectionSupervisor] swaps in an
   /// adaptive one once it is watching. Kept as an injected seam so the socket
@@ -639,6 +659,7 @@ class SocketService {
     socket.onConnect((_) {
       logD(_tag, 'connected');
       _lastConnectFailure = ConnectFailure.none;
+      _authRejectionStreak = 0;
       _setState(SocketState.connected);
     });
     socket.onDisconnect((Object? reason) {
@@ -648,10 +669,12 @@ class SocketService {
     socket.onConnectError((Object? err) {
       logE(_tag, 'connection error', err);
 
-      _lastConnectFailure = isAuthHandshakeError(err)
-          ? ConnectFailure.authRejected
-          : ConnectFailure.unreachable;
+      final auth = isAuthHandshakeError(err);
+      _lastConnectFailure =
+          auth ? ConnectFailure.authRejected : ConnectFailure.unreachable;
+      _authRejectionStreak = auth ? _authRejectionStreak + 1 : 0;
       _setState(SocketState.disconnected);
+      if (!_connectFailures.isClosed) _connectFailures.add(_lastConnectFailure);
     });
     socket.onReconnect((_) => logD(_tag, 'reconnected'));
     socket.connect();
@@ -867,6 +890,28 @@ class SocketService {
     );
   }
 
+  /// [emitAck] (or [emitAckWhenConnected]) with a `client_request_id` that is
+  /// stable for this *intent* — see `requestIdFor`. Every retry, including the
+  /// reconnect-and-resend loop inside [emitAckWhenConnected], carries the same
+  /// id, so a first attempt that landed but lost its ack is replayed by the desk
+  /// instead of applied twice. The id is retired on success.
+  Future<Map<String, dynamic>> emitAckIdempotent(
+    String event,
+    Map<String, dynamic> data, {
+    Duration? timeout,
+    bool whenConnected = false,
+  }) async {
+    final stamped = <String, dynamic>{
+      ...data,
+      'client_request_id': requestIdFor(event, data),
+    };
+    final response = whenConnected
+        ? await emitAckWhenConnected(event, stamped, timeout: timeout)
+        : await emitAck(event, stamped, timeout: timeout);
+    if (response['kind'] != 'error') settleRequestId(event, data);
+    return response;
+  }
+
   /// [emitAck] for liveness probing. A timeout here is genuinely ambiguous (a
   /// desk build older than the probed event never answers it) and the caller
   /// is the one deciding what silence means, so it is not reported through
@@ -1008,24 +1053,53 @@ class SocketService {
   /// into, so a tap made mid-blip used to fail outright and need a second,
   /// manual tap once back online. Bounded by [maxWait] so a genuinely dead
   /// network still surfaces an error instead of hanging the caller forever.
+  ///
+  /// Two different failures look alike here and need different waits:
+  /// - the socket dropped (state != verified): wait for the next `verified`;
+  /// - a plain ack timeout on a socket that is *still* verified (timeouts are
+  ///   evidence, never a verdict, so they no longer change the state): there is
+  ///   no transition coming, and waiting for one used to hang the caller for the
+  ///   whole [maxWait]. Re-emit after a short jittered backoff instead, at most
+  ///   [maxBackoffRetries] times. The caller's `client_request_id` rides every
+  ///   retry unchanged (see [emitAckIdempotent]), so a first attempt that landed
+  ///   is replayed by the desk, not applied twice.
   Future<Map<String, dynamic>> emitAckWhenConnected(
     String event,
     Map<String, dynamic> data, {
     Duration? timeout,
     Duration maxWait = const Duration(minutes: 5),
+    int maxBackoffRetries = 4,
   }) async {
     final deadline = DateTime.now().add(maxWait);
     var response = await emitAck(event, data, timeout: timeout);
+    var backoffRetries = 0;
     while (isTransportFailure(response) && DateTime.now().isBefore(deadline)) {
       final remaining = deadline.difference(DateTime.now());
-      await stateStream
-          .firstWhere((s) => s == SocketState.verified)
-          .timeout(remaining, onTimeout: () => SocketState.disconnected);
+      if (_state == SocketState.verified) {
+        if (backoffRetries >= maxBackoffRetries) break;
+        backoffRetries++;
+        final pause = ackRetryBackoff();
+        if (pause >= remaining) break;
+        await Future<void>.delayed(pause);
+      } else {
+        await stateStream
+            .firstWhere((s) => s == SocketState.verified)
+            .timeout(remaining, onTimeout: () => SocketState.disconnected);
+      }
       if (DateTime.now().isAfter(deadline)) break;
       response = await emitAck(event, data, timeout: timeout);
     }
     return response;
   }
+
+  static final math.Random _jitter = math.Random();
+
+  /// Pause before re-emitting after a plain ack timeout on a verified socket:
+  /// 1.5-3s, jittered so a room of phones that timed out together (the desk
+  /// stalled) do not all hit it again in the same instant. Tests zero it.
+  @visibleForTesting
+  Duration Function() ackRetryBackoff = () =>
+      Duration(milliseconds: 1500 + _jitter.nextInt(1500));
 
   /// What a recovery offset looks like: socket.io's base64url-ish id.
   static final RegExp _offsetLike = RegExp(r'^[0-9A-Za-z_-]{6,}$');
@@ -1074,6 +1148,14 @@ class SocketService {
     socket.on(event, wrapped);
   }
 
+  /// Installs an io.Socket without dialling (tests that only need listeners).
+  @visibleForTesting
+  void debugAttachSocket(io.Socket socket) => _socket = socket;
+
+  /// Events with at least one listener registered through [on].
+  @visibleForTesting
+  Iterable<String> get registeredEvents => _handlers.keys;
+
   void off(String event) {
     final registered = _handlers.remove(event);
     final socket = _socket;
@@ -1093,6 +1175,8 @@ class SocketService {
     logD(_tag, 'disconnecting');
     offAll();
     _handlers.clear();
+    // Nothing can answer these any more.
+    _failPendingAcks();
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
@@ -1111,5 +1195,6 @@ class SocketService {
   void dispose() {
     disconnect();
     unawaited(_stateController.close());
+    unawaited(_connectFailures.close());
   }
 }

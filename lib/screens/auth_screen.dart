@@ -14,6 +14,7 @@ import '../services/session_service.dart';
 import '../services/socket_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_surface.dart';
+import '../widgets/dynamic_toast.dart';
 import '../widgets/help_sheet.dart';
 import '../widgets/page_content_clamp.dart';
 import '../widgets/pin_pad.dart';
@@ -43,10 +44,41 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     TweenSequenceItem(tween: Tween(begin: 8.0, end: 0.0), weight: 1),
   ]).animate(CurvedAnimation(parent: _shakeCtrl, curve: Curves.easeInOut));
 
+  /// The last confirmed session is still inside the PIN grace window, so the
+  /// desk being unreachable need not stop the shift (cold-start offline).
+  bool _offlineEligible = false;
+  bool _resumingOffline = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _tryBiometricUnlock());
+    unawaited(_checkOfflineEligible());
+  }
+
+  Future<void> _checkOfflineEligible() async {
+    final eligible = await ref
+        .read(connectionBootstrapProvider.notifier)
+        .offlineResumeEligible();
+    if (mounted && eligible != _offlineEligible) {
+      setState(() => _offlineEligible = eligible);
+    }
+  }
+
+  Future<void> _continueOffline() async {
+    if (_resumingOffline) return;
+    setState(() => _resumingOffline = true);
+    final ok =
+        await ref.read(connectionBootstrapProvider.notifier).resumeOffline();
+    if (!mounted) return;
+    setState(() => _resumingOffline = false);
+    if (!ok) {
+      DynamicToast.show(context,
+          message: 'Could not continue offline — connect to the desk and '
+              'enter your PIN',
+          kind: ToastKind.error);
+    }
+    // On success isAuthenticated flips and the router moves to /tables.
   }
 
   @override
@@ -165,6 +197,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
       label: 'Connected · ${ref.read(restaurantProvider)?.name ?? 'POS'}',
     );
     ref.read(isAuthenticatedProvider.notifier).state = true;
+    // The desk just verified this operator: start the offline-resume clock.
+    unawaited(syncService.persistOfflineSession(force: true));
     unawaited(ref
         .read(offlineOrderQueueProvider)
         .flush(socketService)
@@ -235,8 +269,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              SessionService().clearPairing();
-              ref.read(socketServiceProvider).disconnect();
+              unawaited(
+                  ref.read(connectionBootstrapProvider.notifier).signOut());
               context.go('/scan');
             },
             child: const Text('Cancel pairing',
@@ -468,6 +502,26 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                         onDelete: _delete,
                         enabled: !_submitting,
                       ),
+                      if (_offlineEligible && !online) ...[
+                        const SizedBox(height: 4),
+                        TextButton.icon(
+                          onPressed: _resumingOffline ? null : _continueOffline,
+                          icon: const Icon(Icons.cloud_off_rounded, size: 16),
+                          label: const Text('Continue offline'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.terraDeep,
+                            textStyle: AppTypography.bodyMd
+                                .copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Text(
+                          'Desk unreachable — orders will queue and send when '
+                          'it is back',
+                          style: AppTypography.caption
+                              .copyWith(color: context.palette.ink50),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,

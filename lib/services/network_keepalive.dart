@@ -31,6 +31,19 @@ abstract final class NetworkKeepAlive {
 
   static bool _running = false;
 
+  /// Whether this build's manifest declares the foreground service. False
+  /// until the Play Console permission declaration (with its demo video) is
+  /// filed: the service and its FOREGROUND_SERVICE_* permissions are left out
+  /// of AndroidManifest.xml (see the comment there), so starting it would be a
+  /// silent no-op that reports success. While false, [start] refuses, the
+  /// Settings toggle is hidden and the battery prompt never appears; the
+  /// foreground low-latency lock and reconnect-on-resume still apply.
+  @visibleForTesting
+  static bool serviceShipped = false;
+
+  /// Read-only view of [serviceShipped] for the UI (Settings hides the toggle).
+  static bool get isServiceShipped => serviceShipped;
+
   /// Tests set this to pretend to be Android on the host machine.
   @visibleForTesting
   static bool? debugIsAndroid;
@@ -63,6 +76,10 @@ abstract final class NetworkKeepAlive {
   /// Starts the service if the toggle is on. Returns whether it is running.
   static Future<bool> start({String? restaurant}) async {
     if (!_android) return false;
+    if (!serviceShipped) {
+      _running = false;
+      return false;
+    }
     if (!await isEnabled()) return false;
     final ok = await _invoke<bool>(
           'startKeepAlive',

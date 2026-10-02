@@ -15,6 +15,7 @@ void main() {
     calls.clear();
     startResult = true;
     NetworkKeepAlive.debugIsAndroid = true;
+    NetworkKeepAlive.serviceShipped = true;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('crew/network'),
             (c) async {
@@ -29,6 +30,7 @@ void main() {
 
   tearDown(() {
     NetworkKeepAlive.debugIsAndroid = null;
+    NetworkKeepAlive.serviceShipped = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('crew/network'), null);
   });
@@ -46,6 +48,14 @@ void main() {
     expect(NetworkKeepAlive.isRunning, isTrue);
     expect(calls.single.method, 'startKeepAlive');
     expect((calls.single.arguments as Map)['restaurant'], 'Spice');
+  });
+
+  test('start refuses without touching the host while the service is not shipped',
+      () async {
+    NetworkKeepAlive.serviceShipped = false;
+    expect(await NetworkKeepAlive.start(), isFalse);
+    expect(NetworkKeepAlive.isRunning, isFalse);
+    expect(calls.where((c) => c.method == 'startKeepAlive'), isEmpty);
   });
 
   test('start is skipped when the toggle is off', () async {

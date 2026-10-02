@@ -16,11 +16,18 @@
                                MulticastLock so the desk's UDP discovery beacon
                                is not filtered while the phone idles.
 
-         PLAY CONSOLE: FOREGROUND_SERVICE_CONNECTED_DEVICE requires a
-         permission declaration WITH A DEMO VIDEO before this build can be
-         published (the previous attempt was pulled for exactly this).
-         `connectedDevice`, not `dataSync`: Android 15 caps dataSync at ~6h per
-         24h, shorter than a restaurant shift. No
+         KEEP-ALIVE SERVICE NOT SHIPPED YET (1.2.3): NetworkKeepAliveService
+         is built but deliberately left undeclared, together with its
+         FOREGROUND_SERVICE + FOREGROUND_SERVICE_CONNECTED_DEVICE permissions,
+         because Play Console requires a permission declaration WITH A DEMO
+         VIDEO before a build carrying them can be published. To ship it: add
+         both permissions and
+           <service android:name=".NetworkKeepAliveService"
+                    android:exported="false"
+                    android:foregroundServiceType="connectedDevice" />
+         back under <application>, flip NetworkKeepAlive.serviceShipped, and
+         file the declaration. `connectedDevice`, not `dataSync`: Android 15
+         caps dataSync at ~6h per 24h, shorter than a restaurant shift. No
          REQUEST_IGNORE_BATTERY_OPTIMIZATIONS is declared; the battery prompt
          opens the system list instead, which needs no permission. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -28,9 +35,6 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission
-        android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
     <application
         android:label="Command.Crew"
@@ -60,10 +64,6 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <service
-            android:name=".NetworkKeepAliveService"
-            android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
         <receiver
             android:name=".CrewTablesWidgetProvider"
             android:exported="false">

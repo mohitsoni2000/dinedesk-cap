@@ -150,8 +150,12 @@ class SettingsScreen extends ConsumerWidget {
                         Divider(height: 1, color: context.palette.hairline),
                         const _BiometricRow(),
                         Divider(height: 1, color: context.palette.hairline),
-                        const _KeepAliveRow(),
-                        Divider(height: 1, color: context.palette.hairline),
+                        // Hidden until the keep-alive service ships (see
+                        // NetworkKeepAlive.isServiceShipped).
+                        if (NetworkKeepAlive.isServiceShipped) ...[
+                          const _KeepAliveRow(),
+                          Divider(height: 1, color: context.palette.hairline),
+                        ],
                         const _DirectPrintRow(),
                         Divider(height: 1, color: context.palette.hairline),
                         _SettingsRow(

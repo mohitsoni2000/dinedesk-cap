@@ -1,0 +1,7 @@
+What's new in 1.2.3
+
+- Stays connected on weak Wi-Fi: a slow reply no longer drops you to "Reconnecting", and the app repairs the link on its own.
+- Works when the router has no internet: the app keeps talking to the desk over the restaurant Wi-Fi.
+- Orders and KOTs queue when the desk is unreachable and send themselves when it is back.
+- If the desk is off, a KOT can print straight on the kitchen printer.
+- No more being sent back to scan the QR code after a long outage.

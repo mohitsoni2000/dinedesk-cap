@@ -762,7 +762,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                           final isLinked = linkGroups.values
                               .any((ids) => ids.contains(widget.tableId));
                           final flags = ref.watch(flagsProvider);
+                          final canUnlink =
+                              table != null && isLinked && flags.tableUnlink;
                           if (!isTableAction &&
+                              !canUnlink &&
                               !flags.packages &&
                               !_area.canToggle) {
                             return const SizedBox.shrink();
@@ -779,6 +782,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                   }
                                   break;
                                 case 'link':
+                                case 'unlink':
                                   if (table != null) {
                                     TableLinkSheet.show(context, table);
                                   }
@@ -809,12 +813,21 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                                       Icon(Icons.swap_horiz,
                                           size: 18, color: ctx.palette.ink70),
                                       const SizedBox(width: 8),
-                                      Text(
-                                        isLinked
-                                            ? 'Unlink Table'
-                                            : 'Shift Table',
-                                        style: AppTypography.bodyMd,
-                                      ),
+                                      const Text('Shift Table',
+                                          style: AppTypography.bodyMd),
+                                    ],
+                                  ),
+                                ),
+                              if (canUnlink)
+                                PopupMenuItem(
+                                  value: 'unlink',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.link_off,
+                                          size: 18, color: ctx.palette.ink70),
+                                      const SizedBox(width: 8),
+                                      const Text('Unlink Table',
+                                          style: AppTypography.bodyMd),
                                     ],
                                   ),
                                 ),

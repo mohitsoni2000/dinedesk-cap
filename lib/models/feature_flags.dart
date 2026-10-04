@@ -52,6 +52,7 @@ class FeatureFlags {
   final bool tableShift;
   final bool kotShift;
   final bool tableLink;
+  final bool tableUnlink;
   final bool collectPayment;
   final bool shiftManagement;
   final bool tableZones;
@@ -133,6 +134,7 @@ class FeatureFlags {
     this.tableShift = false,
     this.kotShift = false,
     this.tableLink = false,
+    this.tableUnlink = false,
     this.collectPayment = false,
     this.shiftManagement = false,
     this.tableZones = false,
@@ -226,6 +228,9 @@ class FeatureFlags {
       tableShift: flag('flag_table_shift', true),
       kotShift: flag('flag_kot_shift'),
       tableLink: flag('flag_table_link', true),
+      tableUnlink: map.containsKey('flag_table_unlink')
+          ? flag('flag_table_unlink')
+          : flag('flag_table_link', true),
       collectPayment: flag('flag_collect_payment', true),
       shiftManagement: flag('flag_shift_management'),
       tableZones: flag('flag_table_zones'),

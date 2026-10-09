@@ -262,6 +262,7 @@ void main() {
 
     final gateFirst = FeatureFlags.fromMap(<String, dynamic>{
       'flag_entry_tickets': 1,
+      'flag_ticket_issue': 1,
       'flag_ticket_checkin': 1,
       'flag_collect_payment': 0,
       'flag_generate_bill': 0,

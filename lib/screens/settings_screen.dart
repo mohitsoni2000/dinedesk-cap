@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/home_route.dart';
 import '../data/providers.dart';
 import '../services/biometric_service.dart';
 import '../services/network_keepalive.dart';
@@ -78,6 +79,15 @@ class SettingsScreen extends ConsumerWidget {
     final restaurant = ref.watch(restaurantProvider);
     final restaurantName = restaurant?.name ?? 'Restaurant';
     final settings = ref.watch(_settingsProvider);
+    final flags = ref.watch(flagsProvider);
+    final qsr = ref.watch(qsrConfigProvider);
+    // Offered only when this user has more than one screen to start from.
+    final canPickStart =
+        availableStartScreens(flags: flags, qsr: qsr).length > 1;
+    final startPref = ref.watch(startScreenProvider);
+    final startPinned = startPref != StartScreen.auto &&
+        isStartScreenAvailable(startPref, flags: flags, qsr: qsr);
+    final startLabel = homeLabelFor(ref.watch(homeRouteProvider));
 
     return ColoredBox(
       color: context.palette.paper,
@@ -141,6 +151,17 @@ class SettingsScreen extends ConsumerWidget {
                     AppSurface(
                       padding: EdgeInsets.zero,
                       child: Column(children: [
+                        if (canPickStart) ...[
+                          _SettingsRow(
+                            icon: Icons.home_outlined,
+                            title: 'Start screen',
+                            subtitle: startPinned
+                                ? 'Always opens on $startLabel'
+                                : 'Automatic · opens on $startLabel',
+                            onTap: () => _showStartScreenSheet(context),
+                          ),
+                          Divider(height: 1, color: context.palette.hairline),
+                        ],
                         _SettingsRow(
                           icon: Icons.lock_reset_outlined,
                           title: 'Change PIN',
@@ -331,6 +352,110 @@ class SettingsScreen extends ConsumerWidget {
                       label: 'Dark',
                       subtitle: 'Midnight tandoor · evening service',
                     ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: LiquidSecondaryButton(
+                label: 'Done',
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+            SizedBox(height: context.sheetBottomInset + 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Pins the screen the app opens on after the PIN and on every "Back to …".
+  /// Only screens this user can open right now are offered; picking one saves
+  /// it (Automatic clears it) and navigates nowhere.
+  void _showStartScreenSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.palette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: AppRadii.lg),
+      ),
+      // Scrolls on a short screen (a tablet on its side) rather than clip.
+      builder: (_) => SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Start screen', style: AppTypography.headline),
+            const SizedBox(height: 4),
+            const Text(
+                'Where Command.Crew opens after your PIN and after each order.',
+                style: AppTypography.caption),
+            const SizedBox(height: 24),
+            Consumer(builder: (context, ref, _) {
+              final flags = ref.watch(flagsProvider);
+              final qsr = ref.watch(qsrConfigProvider);
+              final pref = ref.watch(startScreenProvider);
+              final current =
+                  isStartScreenAvailable(pref, flags: flags, qsr: qsr)
+                      ? pref
+                      : StartScreen.auto;
+              final autoLabel =
+                  homeLabelFor(homeRouteFor(flags: flags, qsr: qsr));
+              Widget option({
+                required StartScreen value,
+                required IconData icon,
+                required String subtitle,
+              }) {
+                final selected = current == value;
+                return ListTile(
+                  leading: Icon(icon,
+                      color: selected
+                          ? AppColors.terra500
+                          : context.palette.ink70),
+                  title: Text(value.label, style: AppTypography.bodyMd),
+                  subtitle: Text(subtitle, style: AppTypography.caption),
+                  trailing: selected
+                      ? const Icon(Icons.check_circle,
+                          color: AppColors.terra500, size: 20)
+                      : null,
+                  onTap: () {
+                    unawaited(
+                        ref.read(startScreenProvider.notifier).set(value));
+                    Navigator.of(context).pop();
+                  },
+                );
+              }
+
+              return AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    option(
+                      value: StartScreen.auto,
+                      icon: Icons.auto_awesome_outlined,
+                      subtitle: 'Follows your role · now $autoLabel',
+                    ),
+                    for (final screen
+                        in availableStartScreens(flags: flags, qsr: qsr)) ...[
+                      Divider(height: 1, color: context.palette.ink10),
+                      option(
+                        value: screen,
+                        icon: switch (screen) {
+                          StartScreen.counter => Icons.storefront_outlined,
+                          StartScreen.gate =>
+                            Icons.confirmation_number_outlined,
+                          _ => Icons.grid_view_rounded,
+                        },
+                        subtitle: switch (screen) {
+                          StartScreen.counter => 'Counter orders with tokens',
+                          StartScreen.gate => 'Ticket sales and entry scans',
+                          _ => 'Floor plan and table orders',
+                        },
+                      ),
+                    ],
                   ],
                 ),
               );

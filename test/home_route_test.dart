@@ -1,34 +1,46 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restro/data/home_route.dart';
 import 'package:restro/data/providers.dart';
 import 'package:restro/models/feature_flags.dart';
 import 'package:restro/models/qsr_config.dart';
+import 'package:restro/screens/order_success_screen.dart';
+import 'package:restro/theme/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// Lets the start-screen notifier's SharedPreferences restore land.
+Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 20));
 
 /// Where the app lands (after the PIN, after an order, on "Back to …") and
 /// which shell routes are open. Restaurant mode with no ticket flags must
 /// stay exactly as before: always /tables.
-/// Lets the start-screen notifier's SharedPreferences restore land.
-Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 20));
-
 void main() {
   const restaurant = QsrConfig.restaurant;
   final qsr = QsrConfig.tryParse(<String, dynamic>{'operating_mode': 'qsr'})!;
 
+  /// [issue] / [checkin] are the two gate rights; either one turns the
+  /// entry-ticket module on.
   FeatureFlags flags({
-    bool gate = false,
+    bool issue = false,
+    bool checkin = false,
     bool collectPayment = true,
     bool generateBill = true,
     bool rooms = false,
   }) =>
       FeatureFlags.fromMap(<String, dynamic>{
-        'flag_entry_tickets': gate,
-        'flag_ticket_checkin': gate,
+        'flag_entry_tickets': issue || checkin,
+        'flag_ticket_issue': issue,
+        'flag_ticket_checkin': checkin,
         'flag_collect_payment': collectPayment,
         'flag_generate_bill': generateBill,
         'flag_rooms': rooms,
       });
+
+  // The desk's default waiter once a venue turns entry tickets on: may check
+  // guests in, may not sell tickets, bill or take money.
+  final defaultWaiter =
+      flags(checkin: true, collectPayment: false, generateBill: false);
 
   group('homeRouteFor — auto', () {
     test('restaurant mode without tickets is always Tables', () {
@@ -47,28 +59,54 @@ void main() {
       expect(homeRouteFor(flags: flags(), qsr: qsr), '/counter');
     });
 
-    test('a gate user who cannot bill or take money is gate-first', () {
-      final gateOnly =
-          flags(gate: true, collectPayment: false, generateBill: false);
-      expect(homeRouteFor(flags: gateOnly, qsr: restaurant), '/gate');
-      expect(homeRouteFor(flags: gateOnly, qsr: qsr), '/gate');
+    test('a ticket seller who cannot bill or take money is gate-first', () {
+      final seller = flags(
+          issue: true,
+          checkin: true,
+          collectPayment: false,
+          generateBill: false);
+      expect(homeRouteFor(flags: seller, qsr: restaurant), '/gate');
+      expect(homeRouteFor(flags: seller, qsr: qsr), '/gate');
+      expect(
+          homeRouteFor(
+              flags: flags(
+                  issue: true, collectPayment: false, generateBill: false),
+              qsr: restaurant),
+          '/gate',
+          reason: 'issue alone is enough');
     });
 
-    test('a gate user who can also bill or take money keeps the floor home',
+    test('a default waiter keeps Tables when entry tickets go on', () {
+      expect(defaultWaiter.hasGate, isTrue,
+          reason: 'check-in still opens the Gate tab');
+      expect(homeRouteFor(flags: defaultWaiter, qsr: restaurant), '/tables');
+      expect(homeLabelFor(homeRouteFor(flags: defaultWaiter, qsr: restaurant)),
+          'Tables');
+      expect(homeRouteFor(flags: defaultWaiter, qsr: qsr), '/counter');
+    });
+
+    test('a ticket seller who can also bill or take money keeps the floor home',
         () {
       expect(
           homeRouteFor(
-              flags:
-                  flags(gate: true, collectPayment: true, generateBill: false),
+              flags: flags(
+                  issue: true,
+                  checkin: true,
+                  collectPayment: true,
+                  generateBill: false),
               qsr: restaurant),
           '/tables');
       expect(
           homeRouteFor(
-              flags:
-                  flags(gate: true, collectPayment: false, generateBill: true),
+              flags: flags(
+                  issue: true,
+                  checkin: true,
+                  collectPayment: false,
+                  generateBill: true),
               qsr: restaurant),
           '/tables');
-      expect(homeRouteFor(flags: flags(gate: true), qsr: qsr), '/counter');
+      expect(homeRouteFor(flags: flags(issue: true, checkin: true), qsr: qsr),
+          '/counter');
     });
 
     test('entry tickets without issue or check-in rights is no gate', () {
@@ -85,23 +123,18 @@ void main() {
     test('is honoured when that screen is available', () {
       expect(
           homeRouteFor(
-              flags: flags(gate: true),
+              flags: flags(checkin: true),
               qsr: restaurant,
               pref: StartScreen.gate),
-          '/gate');
+          '/gate',
+          reason: 'a scan-only user may pin the Gate');
+      final seller =
+          flags(issue: true, collectPayment: false, generateBill: false);
       expect(
           homeRouteFor(
-              flags:
-                  flags(gate: true, collectPayment: false, generateBill: false),
-              qsr: restaurant,
-              pref: StartScreen.tables),
+              flags: seller, qsr: restaurant, pref: StartScreen.tables),
           '/tables');
-      expect(
-          homeRouteFor(
-              flags:
-                  flags(gate: true, collectPayment: false, generateBill: false),
-              qsr: qsr,
-              pref: StartScreen.counter),
+      expect(homeRouteFor(flags: seller, qsr: qsr, pref: StartScreen.counter),
           '/counter');
     });
 
@@ -148,14 +181,14 @@ void main() {
           '/tables');
       expect(routeGuard(location: '/gate/scan', flags: flags(), qsr: qsr),
           '/counter');
-      expect(routeGuard(location: '/gate', flags: flags(gate: true), qsr: qsr),
+      expect(
+          routeGuard(location: '/gate', flags: flags(checkin: true), qsr: qsr),
           isNull);
       expect(
           routeGuard(
-              location: '/gate/issue',
-              flags: flags(gate: true),
-              qsr: restaurant),
-          isNull);
+              location: '/gate/issue', flags: defaultWaiter, qsr: restaurant),
+          isNull,
+          reason: 'not home, but still open from the Gate tab');
     });
 
     test('rooms keep their own rule and go home when switched off', () {
@@ -198,8 +231,9 @@ void main() {
       for (final cfg in <QsrConfig>[restaurant, qsr]) {
         for (final f in <FeatureFlags>[
           flags(),
-          flags(gate: true),
-          flags(gate: true, collectPayment: false, generateBill: false),
+          flags(checkin: true),
+          defaultWaiter,
+          flags(issue: true, collectPayment: false, generateBill: false),
           flags(rooms: true),
         ]) {
           for (final pref in StartScreen.values) {
@@ -228,6 +262,29 @@ void main() {
     expect(homeLabelFor('/gate'), 'Gate');
   });
 
+  testWidgets('a default waiter\'s success screen says "Back to Tables"',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(flagsProvider.notifier).state = defaultWaiter;
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        theme: AppTheme.light(),
+        home: const OrderSuccessScreen(tableId: 't1'),
+      ),
+    ));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.textContaining('Back to Tables'), findsOneWidget);
+    expect(find.textContaining('Back to Gate'), findsNothing);
+
+    // Unmount: stops the screen's auto-return countdown.
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   group('providers', () {
     late ProviderContainer container;
 
@@ -243,8 +300,10 @@ void main() {
       container.read(qsrConfigProvider.notifier).state = qsr;
       expect(container.read(homeRouteProvider), '/counter');
       container.read(flagsProvider.notifier).state =
-          flags(gate: true, collectPayment: false, generateBill: false);
+          flags(issue: true, collectPayment: false, generateBill: false);
       expect(container.read(homeRouteProvider), '/gate');
+      container.read(flagsProvider.notifier).state = defaultWaiter;
+      expect(container.read(homeRouteProvider), '/counter');
       container.read(qsrConfigProvider.notifier).state = restaurant;
       container.read(flagsProvider.notifier).state = flags();
       expect(container.read(homeRouteProvider), '/tables');
@@ -280,7 +339,7 @@ void main() {
           <String, Object>{'start_screen_v1': 'gate'});
       final fresh = ProviderContainer();
       addTearDown(fresh.dispose);
-      fresh.read(flagsProvider.notifier).state = flags(gate: true);
+      fresh.read(flagsProvider.notifier).state = flags(checkin: true);
       fresh.read(homeRouteProvider);
       await settle();
       expect(fresh.read(homeRouteProvider), '/gate');

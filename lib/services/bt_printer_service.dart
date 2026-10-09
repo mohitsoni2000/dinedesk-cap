@@ -107,10 +107,19 @@ abstract class BluetoothPrinter {
 /// and timed out: the plugin catches only PlatformException, and a missing
 /// plugin (tests, a desktop build) must still answer.
 class PrintBluetoothThermalTransport implements BluetoothPrinter {
-  const PrintBluetoothThermalTransport();
+  const PrintBluetoothThermalTransport({
+    this.iosSettle = const Duration(milliseconds: 800),
+    this.permissionTimeout = const Duration(minutes: 2),
+  });
 
-  /// The permission prompt waits for the user.
-  static const Duration _permissionTimeout = Duration(minutes: 2);
+  /// On an iPhone the first call creates the Bluetooth manager, whose state
+  /// is "unknown" for a moment: a first "no" is looked at again after this.
+  final Duration iosSettle;
+
+  /// The permission prompt waits for the user; unanswered this long, the
+  /// answer is "not allowed".
+  final Duration permissionTimeout;
+
   static const Duration _queryTimeout = Duration(seconds: 10);
 
   /// Android's RFCOMM connect gives up on its own after about 12s.
@@ -122,20 +131,31 @@ class PrintBluetoothThermalTransport implements BluetoothPrinter {
   @override
   Future<BtAvailability> availability() async {
     final first = await _availabilityOnce();
-    if (first == BtAvailability.ready || first == BtAvailability.unsupported) {
+    // Only an iPhone's first answer can be early. On Android every ask
+    // prompts for the permission again, and a second "Don't allow" is final.
+    if (defaultTargetPlatform != TargetPlatform.iOS ||
+        first == BtAvailability.ready ||
+        first == BtAvailability.unsupported) {
       return first;
     }
-    // On an iPhone the first call creates the Bluetooth manager, whose state
-    // is "unknown" for a moment: look again once before saying no.
-    await Future<void>.delayed(const Duration(milliseconds: 800));
+    await Future<void>.delayed(iosSettle);
     return _availabilityOnce();
   }
 
   Future<BtAvailability> _availabilityOnce() async {
+    final bool granted;
     try {
-      final granted = await PrintBluetoothThermal.isPermissionBluetoothGranted
-          .timeout(_permissionTimeout);
-      if (!granted) return BtAvailability.denied;
+      granted = await PrintBluetoothThermal.isPermissionBluetoothGranted
+          .timeout(permissionTimeout);
+    } on TimeoutException {
+      // A prompt nobody answered: not allowed (yet), not "no Bluetooth".
+      return BtAvailability.denied;
+    } catch (error) {
+      logD(_tag, 'availability: ${error.runtimeType}');
+      return BtAvailability.unsupported;
+    }
+    if (!granted) return BtAvailability.denied;
+    try {
       final on =
           await PrintBluetoothThermal.bluetoothEnabled.timeout(_queryTimeout);
       return on ? BtAvailability.ready : BtAvailability.off;
@@ -193,7 +213,10 @@ class PrintBluetoothThermalTransport implements BluetoothPrinter {
   @override
   Future<bool> write(List<int> bytes) async {
     try {
-      return await PrintBluetoothThermal.writeBytes(bytes)
+      // A plain list, never a Uint8List (what latin1.encode makes): the codec
+      // sends typed data as a byte[], which the plugin's Android side does
+      // not read as `List<Int>`, so it would answer false and print nothing.
+      return await PrintBluetoothThermal.writeBytes(List<int>.of(bytes))
           .timeout(_writeTimeout);
     } catch (error) {
       logD(_tag, 'write: ${error.runtimeType}');
@@ -239,6 +262,7 @@ class BtPrinterService {
     this._printer, {
     Duration? interSlipPause,
     this.connectAttempts = 2,
+    this.firstWriteRetryAfter = const Duration(milliseconds: 700),
   }) : interSlipPause = interSlipPause ?? defaultInterSlipPause();
 
   final BluetoothPrinter _printer;
@@ -246,6 +270,13 @@ class BtPrinterService {
 
   /// Connect tries before a run (and after a write that failed).
   final int connectAttempts;
+
+  /// An iPhone's BLE printer says "connected" before its write
+  /// characteristic is found, so the first write after a fresh connect can
+  /// be refused. It is tried once more after this pause. That never doubles
+  /// a slip: iOS refuses such a write before sending a byte, and Android's
+  /// plugin drops its socket on a failed write, so its retry sends nothing.
+  final Duration firstWriteRetryAfter;
 
   /// The tail of the job chain: each run starts when the one before ended.
   Future<void> _tail = Future<void>.value();
@@ -266,8 +297,8 @@ class BtPrinterService {
       _enqueue(() => _run(target, slips));
 
   /// Connects to [target] now (after it was picked), queued like a print.
-  Future<bool> connect(BtPrinterInfo target) =>
-      _enqueue(() => _ensureConnected(target));
+  Future<bool> connect(BtPrinterInfo target) async =>
+      await _enqueue(() => _ensureConnected(target)) != _Link.none;
 
   /// Lets the printer go, after any run in progress.
   Future<void> disconnect() => _enqueue(() async {
@@ -279,40 +310,52 @@ class BtPrinterService {
       BtPrinterInfo target, List<List<int>> slips) async {
     final results = <BtSlipResult>[];
     if (slips.isEmpty) return results;
-    var linked = await _ensureConnected(target);
+    var link = await _ensureConnected(target);
     for (var i = 0; i < slips.length; i++) {
-      if (!linked) {
+      if (link == _Link.none) {
         results.add(const BtSlipResult.failed('not connected'));
         continue;
       }
       if (i > 0) await Future<void>.delayed(interSlipPause);
-      if (await _printer.write(slips[i])) {
+      var ok = await _printer.write(slips[i]);
+      if (!ok && link == _Link.fresh) {
+        logD(_tag, 'first write after connect refused: trying once more');
+        await Future<void>.delayed(firstWriteRetryAfter);
+        ok = await _printer.write(slips[i]);
+      }
+      // Only the first write after a connect gets the second try.
+      link = _Link.reused;
+      if (ok) {
         results.add(const BtSlipResult.printed());
         continue;
       }
       results.add(const BtSlipResult.failed('write failed'));
       _linked = null;
       // The link may have dropped mid-run: reconnect for the slips after it.
-      if (i < slips.length - 1) linked = await _ensureConnected(target);
+      if (i < slips.length - 1) link = await _ensureConnected(target);
     }
     final printed = results.where((r) => r.ok).length;
     logD(_tag, 'printed $printed of ${slips.length}');
     return results;
   }
 
-  Future<bool> _ensureConnected(BtPrinterInfo target) async {
-    if (_linked == target && await _printer.isConnected) return true;
+  Future<_Link> _ensureConnected(BtPrinterInfo target) async {
+    if (_linked == target && await _printer.isConnected) return _Link.reused;
     for (var attempt = 1; attempt <= connectAttempts; attempt++) {
       if (await _printer.connect(target)) {
         _linked = target;
-        return true;
+        return _Link.fresh;
       }
       logD(_tag, 'connect attempt $attempt failed');
     }
     _linked = null;
-    return false;
+    return _Link.none;
   }
 }
+
+/// The printer link a write goes over: none, one already up, or one just
+/// made (whose first write an iPhone's printer may not take yet).
+enum _Link { none, reused, fresh }
 
 /// This phone's slip printer, saved as `bt_printer_v1`.
 @immutable

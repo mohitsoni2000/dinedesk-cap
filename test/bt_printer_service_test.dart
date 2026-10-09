@@ -1,9 +1,11 @@
 // ignore_for_file: depend_on_referenced_packages
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restro/models/entry_ticket.dart';
 import 'package:restro/models/parked_draft.dart';
@@ -37,7 +39,87 @@ TicketSlip _ticket(String id, String number) => TicketSlip(
     );
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late FakeBluetoothPrinter fake;
+
+  /// The plugin's own channel (print_bluetooth_thermal 1.2.5,
+  /// `MethodChannel('groons.web.app/print')`), answered here: the transport
+  /// is the only code that talks to the real plugin.
+  group('PrintBluetoothThermalTransport (the plugin channel)', () {
+    const channel = MethodChannel('groons.web.app/print');
+    late List<MethodCall> calls;
+    late Future<Object?> Function(MethodCall call) answer;
+
+    setUp(() {
+      calls = <MethodCall>[];
+      answer = (_) async => true;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) {
+        calls.add(call);
+        return answer(call);
+      });
+    });
+    tearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+
+    test('a write goes over the channel as a plain list, never a Uint8List',
+        () async {
+      // What the slip builders hand over: latin1.encode is a Uint8List, which
+      // the codec sends as a byte[] that the Android plugin cannot read.
+      final bytes = latin1.encode('x\x1B@');
+      expect(bytes, isA<Uint8List>());
+      expect(await const PrintBluetoothThermalTransport().write(bytes), isTrue);
+      final sent = calls.single;
+      expect(sent.method, 'writebytes');
+      expect(sent.arguments, isA<List<Object?>>());
+      expect(sent.arguments, isNot(isA<Uint8List>()),
+          reason: 'Android reads `call.arguments as? List<Int>`');
+      expect(sent.arguments, <int>[0x78, 0x1B, 0x40]);
+    });
+
+    // The plugin asks the channel only on Android, iOS and macOS hosts.
+    final hostSkip = Platform.isMacOS || Platform.isAndroid || Platform.isIOS
+        ? false
+        : 'the plugin only asks on Android, iOS and macOS hosts';
+
+    test('Android: a refused permission is asked for once, not twice',
+        () async {
+      answer = (call) async => call.method != 'ispermissionbluetoothgranted';
+      expect(await const PrintBluetoothThermalTransport().availability(),
+          BtAvailability.denied);
+      expect(calls.map((c) => c.method), <String>['ispermissionbluetoothgranted'],
+          reason: 'every ask prompts again on Android 12+, and a second '
+              '"Don\'t allow" is final');
+    }, skip: hostSkip);
+
+    test('iPhone: a first "no" is looked at once more (the manager starting)',
+        () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      var asked = 0;
+      answer = (call) async => switch (call.method) {
+            'ispermissionbluetoothgranted' => ++asked > 1,
+            'bluetoothenabled' => true,
+            _ => null,
+          };
+      expect(
+          await const PrintBluetoothThermalTransport(iosSettle: Duration.zero)
+              .availability(),
+          BtAvailability.ready);
+      expect(asked, 2);
+    }, skip: hostSkip);
+
+    test('a permission prompt never answered is "not allowed", not "unsupported"',
+        () async {
+      answer = (_) => Completer<Object?>().future;
+      expect(
+          await const PrintBluetoothThermalTransport(
+                  permissionTimeout: Duration(milliseconds: 20))
+              .availability(),
+          BtAvailability.denied);
+    }, skip: hostSkip);
+  });
 
   setUp(() {
     fake = FakeBluetoothPrinter();
@@ -102,6 +184,51 @@ void main() {
           <String>['connect', 'write', 'write', 'connect', 'write'],
           reason: 'a failed write reconnects for the slips after it');
       expect(fake.written, <List<int>>[_slip(1), _slip(3)]);
+    });
+
+    test(
+        'a fresh connect\'s first write, refused (an iPhone printer not ready '
+        'yet), is tried once more after about 700 ms', () {
+      fakeAsync((async) {
+        fake.writeAnswers.addAll(<bool>[false, true]);
+        final service = BtPrinterService(fake, interSlipPause: Duration.zero);
+        List<BtSlipResult>? results;
+        unawaited(service
+            .printSlips(_printer, <List<int>>[_slip(1), _slip(2)])
+            .then((r) => results = r));
+        async.flushMicrotasks();
+        expect(fake.calls, <String>['connect', 'write']);
+        async.elapse(const Duration(milliseconds: 699));
+        expect(fake.calls, hasLength(2));
+        async.elapse(const Duration(milliseconds: 1));
+        async.flushMicrotasks();
+        expect(results!.map((r) => r.ok), <bool>[true, true]);
+        expect(fake.calls, <String>['connect', 'write', 'write', 'write'],
+            reason: 'only the first write after the connect gets a 2nd try');
+        expect(fake.written, <List<int>>[_slip(1), _slip(2)]);
+      });
+    });
+
+    test('refused again, it fails: no third try', () async {
+      fake.writeAnswers.addAll(<bool>[false, false]);
+      final service = BtPrinterService(fake,
+          interSlipPause: Duration.zero, firstWriteRetryAfter: Duration.zero);
+      final results = await service.printSlips(_printer, <List<int>>[_slip(1)]);
+      expect(results.single.ok, isFalse);
+      expect(fake.calls, <String>['connect', 'write', 'write']);
+    });
+
+    test('a refused write on a link that was already up is not retried',
+        () async {
+      final service = BtPrinterService(fake,
+          interSlipPause: Duration.zero, firstWriteRetryAfter: Duration.zero);
+      await service.printSlips(_printer, <List<int>>[_slip(1)]);
+      fake
+        ..calls.clear()
+        ..writeAnswers.add(false);
+      final results = await service.printSlips(_printer, <List<int>>[_slip(2)]);
+      expect(results.single.ok, isFalse);
+      expect(fake.calls, <String>['isConnected', 'write']);
     });
 
     test('runs queue on one chain: the second starts when the first ends',

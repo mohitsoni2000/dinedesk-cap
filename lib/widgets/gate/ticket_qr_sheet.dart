@@ -11,7 +11,11 @@ import 'slip_print_button.dart';
 
 /// Shows one ticket's QR on screen, big enough to scan, with the words its
 /// slip carries, and a reprint through the slip printer. For when there is
-/// no printer, or a guest lost the slip.
+/// no printer, or a guest lost the slip. Only for users with issue rights
+/// (`FeatureFlags.canCopyTickets`): the callers check.
+///
+/// [reprintOnly]: every print from here copies a slip already handed out
+/// (today's list), so each is a reprint, logged on the desk.
 Future<void> showTicketQrSheet(
   BuildContext context, {
   required String ticketId,
@@ -19,6 +23,7 @@ Future<void> showTicketQrSheet(
   required String ticketNumber,
   required String typeName,
   TicketSlipContent? slip,
+  bool reprintOnly = false,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -31,6 +36,7 @@ Future<void> showTicketQrSheet(
       ticketNumber: ticketNumber,
       typeName: typeName,
       slip: slip,
+      reprintOnly: reprintOnly,
     ),
   );
 }
@@ -42,6 +48,7 @@ class _TicketQrSheet extends StatelessWidget {
     required this.ticketNumber,
     required this.typeName,
     required this.slip,
+    required this.reprintOnly,
   });
 
   final String ticketId;
@@ -49,6 +56,7 @@ class _TicketQrSheet extends StatelessWidget {
   final String ticketNumber;
   final String typeName;
   final TicketSlipContent? slip;
+  final bool reprintOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -123,14 +131,17 @@ class _TicketQrSheet extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: SlipPrintButton(slips: <TicketSlip>[
-                      TicketSlip(
-                        ticketId: ticketId,
-                        ticketNumber: ticketNumber,
-                        qrData: qrData,
-                        content: slip,
-                      ),
-                    ]),
+                    child: SlipPrintButton(
+                      reprintOnly: reprintOnly,
+                      slips: <TicketSlip>[
+                        TicketSlip(
+                          ticketId: ticketId,
+                          ticketNumber: ticketNumber,
+                          qrData: qrData,
+                          content: slip,
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(

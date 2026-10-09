@@ -238,7 +238,9 @@ always was.
   - Scan and check in: `ticket:check_in` with a 4 s per-code cooldown, one
     request in flight and a local `CDT:` filter. A ticket admits once; the
     desk is the only authority.
-  - Recent: `ticket:recent`. A ticket's cover can pay food and drink bills in
+  - Recent: `ticket:recent`. Only users who can issue see a ticket's QR or
+    reprint its slip, and each reprint is logged on the desk
+    (`ticket:log_reprint`). A ticket's cover can pay food and drink bills in
     the payment sheet (`bill:payment` with `ticket_code`).
 - **Bluetooth slips** (`bt_printer_service.dart`, `print_bluetooth_thermal`):
   ticket slips on a 58 or 80 mm printer, set up under Settings › Slip
@@ -252,9 +254,10 @@ always was.
   instead of charging twice.
   - An unanswered Pay & Fire or ticket sale is written to the phone before
     it is sent (`pending_checkout_v1`, `pending_issue_v1`, per operator and
-    desk). A restart, a crash or a sign-out cannot lose it: its operator gets
-    the same request back to retry or drop. Another operator, or another
-    desk, never sees it.
+    desk). Through a restart, a crash or a sign-out it is kept for up to
+    48 hours (the desk's replay window): its operator gets the same request
+    back to retry or drop. Another operator, or another desk, never sees it;
+    older attempts, anyone's, are dropped from the phone.
   - When the desk's PIN grace runs out (`reauth_required`), the gate asks
     for the PIN once and resends the same request, or asks again for a read.
 - **Without the desk.** The gate and the counter each show a strip saying

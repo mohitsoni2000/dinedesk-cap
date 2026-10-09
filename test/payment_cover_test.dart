@@ -378,6 +378,101 @@ void main() {
     });
   });
 
+  group('planCovers: what each staged ticket pays now', () {
+    List<int> paid(List<AppliedCover> planned) =>
+        <int>[for (final c in planned) c.amount.paise ~/ 100];
+
+    test('in the order added: each its balance, up to what is left', () {
+      final staged = <AppliedCover>[
+        _applied('et-041', 800),
+        _applied('et-043', 400),
+      ];
+      expect(paid(planCovers(staged, const Money.rupees(1050))), <int>[800, 250]);
+      expect(paid(planCovers(staged, const Money.rupees(1500))), <int>[800, 400],
+          reason: 'never more than a ticket has');
+      expect(paid(planCovers(staged, const Money.rupees(500))), <int>[500, 0],
+          reason: 'the first one added pays first; the second pays nothing');
+      expect(paid(planCovers(staged, Money.zero)), <int>[0, 0]);
+    });
+
+    test('a ticket keeps what it is; only the amount follows the estimate', () {
+      final staged = _applied('et-041', 800, balance: 800);
+      final planned = planCovers(<AppliedCover>[staged], const Money.rupees(300))
+          .single;
+      expect(planned.amount, const Money.rupees(300));
+      expect(planned.balance, const Money.rupees(800));
+      expect(planned.key, staged.key);
+      expect(planned.code, staged.code);
+      expect(planned.toLine(_cover).toWire()['amount'], 300.0);
+    });
+  });
+
+  group('refusedCovers: which ticket a refusal was about', () {
+    final et41 = _applied('et-041', 800);
+    final et43 = _applied('et-043', 400);
+
+    test('one ticket sent: that one', () {
+      expect(
+          refusedCovers(
+              code: 'cover_changed',
+              refusal: coverErrorCopy('cover_changed')!,
+              sent: <AppliedCover>[et41]),
+          <AppliedCover>[et41]);
+    });
+
+    test('several: the one the desk names, by number or by code', () {
+      expect(
+          refusedCovers(
+              code: 'cover_changed',
+              refusal: 'Cover on ET-043 changed — now ₹300. Scan the ticket '
+                  'again.',
+              sent: <AppliedCover>[et41, et43]),
+          <AppliedCover>[et43]);
+      expect(
+          refusedCovers(
+              code: 'ticket_not_found',
+              refusal: 'No ticket matches ${et41.code.toLowerCase()}',
+              sent: <AppliedCover>[et41, et43]),
+          <AppliedCover>[et41]);
+    });
+
+    test('a number is matched whole: ET-04 is not ET-041', () {
+      final et04 = _applied('et-04', 100);
+      expect(
+          refusedCovers(
+              code: 'cover_empty',
+              refusal: 'No cover left on ET-041',
+              sent: <AppliedCover>[et04, et41]),
+          <AppliedCover>[et41]);
+    });
+
+    test('words that name none: all of them, to be scanned again', () {
+      expect(
+          refusedCovers(
+              code: 'cover_changed',
+              refusal: "This ticket's cover changed",
+              sent: <AppliedCover>[et41, et43]),
+          <AppliedCover>[et41, et43]);
+    });
+
+    test('a refusal not about a ticket takes none off', () {
+      for (final code in <String?>[
+        'cover_not_applicable',
+        'payment_short',
+        'price_changed',
+        null,
+      ]) {
+        expect(
+            refusedCovers(
+                code: code,
+                refusal: 'No cover left on ET-041',
+                sent: <AppliedCover>[et41]),
+            isEmpty,
+            reason: '$code');
+      }
+    });
+  });
+
   group('adding a ticket (decideCover)', () {
     LookupResult et42({Money? balance, bool canRedeem = true, String? reason}) {
       final ack = _fixture('ticket_lookup_ack.json');
@@ -416,10 +511,7 @@ void main() {
         'payment_mode': _cover,
         'amount': 800.0,
         'ticket_code': _et42Qr,
-      });
-      expect(added.cover.toLine(_cover, fill: true).toWire(),
-          <String, dynamic>{'payment_mode': _cover, 'ticket_code': _et42Qr},
-          reason: 'the counter lets the desk fill it');
+      }, reason: 'always the amount shown: never left for the desk to fill');
     });
 
     test('the same ticket twice is refused, however it was typed', () {
@@ -481,6 +573,8 @@ void main() {
     test("the spec's cover codes in staff words; anything else is the desk's",
         () {
       expect(coverErrorCopy('cover_empty'), "This ticket's cover is used up");
+      expect(coverErrorCopy('cover_changed'),
+          "This ticket's cover changed since it was scanned — scan it again");
       expect(coverErrorCopy('cover_expired'),
           'This ticket was for an earlier day');
       expect(coverErrorCopy('cover_not_applicable'),

@@ -562,6 +562,66 @@ void main() {
     });
   });
 
+  group('ticket:log_reprint', () {
+    const ok = <String, dynamic>{'kind': 'success'};
+
+    test(
+        'sends the contract payload (the request fixture) as a money event, '
+        'and says whether the desk recorded it', () async {
+      answer = (_, __) => ok;
+      final logged = await service.logReprint(TicketReprintLog(
+          ticketId: 'et_42b', clientRequestId: 'crq_reprint_1'));
+      expect(logged, isTrue);
+      final call = sent.single;
+      expect(call.event, 'ticket:log_reprint');
+      expect(call.timeout, const Duration(seconds: 15));
+      expect(call.data, fixture('ticket_log_reprint_request.json'));
+    });
+
+    test('each reprint is its own entry: a new id every time', () {
+      final first = TicketReprintLog(ticketId: 'et_42b');
+      final second = TicketReprintLog(ticketId: 'et_42b');
+      expect(first.clientRequestId, startsWith('req_'));
+      expect(second.clientRequestId, isNot(first.clientRequestId));
+    });
+
+    test('a lapsed PIN is asked for once, then the SAME request goes again',
+        () async {
+      var calls = 0;
+      answer = (_, __) => ++calls == 1 ? reauth : ok;
+      expect(
+          await service.logReprint(TicketReprintLog(
+              ticketId: 'et_42b', clientRequestId: 'crq_reprint_1')),
+          isTrue);
+      expect(pinPrompts, 1);
+      expect(sent, hasLength(2));
+      expect(sent[1].data, sent[0].data);
+    });
+
+    test('refused, unanswered or without the desk: not recorded, no throw',
+        () async {
+      for (final reply in <Object>[
+        <String, dynamic>{
+          'kind': 'error',
+          'code': 'permission_denied',
+          'message': 'Needs ticket issue rights',
+        },
+        TimeoutException('ack timed out'),
+      ]) {
+        answer = (_, __) => reply;
+        expect(
+            await service.logReprint(TicketReprintLog(ticketId: 'et_42b')),
+            isFalse,
+            reason: '$reply');
+      }
+      sent.clear();
+      socket.debugSetState(SocketState.disconnected);
+      expect(await service.logReprint(TicketReprintLog(ticketId: 'et_42b')),
+          isFalse);
+      expect(sent, isEmpty, reason: 'nothing goes without the desk');
+    });
+  });
+
   group('ticket:lookup after the PIN grace', () {
     test('asks for the PIN, then looks the ticket up again', () async {
       var calls = 0;

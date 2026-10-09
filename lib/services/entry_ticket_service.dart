@@ -14,7 +14,8 @@ import 'socket_service.dart';
 
 /// Entry tickets on the desk: selling them at the gate (`ticket:issue`),
 /// checking guests in (`ticket:check_in`), today's list (`ticket:recent`),
-/// and looking one up (`ticket:lookup`, also to take its cover as payment).
+/// looking one up (`ticket:lookup`, also to take its cover as payment), and
+/// logging a slip printed again (`ticket:log_reprint`).
 /// The desk is the only authority on a ticket (its balance, its day, whether
 /// it was used or cancelled), so every answer comes from it.
 ///
@@ -453,6 +454,30 @@ final class RecentTicketsFailed extends RecentTicketsOutcome {
 /// How many of today's tickets the Recent list asks for.
 const int kRecentTicketsLimit = 100;
 
+// ─── ticket:log_reprint ─────────────────────────────────────────────────────
+
+/// One slip printed again, for the desk's audit trail:
+/// `{ticket_id, client_request_id}` (see
+/// test/fixtures/crew-qsr/ticket_log_reprint_request.json). A copy works
+/// like the original (whoever scans it first gets in, and can spend its
+/// cover), so every reprint is logged once it has printed.
+///
+/// Like a money event, [clientRequestId] belongs to this one reprint: a
+/// resend of it (after a PIN prompt) is the same request, and the desk
+/// records it once; the next reprint of the same ticket is a new entry.
+class TicketReprintLog {
+  TicketReprintLog({required this.ticketId, String? clientRequestId})
+      : clientRequestId = clientRequestId ?? newRequestId();
+
+  final String ticketId;
+  final String clientRequestId;
+
+  Map<String, dynamic> toPayload() => <String, dynamic>{
+        'ticket_id': ticketId,
+        'client_request_id': clientRequestId,
+      };
+}
+
 /// What a read says when the desk wants the PIN and it was not entered.
 const String kPinAgainMessage = 'Enter your PIN again, then try again';
 
@@ -568,6 +593,24 @@ class EntryTicketService {
     );
   }
 
+  /// Puts [request]'s reprint on the desk's audit trail (plus one resend
+  /// after a PIN prompt). True once the desk recorded it; false when it was
+  /// refused, got no answer, or the desk is not reachable. Never throws.
+  Future<bool> logReprint(TicketReprintLog request) async {
+    if (!_deskReachable) {
+      logD(_tag, 'reprint log not sent: the desk is not reachable');
+      return false;
+    }
+    final ack = await _emitMoney('ticket:log_reprint', request.toPayload());
+    if (ack['kind'] == 'success') {
+      logD(_tag, 'reprint logged');
+      return true;
+    }
+    logD(_tag,
+        'reprint log failed: ${optionalString(ack, 'code') ?? 'no code'}');
+    return false;
+  }
+
   /// Today's tickets, newest first, optionally matching [query] (a ticket
   /// number, a guest's name or their phone's last digits). Read-only.
   Future<RecentTicketsOutcome> recent({
@@ -649,6 +692,8 @@ String? coverErrorCopy(String? code) => switch (code) {
       'cover_invalid' => "This ticket can't be used as cover",
       'cover_expired' => _earlierDay,
       'cover_empty' => _coverUsedUp,
+      'cover_changed' =>
+        "This ticket's cover changed since it was scanned — scan it again",
       'cover_not_applicable' => "Cover can't pay a room, comp or credit bill",
       'ticket_not_found' => _noSuchTicket,
       'ticket_cancelled' => _ticketCancelled,
@@ -670,6 +715,51 @@ String? namedTicketRefusal(String? code, String? deskMessage,
   if (!code.startsWith('cover_') && !code.startsWith('ticket_')) return null;
   final words = deskMessage?.trim();
   return words == null || words.isEmpty ? null : words;
+}
+
+/// Refusals about a cover ticket itself: its cover changed or ran out
+/// elsewhere, or it is for another day, cancelled or unknown. Nothing was
+/// charged, and that ticket cannot pay as staged.
+const Set<String> _ticketRefusals = <String>{
+  'cover_changed',
+  'cover_empty',
+  'cover_expired',
+  'cover_invalid',
+  'ticket_not_found',
+  'ticket_cancelled',
+};
+
+/// Which of the tickets [sent] on a refused payment the refusal ([code],
+/// in the words [refusal] shown) was about, so the screen can take them off
+/// and have them scanned again: the ones those words name, by number or
+/// code, else all of them (one ticket, or words that name none). Empty for
+/// a refusal that is not about a ticket.
+List<AppliedCover> refusedCovers({
+  required String? code,
+  required String refusal,
+  required List<AppliedCover> sent,
+}) {
+  if (!_ticketRefusals.contains(code) || sent.isEmpty) {
+    return const <AppliedCover>[];
+  }
+  final named = <AppliedCover>[
+    for (final cover in sent)
+      if (_names(refusal, cover)) cover,
+  ];
+  return named.isEmpty ? sent : named;
+}
+
+/// [words] name [cover]: its number or its code, as a whole word.
+bool _names(String words, AppliedCover cover) {
+  final text = words.toUpperCase();
+  for (final name in <String>{cover.ticketNumber, cover.code}) {
+    final wanted = name.trim().toUpperCase();
+    if (wanted.isEmpty) continue;
+    final whole =
+        RegExp('(^|[^A-Z0-9])${RegExp.escape(wanted)}(\$|[^A-Z0-9])');
+    if (whole.hasMatch(text)) return true;
+  }
+  return false;
 }
 
 /// Why a looked-up ticket cannot pay a bill, in staff words. A reason this

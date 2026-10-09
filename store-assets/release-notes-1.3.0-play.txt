@@ -1,0 +1,9 @@
+What's new in 1.3.0
+
+- Counter mode: takeaway and standing orders with no table, Pay & Fire or pay at pickup, and a token for the guest.
+- Park a cart or a ticket sale and resume it later.
+- Entry-ticket gate: sell tickets, check guests in, see today's tickets.
+- Ticket slips on a Bluetooth printer, with the QR.
+- Entry-ticket cover pays for food and drinks.
+- An unanswered payment is kept for a retry for up to 48 hours.
+- Payment screen fixes.

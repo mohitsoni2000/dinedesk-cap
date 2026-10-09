@@ -38,7 +38,8 @@ class AppliedCover {
   final String ticketNumber;
   final String typeName;
 
-  /// What the ticket had left when it was looked up.
+  /// What the ticket had left when it was looked up. The desk refuses
+  /// (`cover_changed`) a payment planned on a balance that has since moved.
   final Money balance;
 
   /// What this payment takes from it.
@@ -53,14 +54,43 @@ class AppliedCover {
     required this.amount,
   });
 
-  /// The tender for this cover, recorded under [coverMode]. [fill] leaves the
-  /// amount to the desk (counter checkout: up to the ticket's balance and what
-  /// the food and drink bills owe).
-  TenderLine toLine(String coverMode, {bool fill = false}) => TenderLine(
+  /// The tender for this cover, recorded under [coverMode], for [amount]:
+  /// always the amount the cashier was shown, never left for the desk to
+  /// fill. The desk places exactly that, or refuses (`cover_changed`) when
+  /// the ticket no longer has it.
+  TenderLine toLine(String coverMode) => TenderLine(
         mode: coverMode,
-        amount: fill ? null : amount,
+        amount: amount,
         ticketCode: code,
       );
+
+  /// This ticket on this payment, taking [share] instead.
+  AppliedCover withAmount(Money share) => AppliedCover(
+        key: key,
+        code: code,
+        ticketNumber: ticketNumber,
+        typeName: typeName,
+        balance: balance,
+        amount: share,
+      );
+}
+
+/// What each of [covers] pays towards [due], in the order they were added:
+/// each ticket takes the smaller of its balance and what is still left, so
+/// the first ones pay first and a later one may pay nothing at all.
+///
+/// The counter re-plans with every new estimate (the cart can change under
+/// staged tickets), so the amounts shown are always these, and Pay & Fire
+/// sends exactly them.
+List<AppliedCover> planCovers(List<AppliedCover> covers, Money due) {
+  var left = due.isNegative ? Money.zero : due;
+  final planned = <AppliedCover>[];
+  for (final cover in covers) {
+    final take = cover.balance < left ? cover.balance : left;
+    planned.add(cover.withAmount(take));
+    left -= take;
+  }
+  return planned;
 }
 
 /// A bill as a payment plan sees it.

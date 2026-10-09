@@ -9,8 +9,24 @@ import 'package:restro/services/pending_money_store.dart';
 import 'package:restro/services/pending_slips_store.dart';
 import 'package:restro/services/session_service.dart';
 import 'package:restro/services/slip_printer.dart';
+import 'package:restro/services/link_monitor.dart' show NetworkEvent;
 import 'package:restro/services/socket_service.dart';
+import 'package:restro/services/wifi_binding.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// A Wi-Fi binding whose release fails, as a platform call can.
+class _UnbindFails implements WifiBinding {
+  const _UnbindFails();
+
+  @override
+  Future<bool> bindWifi() async => false;
+
+  @override
+  Future<void> unbind() async => throw StateError('platform call failed');
+
+  @override
+  Stream<NetworkEvent> get events => const Stream<NetworkEvent>.empty();
+}
 
 /// F5: one auth-coded refusal is not a verdict (a token mid-rotation, the desk
 /// restarting). Only a repeat, a few seconds later, ends the reconnecting.
@@ -145,6 +161,32 @@ void main() {
       expect(await PendingMoneyStore(PendingMoneyStore.issueKey).read(scope),
           isNotNull,
           reason: 'its desk and operator get it back to retry');
+    });
+
+    test(
+        'the slips are wiped before anything that can fail: a sign-out that '
+        'stops part-way leaves no guest slips behind', () async {
+      FlutterSecureStorage.setMockInitialValues(<String, String>{});
+      final failing = ProviderContainer(overrides: [
+        socketServiceProvider.overrideWithValue(socket),
+        wifiBindingProvider.overrideWithValue(const _UnbindFails()),
+      ]);
+      addTearDown(failing.dispose);
+      const scope = ParkedScope(operatorId: 'op-asha', deskInstanceId: 'd1');
+      await failing.read(pendingSlipsStoreProvider).put(
+          scope,
+          const <TicketSlip>[
+            TicketSlip(ticketId: 't1', ticketNumber: 'ET-041', qrData: 'CDT:X'),
+          ],
+          SlipJobState.failed);
+      final bootstrap = failing.read(connectionBootstrapProvider.notifier)
+        ..debugSetPairing(pairing);
+
+      await expectLater(bootstrap.signOut(), throwsStateError);
+
+      expect(await failing.read(pendingSlipsStoreProvider).list(scope), isEmpty);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.containsKey(PendingSlipsStore.prefsKey), isFalse);
     });
   });
 }

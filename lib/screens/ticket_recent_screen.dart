@@ -36,8 +36,9 @@ enum RecentFilter {
 
 /// Today's tickets from the desk (`ticket:recent`), newest first: the gate's
 /// counters, filter chips, a search (number, guest, phone's last digits),
-/// and each ticket's QR on screen. Phones only ever arrive as their last
-/// four digits.
+/// and, for users with issue rights, each ticket's QR on screen with a
+/// reprint (logged on the desk). Phones only ever arrive as their last four
+/// digits.
 class TicketRecentScreen extends ConsumerStatefulWidget {
   const TicketRecentScreen({super.key});
 
@@ -99,8 +100,10 @@ class _TicketRecentScreenState extends ConsumerState<TicketRecentScreen> {
   }
 
   /// The ticket's QR and slip, from the desk (the list rows carry neither).
+  /// Issue rights only: a copy lets a guest in and spends their cover.
   Future<void> _showQr(TicketSummary row) async {
     if (_opening != null) return;
+    if (!ref.read(flagsProvider).canCopyTickets) return;
     if (!requireDesk(context, ref)) return;
     setState(() => _opening = row.id);
     final outcome = await ref
@@ -122,6 +125,8 @@ class _TicketRecentScreenState extends ConsumerState<TicketRecentScreen> {
           ticketNumber: ticket.ticketNumber,
           typeName: ticket.typeName,
           slip: ticket.slip,
+          // Each print from today's list copies a slip already handed out.
+          reprintOnly: true,
         );
       case TicketLookupFailed(:final message):
         DynamicToast.error(context, message);
@@ -135,6 +140,7 @@ class _TicketRecentScreenState extends ConsumerState<TicketRecentScreen> {
     });
     final palette = context.palette;
     final offline = isDeskOffline(ref);
+    final canCopy = ref.watch(flagsProvider.select((f) => f.canCopyTickets));
     final recent = _recent;
     final rows = recent == null
         ? const <TicketSummary>[]
@@ -250,7 +256,8 @@ class _TicketRecentScreenState extends ConsumerState<TicketRecentScreen> {
                           _RecentRow(
                             row: row,
                             opening: _opening == row.id,
-                            onShowQr: row.status == TicketStatus.cancelled
+                            onShowQr: !canCopy ||
+                                    row.status == TicketStatus.cancelled
                                 ? null
                                 : () => _showQr(row),
                           ),
@@ -380,6 +387,7 @@ class _RecentRow extends StatelessWidget {
           ),
           if (onShowQr != null)
             IconButton(
+              key: ValueKey<String>('recent-qr-${row.id}'),
               tooltip: 'Show QR',
               onPressed: opening ? null : onShowQr,
               icon: opening

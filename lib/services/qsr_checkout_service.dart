@@ -41,7 +41,8 @@ const Duration kQsrCheckoutTimeout = Duration(seconds: 15);
 ///
 /// [clientRequestId] belongs to the attempt: an unanswered attempt is retried
 /// with this same request. A new attempt (the cart changed, or the cashier
-/// accepted the desk's new total) is a new request with a new id.
+/// accepted the desk's new total, which re-plans the cover) is a new request
+/// with a new id.
 class QsrCheckoutRequest {
   QsrCheckoutRequest({
     required this.fulfillment,
@@ -102,8 +103,11 @@ class QsrCheckoutRequest {
   /// `order:create`'s item shape.
   final List<Map<String, dynamic>> items;
 
-  /// Cover lines first, then the pay tenders. Cover lines and the last pay
-  /// line carry no amount: the desk fills them from the real bill.
+  /// Cover lines first, then the pay tenders. Each cover line carries the
+  /// amount the cashier was shown: the desk places exactly that or refuses
+  /// (`cover_changed`), so a cover spent elsewhere meanwhile is never made
+  /// up by another tender. The last pay line carries no amount: the desk
+  /// fills it from the real bill.
   final List<TenderLine> payments;
   final String notes;
   final String? customerId;
@@ -112,17 +116,6 @@ class QsrCheckoutRequest {
   /// when its bill differs, so nobody is charged what they were not told.
   final Money? expectedTotal;
   final String clientRequestId;
-
-  /// The same order at the desk's [total], which the cashier accepted: a new
-  /// attempt, so a new id.
-  QsrCheckoutRequest withExpectedTotal(Money total) => QsrCheckoutRequest(
-        fulfillment: fulfillment,
-        items: items,
-        payments: payments,
-        notes: notes,
-        customerId: customerId,
-        expectedTotal: total,
-      );
 
   Map<String, dynamic> toPayload() => _sent != null
       ? Map<String, dynamic>.from(_sent)

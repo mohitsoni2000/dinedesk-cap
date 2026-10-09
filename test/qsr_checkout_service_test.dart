@@ -56,15 +56,19 @@ void main() {
           <String, dynamic>{'item_id': 'itm_platter', 'quantity': 1},
         ],
         payments: const <TenderLine>[
-          TenderLine(mode: 'cover_ticket', ticketCode: 'CDT:7QKX2MZ4HB6TNW3R'),
+          TenderLine(
+              mode: 'cover_ticket',
+              amount: Money.rupees(800),
+              ticketCode: 'CDT:7QKX2MZ4HB6TNW3R'),
           TenderLine(mode: 'cash'),
         ],
         notes: '  no onion  ',
         expectedTotal: expected ?? const Money.rupees(1050),
       );
 
-  test('sends one pay_and_fire with fill tenders, 15s and the attempt id',
-      () async {
+  test(
+      'sends one pay_and_fire: cover at its planned amount, the last tender '
+      'filled, 15s and the attempt id', () async {
     final req = request();
     final result = await service.payAndFire(req);
 
@@ -81,9 +85,11 @@ void main() {
       'notes': 'no onion',
       'mode': 'pay_and_fire',
       'payments': <Map<String, dynamic>>[
-        // Cover and the last tender carry no amount: the desk fills them.
+        // The cover the cashier was shown (the desk refuses rather than
+        // place less); only the last tender is left for the desk to fill.
         <String, dynamic>{
           'payment_mode': 'cover_ticket',
+          'amount': 800.0,
           'ticket_code': 'CDT:7QKX2MZ4HB6TNW3R',
         },
         <String, dynamic>{'payment_mode': 'cash'},
@@ -138,15 +144,6 @@ void main() {
     expect(sent, isEmpty);
   });
 
-  test('a new total accepted by the cashier is a new attempt', () {
-    final first = request();
-    final second = first.withExpectedTotal(const Money(110250));
-    expect(second.clientRequestId, isNot(first.clientRequestId));
-    expect(second.toPayload()['expected_total'], 1102.5);
-    expect(second.toPayload()['payments'], first.toPayload()['payments']);
-    expect(second.toPayload()['items'], first.toPayload()['items']);
-  });
-
   group('refusals', () {
     Future<QsrCheckoutRejected> refusedWith(Map<String, dynamic> ack) async {
       answer = (_, __) => ack;
@@ -181,6 +178,8 @@ void main() {
         'flow_blocked': 'The desk now takes payment at pickup here — use '
             'Fire KOT',
         'cover_empty': "This ticket's cover is used up",
+        'cover_changed':
+            "This ticket's cover changed since it was scanned — scan it again",
         'cover_expired': 'This ticket was for an earlier day',
         'cover_not_applicable': "Cover can't pay a room, comp or credit bill",
         'ticket_not_found': 'No ticket matches that code',
@@ -196,6 +195,42 @@ void main() {
         expect(r.message, entry.value, reason: entry.key);
         expect(r.newTotal, isNull);
       }
+    });
+
+    test(
+        'cover_changed (spent elsewhere since the scan) proves nothing was '
+        'charged; with two tickets the desk\'s words name it', () async {
+      answer = (_, __) => <String, dynamic>{
+            'kind': 'error',
+            'code': 'cover_changed',
+            'message':
+                'Cover on ET-042 changed — now ₹300. Scan the ticket again.',
+          };
+      final one = await service.payAndFire(request()) as QsrCheckoutRejected;
+      expect(one.isBusinessRefusal, isTrue);
+      expect(one.message,
+          "This ticket's cover changed since it was scanned — scan it again");
+      expect(retryRefusalCopy(one), endsWith('Nothing was charged.'));
+
+      final two = await service.payAndFire(QsrCheckoutRequest(
+        fulfillment: FulfillmentType.takeaway,
+        items: <Map<String, dynamic>>[
+          <String, dynamic>{'item_id': 'itm_roll', 'quantity': 2},
+        ],
+        payments: const <TenderLine>[
+          TenderLine(
+              mode: 'cover_ticket',
+              amount: Money.rupees(400),
+              ticketCode: 'CDT:P3VJ5LDY2GQA7FEC'),
+          TenderLine(
+              mode: 'cover_ticket',
+              amount: Money.rupees(650),
+              ticketCode: 'CDT:7QKX2MZ4HB6TNW3R'),
+        ],
+        expectedTotal: const Money.rupees(1050),
+      )) as QsrCheckoutRejected;
+      expect(two.message,
+          'Cover on ET-042 changed — now ₹300. Scan the ticket again.');
     });
 
     test('two cover tickets, one refused: the desk\'s words name it', () async {
@@ -238,6 +273,7 @@ void main() {
       'payment_over',
       'payment_invalid',
       'cover_empty',
+      'cover_changed',
       'cover_expired',
       'cover_not_applicable',
       'ticket_not_found',

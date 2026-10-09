@@ -57,8 +57,9 @@ class _SlipQueueSheetState extends ConsumerState<_SlipQueueSheet> {
           backgroundColor: dialog.palette.surface,
           title: const Text('Print again?', style: AppTypography.title),
           content: const Text(
-              'Some of these may already have printed. A second copy is '
-              'harmless: each ticket still lets one guest in.',
+              'Some of these may already have printed. A second copy works '
+              'like the first: whoever scans it first gets in, and can '
+              'spend its cover.',
               style: AppTypography.bodyMd),
           actions: [
             TextButton(

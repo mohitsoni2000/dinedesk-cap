@@ -12,6 +12,7 @@ import '../data/providers.dart';
 import '../models/entry_ticket.dart';
 import '../models/pay_mode.dart';
 import '../models/token.dart';
+import '../services/entry_ticket_service.dart' show refusedCovers;
 import '../services/kot_queue_service.dart';
 import '../services/log.dart';
 import '../services/offline_guard.dart';
@@ -163,9 +164,12 @@ List<Map<String, dynamic>> _previewItems(List<CartLine> cart) => cart
 ///
 /// - **Pay & Fire** (prepaid, needs the desk): one `qsr:checkout` takes the
 ///   payment, fires the KOT and gives the token. The tenders come from the
-///   shared tender form with no bill yet: cover and the last tender carry no
-///   amount and the desk fills them; the screen shows an estimate and the
-///   ack the real figures.
+///   shared tender form with no bill yet: each cover ticket carries the
+///   amount shown for it (its balance, up to what the estimate leaves, in
+///   the order added), and the last tender carries none, so the desk fills
+///   it; the screen shows an estimate and the ack the real figures. A
+///   ticket whose cover changed since its scan is refused (`cover_changed`),
+///   never quietly made up by the other tender.
 /// - **Fire KOT** (pay at pickup): `order:create` + `kot:send` through the
 ///   offline queue, so it still goes, queued, when the desk is away.
 class CounterCheckoutScreen extends ConsumerStatefulWidget {
@@ -274,8 +278,12 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
   /// Covers, tenders and the note can change: nothing kept or in flight.
   bool get _editable => ref.read(pendingCheckoutProvider) == null && !_busy;
 
-  List<AppliedCover> get _activeCovers =>
-      _coverOn ? _covers : const <AppliedCover>[];
+  /// The staged tickets at what they pay now: each its balance, up to what
+  /// the estimate still leaves, in the order added. The chips, the totals
+  /// and Pay & Fire all use these, so what is sent is what was shown.
+  List<AppliedCover> get _activeCovers => _coverOn
+      ? planCovers(_covers, _estimate ?? _subtotal)
+      : const <AppliedCover>[];
 
   Money get _subtotal =>
       ref.read(cartProvider).map((l) => l.lineTotal).sumMoney();
@@ -334,9 +342,11 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
       fulfillment: ref.read(counterFulfillmentProvider),
       items: orderItemsPayload(cart),
       payments: <TenderLine>[
+        // Each at the amount shown; a ticket the estimate leaves nothing
+        // for is not sent.
         if (coverMode != null)
           for (final cover in _activeCovers)
-            cover.toLine(coverMode, fill: true),
+            if (cover.amount.isPositive) cover.toLine(coverMode),
         ...pay,
       ],
       notes: _notes.text,
@@ -406,6 +416,7 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
         if (result.priceChanged) {
           await _onPriceChanged(request, result);
         } else {
+          _dropRefusedCovers(request, result);
           DynamicToast.error(context, result.message);
         }
       case QsrCheckoutUnconfirmed() || QsrCheckoutRejected():
@@ -429,6 +440,29 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
         unawaited(pending().settle(attempt));
         if (mounted) await _offerParkOffline();
     }
+  }
+
+  /// A refusal about a cover ticket itself (its cover changed or ran out
+  /// elsewhere, it was cancelled…): nothing was charged, so that ticket
+  /// comes off the payment, to be scanned again at what it has now.
+  void _dropRefusedCovers(
+      QsrCheckoutRequest request, QsrCheckoutRejected refused) {
+    final codes = <String?>{
+      for (final line in request.payments)
+        if (line.isCover) line.ticketCode,
+    };
+    final drop = refusedCovers(
+      code: refused.code,
+      refusal: refused.message,
+      sent: <AppliedCover>[
+        for (final cover in _covers)
+          if (codes.contains(cover.code)) cover,
+      ],
+    );
+    if (drop.isEmpty) return;
+    logD(_tag,
+        '${drop.length} cover ticket(s) taken off after a ${refused.code} refusal');
+    setState(() => _covers.removeWhere(drop.contains));
   }
 
   /// The desk's bill came to another total than the one shown: show it, and
@@ -466,9 +500,11 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
         ],
       ),
     );
-    if (charge == true && mounted) {
-      await _send(request.withExpectedTotal(fresh));
-    }
+    if (charge != true || !mounted) return;
+    // Built again for the new total: the cover tickets re-planned against
+    // it, so each still goes at the amount the screen now shows.
+    final again = _buildRequest();
+    if (again != null) await _send(again);
   }
 
   Future<void> _retry(PendingCheckout pending) async {
@@ -499,6 +535,9 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
       case QsrCheckoutOk():
         context.go('/counter/order/token');
       case QsrCheckoutRejected():
+        if (result.isBusinessRefusal) {
+          _dropRefusedCovers(pending.request, result);
+        }
         DynamicToast.error(context, retryRefusalCopy(result));
       case QsrCheckoutUnconfirmed() || null:
         DynamicToast.warning(context, kCheckoutNoAnswer);
@@ -744,8 +783,9 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
     final canCharge = qsr.canPayNow && flags.collectPayment;
     final canFire = qsr.canPayLater;
     final estimate = _estimate;
-    final covered = _activeCovers.map((c) => c.amount).sumMoney();
-    final coverPaysAll = _activeCovers.isNotEmpty && _tenderDue.isZero;
+    final covers = _activeCovers;
+    final covered = covers.map((c) => c.amount).sumMoney();
+    final coverPaysAll = covers.isNotEmpty && _tenderDue.isZero;
     final editable = pending == null && !_busy;
     // Rebuilt when the link drops or returns; read on every build: a tap
     // without the desk says so and offers to park.
@@ -957,7 +997,8 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
                       if (canCharge) ...[
                         if (coverOn)
                           CoverRedeemSection(
-                            covers: _covers,
+                            // At what each pays now, as Pay & Fire sends it.
+                            covers: covers,
                             coverable: estimate == null
                                 ? Money.zero
                                 : (estimate - covered).isNegative
@@ -973,7 +1014,8 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
                             },
                             onRemove: (cover) {
                               if (_editable) {
-                                setState(() => _covers.remove(cover));
+                                setState(() => _covers
+                                    .removeWhere((c) => c.key == cover.key));
                               }
                             },
                           ),

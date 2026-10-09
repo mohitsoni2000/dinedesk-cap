@@ -57,6 +57,7 @@ class _TicketIssueResultScreenState
   @override
   Widget build(BuildContext context) {
     final result = ref.watch(ticketIssueResultProvider);
+    final canCopy = ref.watch(flagsProvider.select((f) => f.canCopyTickets));
     final palette = context.palette;
     final problem = result == null ? null : ticketSaleProblem(result);
 
@@ -135,7 +136,7 @@ class _TicketIssueResultScreenState
               style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
           const SizedBox(height: 8),
           for (final ticket in result.tickets) ...[
-            _TicketCard(ticket: ticket),
+            _TicketCard(ticket: ticket, canShowQr: canCopy),
             const SizedBox(height: 8),
           ],
           const SizedBox(height: 8),
@@ -243,9 +244,12 @@ class _SlipState extends ConsumerWidget {
 }
 
 class _TicketCard extends StatelessWidget {
-  const _TicketCard({required this.ticket});
+  const _TicketCard({required this.ticket, required this.canShowQr});
 
   final EntryTicket ticket;
+
+  /// The QR on screen is a copy of the slip: issue rights only.
+  final bool canShowQr;
 
   @override
   Widget build(BuildContext context) {
@@ -281,19 +285,20 @@ class _TicketCard extends StatelessWidget {
               ],
             ),
           ),
-          LiquidSecondaryButton(
-            key: ValueKey<String>('show-qr-${ticket.id}'),
-            label: 'Show QR',
-            leadingIcon: Icons.qr_code_2,
-            onPressed: () => showTicketQrSheet(
-              context,
-              ticketId: ticket.id,
-              qrData: qr,
-              ticketNumber: ticket.ticketNumber,
-              typeName: ticket.typeName,
-              slip: ticket.slip,
+          if (canShowQr)
+            LiquidSecondaryButton(
+              key: ValueKey<String>('show-qr-${ticket.id}'),
+              label: 'Show QR',
+              leadingIcon: Icons.qr_code_2,
+              onPressed: () => showTicketQrSheet(
+                context,
+                ticketId: ticket.id,
+                qrData: qr,
+                ticketNumber: ticket.ticketNumber,
+                typeName: ticket.typeName,
+                slip: ticket.slip,
+              ),
             ),
-          ),
         ],
       ),
     );

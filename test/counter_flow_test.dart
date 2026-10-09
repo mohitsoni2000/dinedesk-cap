@@ -10,6 +10,7 @@ import 'package:restro/data/counter_providers.dart';
 import 'package:restro/data/money.dart';
 import 'package:restro/data/parked_providers.dart';
 import 'package:restro/data/providers.dart';
+import 'package:restro/models/entry_ticket.dart';
 import 'package:restro/models/feature_flags.dart';
 import 'package:restro/models/parked_draft.dart';
 import 'package:restro/models/qsr_config.dart';
@@ -595,6 +596,240 @@ void main() {
       expect(h.container.read(parkedCountProvider(ParkedKind.counterCart)), 1);
       expect(h.path, '/counter/order');
       await drain(tester);
+    });
+  });
+
+  group('cover tickets on Pay & Fire', () {
+    final coverFlags = FeatureFlags.fromMap(<String, dynamic>{
+      'flag_collect_payment': 1,
+      'flag_generate_bill': 1,
+      'flag_order_tokens': 1,
+      'flag_takeaway': 1,
+      'flag_entry_tickets': 1,
+    });
+    const et42Qr = 'CDT:P3VJ5LDY2GQA7FEC';
+
+    /// The desk's lookup of ET-042, or of another ticket like it.
+    Map<String, dynamic> lookup(
+        {int balance = 800,
+        String id = 'et_42b',
+        String number = 'ET-042',
+        String qr = et42Qr}) {
+      final ack = fixture('ticket_lookup_ack.json');
+      final ticket = ack['ticket'] as Map<String, dynamic>;
+      ticket['id'] = id;
+      ticket['ticket_number'] = number;
+      ticket['qr_code'] = qr;
+      ticket.remove('slip');
+      ack['cover_balance'] = balance;
+      return ack;
+    }
+
+    /// A prepaid ₹1,050 checkout (the desk's estimate) where a ticket can
+    /// be scanned in as cover; [lookups] answers each lookup by code.
+    Future<_Counter> checkout(WidgetTester tester,
+        {Map<String, Map<String, dynamic>>? lookups}) async {
+      final h = await pumpCounter(tester,
+          initial: '/counter/order/checkout',
+          qsr: _prepaid,
+          flags: coverFlags,
+          cart: <CartLine>[dosaLine(qty: 2)]);
+      h.container.read(ticketConfigProvider.notifier).state =
+          const TicketConfig(coverPaymentMode: 'cover_ticket');
+      h.answer = (event, data) => event == 'ticket:lookup'
+          ? (lookups ?? <String, Map<String, dynamic>>{})[data['code']] ??
+              lookup()
+          : desk(event, data);
+      await tester.pumpAndSettle();
+      return h;
+    }
+
+    Future<void> addTicket(WidgetTester tester, String code) async {
+      final button = find.text('Add cover ticket');
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      await tester.enterText(fieldWithHint('Ticket number or QR code'), code);
+      await tester.tap(find.text('Use'));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> pickCash(WidgetTester tester) async {
+      await tester.ensureVisible(find.text('Cash'));
+      await tester.tap(find.text('Cash'));
+      await tester.pumpAndSettle();
+    }
+
+    Map<String, dynamic> coverLine(num amount, [String qr = et42Qr]) =>
+        <String, dynamic>{
+          'payment_mode': 'cover_ticket',
+          'amount': amount.toDouble(),
+          'ticket_code': qr,
+        };
+
+    testWidgets(
+        'a ticket goes at the amount shown; only the last tender is left '
+        'for the desk to fill', (tester) async {
+      final h = await checkout(tester);
+      await addTicket(tester, 'ET-042');
+      expect(find.text('ET-042 · Couple Pass'), findsOneWidget);
+      expect(find.text('−₹800'), findsNWidgets(2),
+          reason: 'on the ticket, and in the totals');
+      await pickCash(tester);
+      await tester.tap(find.text('Pay & Fire ₹1,050'));
+      await tester.pumpAndSettle();
+
+      expect(h.payloads('qsr:checkout').single['payments'], <Object>[
+        coverLine(800),
+        <String, dynamic>{'payment_mode': 'cash'},
+      ]);
+      expect(find.text('S-03'), findsOneWidget);
+    });
+
+    testWidgets(
+        'the cart shrinks under a staged ticket: what it pays, shown and '
+        'sent, follows the new estimate', (tester) async {
+      final h = await checkout(tester);
+      await addTicket(tester, 'ET-042');
+      h.answer = (event, data) => event == 'order:preview-totals'
+          ? <String, dynamic>{
+              'kind': 'success',
+              'totals': <String, dynamic>{'totalAmount': 500},
+            }
+          : desk(event, data);
+      h.container.read(cartProvider.notifier).setQtyAt(0, 1);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+
+      expect(find.text('−₹500'), findsNWidgets(2));
+      expect(find.text('Cover pays it all, by the estimate'), findsOneWidget);
+      await tester.tap(find.text('Pay & Fire ₹500'));
+      await tester.pumpAndSettle();
+
+      final sent = h.payloads('qsr:checkout').single;
+      expect(sent['expected_total'], 500.0);
+      expect(sent['payments'], <Object>[coverLine(500)],
+          reason: 'never ₹800 on a ₹500 bill: the desk refuses a cover it '
+              'cannot place in full');
+    });
+
+    testWidgets(
+        'cover_changed: nothing was charged, the ticket comes off, and a '
+        'fresh scan goes at what it has now', (tester) async {
+      final h = await checkout(tester);
+      await addTicket(tester, 'ET-042');
+      await pickCash(tester);
+      h.answer = (event, data) => event == 'qsr:checkout'
+          ? <String, dynamic>{
+              'kind': 'error',
+              'code': 'cover_changed',
+              'message':
+                  'Cover on ET-042 changed — now ₹300. Scan the ticket again.',
+            }
+          : desk(event, data);
+      await tester.tap(find.text('Pay & Fire ₹1,050'));
+      await tester.pumpAndSettle();
+
+      expect(
+          find.text(
+              "This ticket's cover changed since it was scanned — scan it again"),
+          findsOneWidget);
+      expect(find.text('ET-042 · Couple Pass'), findsNothing,
+          reason: 'off the payment until it is scanned again');
+      expect(h.container.read(pendingCheckoutProvider), isNull,
+          reason: 'a business refusal: nothing to retry');
+      expect(h.path, '/counter/order/checkout');
+      expect(h.cart.single.qty, 2);
+      await drain(tester);
+
+      h.answer = (event, data) => switch (event) {
+            'ticket:lookup' => lookup(balance: 300),
+            _ => desk(event, data),
+          };
+      await addTicket(tester, 'ET-042');
+      expect(find.text('−₹300'), findsNWidgets(2));
+      await tester.tap(find.text('Pay & Fire ₹1,050'));
+      await tester.pumpAndSettle();
+      final calls = h.payloads('qsr:checkout');
+      expect(calls, hasLength(2));
+      expect(calls.last['payments'], <Object>[
+        coverLine(300),
+        <String, dynamic>{'payment_mode': 'cash'},
+      ]);
+      expect(find.text('S-03'), findsOneWidget);
+    });
+
+    testWidgets(
+        'two tickets, one changed: only the one the desk names comes off',
+        (tester) async {
+      const et41Qr = 'CDT:7QKX2MZ4HB6TNW3R';
+      final h = await checkout(tester, lookups: <String, Map<String, dynamic>>{
+        'ET-041': lookup(
+            balance: 400, id: 'et_41a', number: 'ET-041', qr: et41Qr),
+      });
+      await addTicket(tester, 'ET-042');
+      await addTicket(tester, 'ET-041');
+      expect(find.text('−₹250'), findsOneWidget,
+          reason: 'the second pays what the first leaves');
+      h.answer = (event, data) => event == 'qsr:checkout'
+          ? <String, dynamic>{
+              'kind': 'error',
+              'code': 'cover_changed',
+              'message':
+                  'Cover on ET-041 changed — now ₹100. Scan the ticket again.',
+            }
+          : desk(event, data);
+      await tester.tap(find.text('Pay & Fire ₹1,050'));
+      await tester.pumpAndSettle();
+
+      expect(h.payloads('qsr:checkout').single['payments'],
+          <Object>[coverLine(800), coverLine(250, et41Qr)]);
+      expect(
+          find.text(
+              'Cover on ET-041 changed — now ₹100. Scan the ticket again.'),
+          findsOneWidget);
+      expect(find.text('ET-041 · Couple Pass'), findsNothing);
+      expect(find.text('ET-042 · Couple Pass'), findsOneWidget);
+      await drain(tester);
+    });
+
+    testWidgets(
+        'a confirmed new total re-plans the ticket against it, as the screen '
+        'then shows', (tester) async {
+      final h = await checkout(tester);
+      await addTicket(tester, 'ET-042');
+      await pickCash(tester);
+      var first = true;
+      h.answer = (event, data) {
+        if (event == 'qsr:checkout' && first) {
+          first = false;
+          return <String, dynamic>{
+            'kind': 'error',
+            'code': 'price_changed',
+            'message': 'Total is now ₹700',
+            'total': 700,
+          };
+        }
+        return desk(event, data);
+      };
+      await tester.tap(find.text('Pay & Fire ₹1,050'));
+      await tester.pumpAndSettle();
+      expect(find.text('The total changed'), findsOneWidget);
+      await tester.tap(find.text('Charge ₹700'));
+      await tester.pumpAndSettle();
+
+      final calls = h.payloads('qsr:checkout');
+      expect(calls, hasLength(2));
+      expect(calls[0]['payments'], <Object>[
+        coverLine(800),
+        <String, dynamic>{'payment_mode': 'cash'},
+      ]);
+      expect(calls[1]['expected_total'], 700.0);
+      expect(calls[1]['payments'], <Object>[coverLine(700)],
+          reason: 'the ticket now pays it all; nothing is left to tender');
+      expect(
+          calls[1]['client_request_id'], isNot(calls[0]['client_request_id']));
+      expect(find.text('S-03'), findsOneWidget);
     });
   });
 

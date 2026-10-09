@@ -16,7 +16,11 @@
 /// moved aside to `<key>.unreadable` by the next write, never deleted.
 ///
 /// The desk replays an id for [kDeskReplayWindow]; an attempt older than that
-/// can no longer be retried safely and is not offered again.
+/// can no longer be retried safely and is not offered again. It is dropped
+/// from the phone, whoever's it is, on the next write or removal and when an
+/// operator signs in: a ticket sale names its guest. An attempt this app
+/// cannot read back is moved aside to `<key>.unreadable`, never written over
+/// by the next one.
 ///
 /// Logs say what happened, never what an attempt holds or whose it is.
 library;
@@ -147,6 +151,7 @@ class PendingMoneyStore {
             _saidUnreadable = false;
             attempts = <String, Object?>{};
           }
+          attempts = _withoutExpired(attempts);
           attempts[_slot(scope)] = <String, Object?>{
             'saved_at': _now().toUtc().toIso8601String(),
             'attempt': attempt,
@@ -161,21 +166,23 @@ class PendingMoneyStore {
       });
 
   /// Removes [scope]'s attempt if it is still the one with
-  /// [clientRequestId]; a newer attempt is never touched.
+  /// [clientRequestId]; a newer attempt is never touched. Every attempt past
+  /// the replay window goes too.
   Future<void> remove(ParkedScope scope, String clientRequestId) =>
       _synchronized(() async {
         try {
           final prefs = await SharedPreferences.getInstance();
-          final attempts = _decode(prefs);
-          if (attempts == null) return;
+          final stored = _decode(prefs);
+          if (stored == null) return;
+          final attempts = _withoutExpired(stored);
           final slot = _slot(scope);
           final entry = attempts[slot];
           final attempt = entry is Map ? entry['attempt'] : null;
-          if (attempt is! Map ||
-              attempt['client_request_id'] != clientRequestId) {
-            return;
+          if (attempt is Map &&
+              attempt['client_request_id'] == clientRequestId) {
+            attempts.remove(slot);
           }
-          attempts.remove(slot);
+          if (attempts.length == stored.length) return;
           if (!await _save(prefs, attempts)) {
             logE(_tag, 'could not clear an answered attempt from $prefsKey');
           }
@@ -183,6 +190,80 @@ class PendingMoneyStore {
           logE(_tag, 'could not update $prefsKey', error.runtimeType);
         }
       });
+
+  /// Drops every attempt past the replay window, whoever's it is. Run when
+  /// an operator signs in.
+  Future<void> prune() => _synchronized(() async {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final stored = _decode(prefs);
+          if (stored == null) return;
+          final attempts = _withoutExpired(stored);
+          if (attempts.length == stored.length) return;
+          if (!await _save(prefs, attempts)) {
+            logE(_tag, 'could not drop expired attempts from $prefsKey');
+          }
+        } catch (error) {
+          logE(_tag, 'could not update $prefsKey', error.runtimeType);
+        }
+      });
+
+  /// Moves [scope]'s attempt to the first free `<key>.unreadable` slot, if
+  /// it is still [attempt] (this app could not read it back): kept on the
+  /// phone, out of the way, so the next attempt is never saved over it.
+  Future<void> setAside(ParkedScope scope, Map<String, dynamic> attempt) =>
+      _synchronized(() async {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final attempts = _decode(prefs);
+          if (attempts == null) return;
+          final slot = _slot(scope);
+          final entry = attempts[slot];
+          // Gone, or a newer attempt: nothing to move.
+          if (entry is! Map ||
+              jsonEncode(entry['attempt']) != jsonEncode(attempt)) {
+            return;
+          }
+          final aside = jsonEncode(<String, Object?>{
+            'schema': schema,
+            'attempts': <String, Object?>{slot: entry},
+          });
+          if (!await keepValueAside(prefs, prefsKey, aside)) {
+            logE(_tag, 'could not move an unreadable attempt aside');
+            return;
+          }
+          attempts.remove(slot);
+          if (await _save(prefs, attempts)) {
+            logD(_tag,
+                'moved an unreadable attempt aside from $prefsKey (kept on the phone)');
+          } else {
+            logE(_tag, 'could not update $prefsKey');
+          }
+        } catch (error) {
+          logE(_tag, 'could not update $prefsKey', error.runtimeType);
+        }
+      });
+
+  /// [attempts] less those past [kDeskReplayWindow], whoever's they are:
+  /// the desk no longer replays them, so none can be retried, and a ticket
+  /// sale names its guest. One whose age cannot be read is kept.
+  Map<String, Object?> _withoutExpired(Map<String, Object?> attempts) {
+    final now = _now();
+    final kept = <String, Object?>{};
+    attempts.forEach((slot, entry) {
+      final savedAt = entry is Map ? entry['saved_at'] : null;
+      final at = savedAt is String ? DateTime.tryParse(savedAt) : null;
+      if (at == null || now.difference(at) <= kDeskReplayWindow) {
+        kept[slot] = entry;
+      }
+    });
+    final dropped = attempts.length - kept.length;
+    if (dropped > 0) {
+      logD(_tag,
+          'dropped $dropped attempt(s) past the desk\'s replay window from $prefsKey');
+    }
+    return kept;
+  }
 
   Future<bool> _save(SharedPreferences prefs, Map<String, Object?> attempts) =>
       attempts.isEmpty
@@ -225,13 +306,18 @@ class PendingMoneyNotifier<T extends PendingMoney> extends StateNotifier<T?> {
   bool _touched = false;
 
   Future<void> _load(ParkedScope scope) async {
+    // Anyone's attempt past the desk's replay window goes first.
+    await _store.prune();
     final stored = await _store.read(scope);
     if (stored == null || !mounted || _touched) return;
     final T attempt;
     try {
       attempt = _restore(stored.attempt);
     } catch (error) {
-      logE(_tag, 'a kept $_what could not be read back', error.runtimeType);
+      // Not shown, but never lost: the next attempt is not saved over it.
+      logE(_tag, 'a kept $_what could not be read back — moved aside',
+          error.runtimeType);
+      await _store.setAside(scope, stored.attempt);
       return;
     }
     if (attempt.scope != scope) return;

@@ -784,12 +784,14 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
     _ref.read(socketServiceProvider).disconnect();
     // The next pairing may be on another network entirely.
     _wifiBound = false;
-    await _ref.read(wifiBindingProvider).unbind();
-    await SessionService().clearPairing();
     // The slips owed to guests hold their names and admission codes, and
     // belong to the desk being left. (An unanswered sale or Pay & Fire is
-    // kept: its own desk and operator get it back.)
+    // kept: its own desk and operator get it back.) First of the awaits:
+    // the wipe never throws, the steps below may, and the app can be killed
+    // between them.
     await _ref.read(pendingSlipsStoreProvider).wipe();
+    await _ref.read(wifiBindingProvider).unbind();
+    await SessionService().clearPairing();
     state = const BootstrapNoPairing();
   }
 

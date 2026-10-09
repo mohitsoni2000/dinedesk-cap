@@ -182,6 +182,12 @@ class FeatureFlags {
   /// both.
   bool get hasGate => entryTickets && (ticketIssue || ticketCheckin);
 
+  /// Whether this user may show a ticket's QR on screen or print its slip
+  /// again: issue rights. A copy works like the original (whoever scans it
+  /// first gets in, and can spend its cover), so check-in rights alone are
+  /// not enough.
+  bool get canCopyTickets => entryTickets && ticketIssue;
+
   factory FeatureFlags.fromMap(Map<String, dynamic> map) {
     bool flag(String key, [bool fallback = false]) {
       final v = map[key];

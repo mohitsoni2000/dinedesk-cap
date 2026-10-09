@@ -266,6 +266,147 @@ void main() {
     await drain(tester);
   });
 
+  testWidgets(
+      'after a sale the first prints go on no audit trail; a reprint asks '
+      'first, then logs each slip on the desk', (tester) async {
+    final printer = FakeBluetoothPrinter();
+    final h = await pumpGate(tester,
+        prefs: printerPrefs, overrides: printerOverrides(printer));
+    await pickTwoCouplesAndCash(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('issue-go')));
+    await tester.pumpAndSettle();
+    expect(printer.written, hasLength(2));
+    expect(h.payloads('ticket:log_reprint'), isEmpty,
+        reason: "a sale's own slips are not reprints");
+
+    await tester.ensureVisible(find.text('Reprint 2 slips'));
+    await tester.tap(find.text('Reprint 2 slips'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('A second copy is harmless'), findsNothing);
+    expect(
+        find.text('A copy works like the original: whoever scans it first '
+            'gets in, and can spend its cover. The reprint is recorded on '
+            'the desk.'),
+        findsOneWidget);
+    await tester.tap(find.text('Reprint'));
+    await tester.pumpAndSettle();
+
+    expect(printer.written, hasLength(4));
+    final logs = h.payloads('ticket:log_reprint');
+    expect(logs.map((l) => l['ticket_id']), <String>['et_41a', 'et_42b'],
+        reason: 'after the print, one entry per slip');
+    expect(logs[0]['client_request_id'], isNot(logs[1]['client_request_id']));
+    expect(find.text('Printed 2 slips'), findsOneWidget);
+    await drain(tester);
+  });
+
+  testWidgets(
+      'issue rights taken away: no QR on screen and no reprint, even on the '
+      'sale just made', (tester) async {
+    final printer = FakeBluetoothPrinter();
+    final h = await pumpGate(tester,
+        prefs: printerPrefs, overrides: printerOverrides(printer));
+    await pickTwoCouplesAndCash(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('issue-go')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('show-qr-et_41a')),
+        findsOneWidget);
+
+    h.container.read(flagsProvider.notifier).state =
+        FeatureFlags.fromMap(<String, dynamic>{
+      'flag_entry_tickets': 1,
+      'flag_ticket_issue': 0,
+      'flag_ticket_checkin': 1,
+    });
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('show-qr-et_41a')), findsNothing);
+    final reprint = tester.widget<LiquidSecondaryButton>(
+        find.widgetWithText(LiquidSecondaryButton, 'Reprint 2 slips'));
+    expect(reprint.onPressed, isNull);
+    await drain(tester);
+  });
+
+  testWidgets(
+      "today's list shows a ticket's QR to users who can issue, never to "
+      'check-in rights alone', (tester) async {
+    await pumpGate(tester, initial: '/gate/recent');
+    expect(find.byKey(const ValueKey<String>('recent-qr-et_42b')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('recent-qr-et_40d')), findsNothing,
+        reason: 'a cancelled ticket has none');
+
+    final h = await pumpGate(tester,
+        initial: '/gate/recent',
+        flags: FeatureFlags.fromMap(<String, dynamic>{
+          'flag_entry_tickets': 1,
+          'flag_ticket_issue': 0,
+          'flag_ticket_checkin': 1,
+        }));
+    expect(find.text('ET-042'), findsOneWidget, reason: 'the list itself stays');
+    expect(find.byTooltip('Show QR'), findsNothing);
+    expect(h.payloads('ticket:lookup'), isEmpty);
+  });
+
+  testWidgets(
+      "a print from today's list is a reprint: asked first, and logged on "
+      'the desk once it printed', (tester) async {
+    final printer = FakeBluetoothPrinter();
+    final h = await pumpGate(tester,
+        initial: '/gate/recent',
+        prefs: printerPrefs,
+        overrides: printerOverrides(printer));
+    await tester.tap(find.byKey(const ValueKey<String>('recent-qr-et_42b')));
+    await tester.pumpAndSettle();
+    expect(h.payloads('ticket:lookup').single['purpose'], 'peek');
+    expect(find.text('Reprint 1 slip'), findsOneWidget,
+        reason: 'never a plain print: this slip was handed out already');
+
+    await tester.ensureVisible(find.text('Reprint 1 slip'));
+    await tester.tap(find.text('Reprint 1 slip'));
+    await tester.pumpAndSettle();
+    expect(find.text('Print again?'), findsOneWidget);
+    await tester.tap(find.text('Reprint'));
+    await tester.pumpAndSettle();
+
+    expect(printer.written, hasLength(1));
+    final log = h.payloads('ticket:log_reprint').single;
+    expect(log.keys, <String>['ticket_id', 'client_request_id']);
+    expect(log['ticket_id'], 'et_42b');
+    expect(log['client_request_id'], startsWith('req_'));
+    expect(find.text('Printed 1 slip'), findsOneWidget);
+    await drain(tester);
+  });
+
+  testWidgets(
+      'a reprint the desk does not record still printed, and says so in a '
+      'toast', (tester) async {
+    final printer = FakeBluetoothPrinter();
+    final h = await pumpGate(tester,
+        initial: '/gate/recent',
+        prefs: printerPrefs,
+        overrides: printerOverrides(printer));
+    h.answer = (event, data) => event == 'ticket:log_reprint'
+        ? <String, dynamic>{
+            'kind': 'error',
+            'code': 'permission_denied',
+            'message': 'Needs ticket issue rights',
+          }
+        : desk(event, data);
+    await tester.tap(find.byKey(const ValueKey<String>('recent-qr-et_42b')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Reprint 1 slip'));
+    await tester.tap(find.text('Reprint 1 slip'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reprint'));
+    await tester.pumpAndSettle();
+
+    expect(printer.written, hasLength(1));
+    expect(h.payloads('ticket:log_reprint'), hasLength(1));
+    expect(find.text("Printed 1 slip. The desk didn't record the reprint."),
+        findsOneWidget);
+    await drain(tester);
+  });
+
   testWidgets('a slip that did not print waits on the gate home until it does',
       (tester) async {
     final printer = FakeBluetoothPrinter()..writeAnswers.addAll(<bool>[true, false]);

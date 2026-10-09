@@ -152,6 +152,50 @@ void main() {
       expect(await again.read(elsewhere), isNotNull);
     });
 
+    test(
+        "past the replay window, anyone's attempt is dropped by the next "
+        'write: it can never be retried, and a sale names its guest', () async {
+      final old = PendingMoneyStore(PendingMoneyStore.issueKey,
+          now: () => DateTime.now().subtract(const Duration(hours: 49)));
+      await old.write(raviHere, <String, dynamic>{'client_request_id': 'r0'});
+      final store = PendingMoneyStore(PendingMoneyStore.issueKey);
+      expect(await store.read(raviHere), isNotNull, reason: 'a read drops none');
+
+      await store.write(ashaHere, <String, dynamic>{'client_request_id': 'a1'});
+      expect(await store.read(raviHere), isNull);
+      expect((await store.read(ashaHere))?.attempt['client_request_id'], 'a1');
+    });
+
+    test("a removal drops them too, and a slot it can't date is kept",
+        () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'pending_checkout_v1': jsonEncode(<String, Object?>{
+          'schema': 1,
+          'attempts': <String, Object?>{
+            jsonEncode(<String>['', 'op-ravi']): <String, Object?>{
+              'saved_at': DateTime.now()
+                  .subtract(const Duration(hours: 49))
+                  .toUtc()
+                  .toIso8601String(),
+              'attempt': <String, Object?>{'client_request_id': 'r0'},
+            },
+            jsonEncode(<String>['', 'op-old']): <String, Object?>{
+              'attempt': <String, Object?>{'client_request_id': 'x0'},
+            },
+          },
+        }),
+      });
+      final store = PendingMoneyStore(PendingMoneyStore.checkoutKey);
+      await store.write(ashaHere, <String, dynamic>{'client_request_id': 'a1'});
+      await store.remove(ashaHere, 'a1');
+      expect(await store.read(raviHere), isNull);
+      expect(
+          await store.read(
+              const ParkedScope(operatorId: 'op-old', deskInstanceId: '')),
+          isNotNull,
+          reason: 'never drop what cannot be dated');
+    });
+
     test('something unreadable is moved aside, never deleted', () async {
       SharedPreferences.setMockInitialValues(
           <String, Object>{'pending_issue_v1': '{not json'});
@@ -240,6 +284,49 @@ void main() {
           await settled(boot(operator: asha), pendingCheckoutProvider), isNull,
           reason: 'the desk no longer replays it: a retry would charge anew');
       expect(await old.read(ashaHere), isNull);
+    });
+  });
+
+  group('on the phone, kept tidy', () {
+    test("signing in drops anyone's attempt past the replay window",
+        () async {
+      await PendingMoneyStore(PendingMoneyStore.issueKey,
+              now: () => DateTime.now().subtract(const Duration(hours: 49)))
+          .write(raviHere, keptSale().toJson());
+      expect(await settled(boot(operator: asha), pendingTicketIssueProvider),
+          isNull);
+      expect(
+          await PendingMoneyStore(PendingMoneyStore.issueKey).read(raviHere),
+          isNull,
+          reason: "Ravi never came back: his guest's name and phone go");
+    });
+
+    test(
+        'a kept attempt this app cannot read back is moved aside, never '
+        'written over by the next one', () async {
+      final store = PendingMoneyStore(PendingMoneyStore.checkoutKey);
+      // A shape this version cannot read (no fulfillment in its payload).
+      await store.write(ashaHere, <String, dynamic>{
+        'client_request_id': 'req_unreadable',
+        'operator_id': 'op-asha',
+        'desk': '',
+        'payload': <String, dynamic>{'client_request_id': 'req_unreadable'},
+      });
+      final c = boot(operator: asha);
+      expect(await settled(c, pendingCheckoutProvider), isNull,
+          reason: 'it cannot be retried as it was sent, so it is not offered');
+      await pumpEventQueue();
+      final prefs = await SharedPreferences.getInstance();
+      final aside = prefs.getString('pending_checkout_v1.unreadable');
+      expect(aside, contains('req_unreadable'));
+      expect(await store.read(ashaHere), isNull, reason: 'its slot is free');
+
+      final next = keptCheckout();
+      await c.read(pendingCheckoutProvider.notifier).writeAhead(next);
+      expect(prefs.getString('pending_checkout_v1.unreadable'), aside,
+          reason: 'kept on the phone, never written over');
+      expect((await store.read(ashaHere))?.attempt['client_request_id'],
+          next.clientRequestId);
     });
   });
 

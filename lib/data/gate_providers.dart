@@ -3,6 +3,8 @@
 /// result screen).
 library;
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/entry_ticket.dart';
@@ -10,6 +12,7 @@ import '../models/parked_draft.dart';
 import '../models/pay_mode.dart';
 import '../services/entry_ticket_service.dart';
 import '../services/parked_cart_resolver.dart';
+import '../services/slip_printer.dart';
 import 'money.dart';
 
 /// Most tickets one sale may carry (the desk refuses more).
@@ -191,8 +194,10 @@ final ticketIssueResultProvider =
     StateProvider<TicketIssueResult?>((_) => null);
 
 /// Applies a sale the desk confirmed: the result screen's subject, the form
-/// cleared if it is still [sentForm], nothing pending. Works off [container]
-/// so a screen that went away meanwhile cannot drop a sale the desk made.
+/// cleared if it is still [sentForm], nothing pending, and its slips handed
+/// to the slip printer (printed now when auto-print is on). Works off
+/// [container] so a screen that went away meanwhile cannot drop a sale the
+/// desk made.
 void applyTicketSale(
   ProviderContainer container,
   TicketIssueResult result, {
@@ -201,6 +206,11 @@ void applyTicketSale(
   container.read(ticketIssueResultProvider.notifier).state = result;
   clearTicketFormIfUnchanged(container, sentForm);
   container.read(pendingTicketIssueProvider.notifier).state = null;
+  // Slips only for numbers the result screen will show.
+  if (ticketSaleProblem(result) != null) return;
+  unawaited(container.read(slipPrinterProvider).afterSale(<TicketSlip>[
+    for (final ticket in result.tickets) TicketSlip.fromTicket(ticket),
+  ]));
 }
 
 /// Empties the issue form, unless it changed since [was] was sent.

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/home_route.dart';
 import '../data/providers.dart';
 import '../services/biometric_service.dart';
+import '../services/bt_printer_service.dart';
 import '../services/network_keepalive.dart';
 import '../services/offline_kot_coordinator.dart';
 import '../services/trace.dart';
@@ -159,6 +160,22 @@ class SettingsScreen extends ConsumerWidget {
                                 ? 'Always opens on $startLabel'
                                 : 'Automatic · opens on $startLabel',
                             onTap: () => _showStartScreenSheet(context),
+                          ),
+                          Divider(height: 1, color: context.palette.hairline),
+                        ],
+                        // Entry slips at the gate: only for those who sell
+                        // or check tickets.
+                        if (flags.hasGate) ...[
+                          _SettingsRow(
+                            icon: Icons.print_outlined,
+                            title: 'Slip printer',
+                            subtitle: switch (ref.watch(btPrinterSettingsProvider)) {
+                              BtPrinterSettings(printer: final printer?,
+                                      :final paper) =>
+                                '${printer.name} · ${paper.wire} mm',
+                              _ => 'Not set up · Bluetooth, for entry slips',
+                            },
+                            onTap: () => context.push('/printer-settings'),
                           ),
                           Divider(height: 1, color: context.palette.hairline),
                         ],

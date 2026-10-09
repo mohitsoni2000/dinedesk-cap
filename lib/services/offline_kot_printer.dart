@@ -56,6 +56,11 @@ class OfflineKotRequest {
   final String offlineRef;
   final DateTime at;
 
+  /// The order's daily token when it already has one: the slip then carries
+  /// the desk's token banner. A counter order queued before reaching the
+  /// desk has none yet (the desk gives it with the first KOT).
+  final KotTokenView? token;
+
   const OfflineKotRequest({
     required this.lines,
     required this.orderType,
@@ -68,6 +73,7 @@ class OfflineKotRequest {
     required this.operatorName,
     required this.offlineRef,
     required this.at,
+    this.token,
   });
 }
 
@@ -249,6 +255,7 @@ class OfflineKotPrinter {
       timeStr: formatIstSlipTime(req.at),
       isOffline: true,
       items: <KotSlipItem>[for (final l in lines) l.slip],
+      token: req.token,
     ));
   }
 

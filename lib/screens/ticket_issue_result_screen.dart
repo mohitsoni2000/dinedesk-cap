@@ -10,12 +10,14 @@ import '../models/pay_mode.dart';
 import '../motion/feedback_kind.dart';
 import '../motion/feedback_service.dart';
 import '../services/entry_ticket_service.dart';
+import '../services/pending_slips_store.dart';
 import '../services/slip_printer.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/gate/slip_print_button.dart';
 import '../widgets/gate/ticket_qr_sheet.dart';
 import '../widgets/liquid_chrome.dart';
+import '../widgets/slip_queue_sheet.dart';
 
 /// After a sale: its number, what was paid, and one card per ticket with
 /// its QR a tap away. Print goes through the slip-printer seam (disabled
@@ -212,6 +214,34 @@ class _Line extends StatelessWidget {
   }
 }
 
+/// Where this ticket's slip is on this phone's printer: printing, printed,
+/// not printed, or (the app stopped mid-print) may have printed. Nothing
+/// when the phone has no record of it (no printer).
+class _SlipState extends ConsumerWidget {
+  const _SlipState({required this.ticketId});
+
+  final String ticketId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final job = ref.watch(slipJobsProvider
+        .select((jobs) => jobs.where((j) => j.ticketId == ticketId).firstOrNull));
+    if (job == null) return const SizedBox.shrink();
+    final (String label, Color color) = job.isPrintingNow
+        ? ('Printing…', context.palette.ink50)
+        : job.state == SlipJobState.printed
+            ? ('Slip printed', AppColors.success)
+            : (slipJobLabel(job), AppColors.warn);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(label,
+          key: ValueKey<String>('slip-state-$ticketId'),
+          style: AppTypography.caption
+              .copyWith(color: color, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
 class _TicketCard extends StatelessWidget {
   const _TicketCard({required this.ticket});
 
@@ -247,6 +277,7 @@ class _TicketCard extends StatelessWidget {
                   ].join(' · '),
                   style: palette.caption,
                 ),
+                _SlipState(ticketId: ticket.id),
               ],
             ),
           ),

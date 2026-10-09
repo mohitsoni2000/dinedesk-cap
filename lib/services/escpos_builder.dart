@@ -11,24 +11,37 @@
 /// another (every copy re-inits the printer) — anything above ASCII has already
 /// been transliterated or replaced with `?` because printers ship in code page
 /// 437/850 and would print the wrong glyph.
+///
+/// A token order's KOT carries the desk's token banner (`banner`, printed
+/// before the title between two rules): the token at up to four times size,
+/// so the kitchen calls the right guest. Pinned against the desk's own bytes
+/// by the golden in test/escpos_builder_test.dart
+/// (`docs/superpowers/specs/qsr/token-kot-golden.txt` in command.desk).
 library;
 
 import 'dart:convert';
 
-const String _esc = '\x1B';
-const String _gs = '\x1D';
-const String _init = '$_esc@';
-const String _alignLeft = '$_esc' 'a\x00';
-const String _alignCenter = '$_esc' 'a\x01';
-const String _boldOn = '$_esc' 'E\x01';
-const String _boldOff = '$_esc' 'E\x00';
-const String _sizeDouble = '$_gs!\x11';
-const String _sizeNormal = '$_gs!\x00';
-const String _feed3 = '\n\n\n';
+import '../models/token.dart';
+import 'escpos_commands.dart';
 
-/// `GS V 66 0`: feed to the cut position, partial cut.
-const String _cutPartial = '$_gs' 'V\x42\x00';
+const String _feed3 = '\n\n\n';
 const String _rule = '------------------------------\n';
+const String _bannerRule = '==============================\n';
+
+/// One big line of a banner: the desk's `EscposBlockLine`.
+class EscposBlockLine {
+  final String text;
+
+  /// Character multiplier, 1..4.
+  final int scale;
+  final bool bold;
+
+  const EscposBlockLine({
+    required this.text,
+    this.scale = 1,
+    this.bold = false,
+  });
+}
 
 /// The printed sections of one ticket (the desk's `EscposDoc`).
 class EscposDoc {
@@ -37,12 +50,85 @@ class EscposDoc {
   final List<String> itemLines;
   final List<String> footerLines;
 
+  /// Big centred lines before the title (a token KOT). Null for every other
+  /// document, whose bytes stay exactly what they were.
+  final List<EscposBlockLine>? banner;
+
   const EscposDoc({
     required this.title,
     this.subtitleLines = const <String>[],
     this.itemLines = const <String>[],
     this.footerLines = const <String>[],
+    this.banner,
   });
+}
+
+/// How paid a token order was when its KOT went: the desk's `TokenPayment`,
+/// read from the KOT's `payment_tag`.
+enum TokenPayment {
+  prepaid('PRE-PAID'),
+  postpaid('PAY LATER'),
+  partpaid('PART-PAID');
+
+  const TokenPayment(this.tag);
+
+  /// The `payment_tag` word, which is also what the mode line prints.
+  final String tag;
+
+  /// Null for a tag this app does not know, or none (a reprint).
+  static TokenPayment? fromTag(Object? raw) {
+    for (final v in values) {
+      if (v.tag == raw) return v;
+    }
+    return null;
+  }
+}
+
+/// What a KOT says about the order's daily token: the desk's `KotTokenView`.
+class KotTokenView {
+  /// As the order carries it: `42` (unified) or `T-07` (prefixed).
+  final String label;
+
+  /// Null reads as a takeaway, as the token counter treats it.
+  final FulfillmentType? fulfillment;
+
+  /// Null when not known: the mode line is then the bare `[ TAKEAWAY ]`.
+  final TokenPayment? payment;
+
+  const KotTokenView({required this.label, this.fulfillment, this.payment});
+}
+
+/// The line under the token on a KOT, the desk's `tokenModeLine(view,
+/// 'kot')`: `[ TAKEAWAY - PRE-PAID ]`, `[ STANDING - PAY LATER ]`,
+/// `[ TAKEAWAY - PART-PAID ]`, or bare `[ TAKEAWAY ]` when the payment is
+/// not known.
+String tokenModeLine(KotTokenView view) {
+  final word =
+      view.fulfillment == FulfillmentType.standing ? 'STANDING' : 'TAKEAWAY';
+  final payment = view.payment;
+  return payment == null ? '[ $word ]' : '[ $word - ${payment.tag} ]';
+}
+
+/// The numeral's multiplier: as big as the paper allows, smaller as the label
+/// grows (up to 8 characters 4x, 10 3x, 16 2x, else 1x). The desk's
+/// `tokenScale`; the cut-offs are part of the mirror's contract.
+int tokenScale(String display) {
+  final length = display.length;
+  if (length <= 8) return 4;
+  if (length <= 10) return 3;
+  if (length <= 16) return 2;
+  return 1;
+}
+
+/// The three banner lines of a token KOT: caption, the number at full size,
+/// the mode line (the desk's `tokenBanner`).
+List<EscposBlockLine> _tokenBanner(KotTokenView token) {
+  final display = toPrinterSafeText(tokenDisplay(token.label));
+  return <EscposBlockLine>[
+    const EscposBlockLine(text: '*** TOKEN ***'),
+    EscposBlockLine(text: display, scale: tokenScale(display), bold: true),
+    EscposBlockLine(text: toPrinterSafeText(tokenModeLine(token))),
+  ];
 }
 
 /// One item line on the slip (the desk's `KotItemView`, already decoded).
@@ -106,6 +192,10 @@ class KotSlipContext {
   final bool isOffline;
   final List<KotSlipItem> items;
 
+  /// The order's daily token; set, it prints as the token banner above the
+  /// title.
+  final KotTokenView? token;
+
   const KotSlipContext({
     required this.stationLabel,
     required this.kotNumber,
@@ -123,6 +213,7 @@ class KotSlipContext {
     this.isReprint = false,
     this.isOffline = false,
     required this.items,
+    this.token,
   });
 }
 
@@ -230,30 +321,48 @@ EscposDoc buildKotEscpos(KotSlipContext ctx) {
 
   List<String> safe(List<String> lines) =>
       lines.map(toPrinterSafeText).toList(growable: false);
+  final token = ctx.token;
   return EscposDoc(
     title: toPrinterSafeText(ctx.stationLabel),
     subtitleLines: safe(subtitleLines),
     itemLines: safe(<String>[for (final it in ctx.items) ..._itemLines(it)]),
     footerLines: safe(footerLines),
+    banner: token == null ? null : _tokenBanner(token),
   );
 }
 
+/// One banner line at its multiplier (optionally bold), then back to normal
+/// size and weight: the desk's `blockLine`.
+String _blockLine(EscposBlockLine line) =>
+    '${escSizeScale(line.scale)}${line.bold ? escBoldOn : ''}${line.text}\n'
+    '$escSizeNormal$escBoldOff';
+
 /// One copy of [doc] as the desk's `buildDoc` lays it out.
 String _buildDoc(EscposDoc doc) {
-  final out = StringBuffer(_init);
+  final out = StringBuffer(escInit);
+  // Only a document that carries a banner pays for one: every other
+  // document keeps its bytes.
+  final banner = doc.banner;
+  if (banner != null && banner.isNotEmpty) {
+    out
+      ..write(escAlignCenter)
+      ..write(_bannerRule)
+      ..writeAll(banner.map(_blockLine))
+      ..write(_bannerRule);
+  }
   out
-    ..write(_alignCenter)
-    ..write(_sizeDouble)
-    ..write(_boldOn)
+    ..write(escAlignCenter)
+    ..write(escSizeDouble)
+    ..write(escBoldOn)
     ..write('${doc.title}\n')
-    ..write(_sizeNormal)
-    ..write(_boldOff);
+    ..write(escSizeNormal)
+    ..write(escBoldOff);
   for (final line in doc.subtitleLines) {
     out.write('$line\n');
   }
   out
     ..write(_rule)
-    ..write(_alignLeft);
+    ..write(escAlignLeft);
   for (final line in doc.itemLines) {
     out.write('$line\n');
   }
@@ -265,7 +374,7 @@ String _buildDoc(EscposDoc doc) {
   }
   out
     ..write(_feed3)
-    ..write(_cutPartial);
+    ..write(escCutPartial);
   return out.toString();
 }
 

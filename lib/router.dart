@@ -19,6 +19,7 @@ import 'screens/order_builder_screen.dart';
 import 'screens/order_review_screen.dart';
 import 'screens/order_success_screen.dart';
 import 'screens/order_detail_screen.dart';
+import 'screens/printer_settings_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
@@ -283,6 +284,12 @@ final routerProvider = Provider<GoRouter>((ref) {
               key: s.pageKey,
               fromBottom: true,
               child: const ConnectionBanner(child: ChangePinScreen()))),
+      GoRoute(
+          path: '/printer-settings',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              fromBottom: true,
+              child: const PrinterSettingsScreen())),
       GoRoute(
           path: '/disconnected',
           pageBuilder: (_, s) => liquidPage(

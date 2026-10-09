@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:restro/data/money.dart';
 import 'package:restro/data/providers.dart';
 import 'package:restro/models/kot_print_config.dart';
+import 'package:restro/models/token.dart';
 import 'package:restro/services/escpos_builder.dart';
 import 'package:restro/services/kot_queue_service.dart';
 import 'package:restro/services/lan_printer_service.dart';
@@ -366,6 +367,50 @@ void main() {
       expect(doc.subtitleLines, contains('Ground | Table T4'));
       expect(doc.itemLines, ['2 x Paneer Tikka', '    ! less oil']);
       expect(doc.footerLines, ['Steward: Ram']);
+    });
+
+    test('a counter slip says how the order leaves: Takeaway or Standing',
+        () async {
+      final coordinator = container.read(offlineKotCoordinatorProvider);
+      await coordinator.printForQueuedKot(
+        cart: cart,
+        slotId: '',
+        isRoom: false,
+        isTakeaway: true,
+        fulfillment: FulfillmentType.takeaway,
+      );
+      await coordinator.printForQueuedKot(
+        cart: cart,
+        slotId: '',
+        isRoom: false,
+        isTakeaway: true,
+        fulfillment: FulfillmentType.standing,
+      );
+      final takeaway = printer.docs[0].subtitleLines;
+      final standing = printer.docs[1].subtitleLines;
+      expect(takeaway, contains('Takeaway'));
+      expect(standing, contains('Standing'));
+      expect(standing, isNot(contains('Takeaway')),
+          reason: 'a standing order is not a takeaway in the kitchen');
+      expect(printer.docs[1].banner, isNull,
+          reason: 'no token yet: the desk gives it when the KOT reaches it');
+    });
+
+    test('a KOT whose token is known prints the desk\'s token banner',
+        () async {
+      await container.read(offlineKotCoordinatorProvider).printForQueuedKot(
+            cart: cart,
+            slotId: '',
+            isRoom: false,
+            isTakeaway: true,
+            fulfillment: FulfillmentType.standing,
+            token: const KotTokenView(
+                label: '42', fulfillment: FulfillmentType.standing),
+          );
+      final doc = printer.docs.single;
+      expect(<String>[for (final line in doc.banner!) line.text],
+          <String>['*** TOKEN ***', '#42', '[ STANDING ]']);
+      expect(doc.subtitleLines.first, '*** OFFLINE KOT ***');
     });
 
     test('the setting can switch it off (default is on)', () async {

@@ -47,6 +47,10 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Command.Crew connects to your Bluetooth printer to print entry slips.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Command.Crew connects to your Bluetooth printer to print entry slips.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Restro needs camera access to scan QR codes: the one on the admin desktop to pair this device, and guests' entry-ticket QR codes to check them in at the gate.</string>
 	<key>NSLocalNetworkUsageDescription</key>

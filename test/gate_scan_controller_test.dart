@@ -193,8 +193,9 @@ void main() {
           (GateTone.red, 'Already used at 08:15 PM by Asha'),
       'ticket_check_in_expired.json':
           (GateTone.amber, 'Expired – issued 8 Oct'),
-      'ticket_check_in_cancelled.json': (GateTone.amber, 'Cancelled'),
-      'ticket_check_in_not_found.json': (GateTone.amber, 'Not found'),
+      // Spec §2.5: a cancelled or unknown ticket is a deny, like a reused one.
+      'ticket_check_in_cancelled.json': (GateTone.red, 'Cancelled'),
+      'ticket_check_in_not_found.json': (GateTone.red, 'Not found'),
     };
     for (final entry in cases.entries) {
       test(entry.key, () {
@@ -214,18 +215,20 @@ void main() {
       });
     }
 
-    test('the mapping itself: valid green, already used red, the rest amber',
-        () {
+    test(
+        'the mapping itself (spec §2.5): valid green; already used, '
+        'cancelled and not found red; expired amber', () {
       expect(toneForOutcome(CheckInOutcome.valid), GateTone.green);
-      expect(toneForOutcome(CheckInOutcome.alreadyUsed), GateTone.red);
-      for (final other in <CheckInOutcome>[
-        CheckInOutcome.expired,
+      for (final deny in <CheckInOutcome>[
+        CheckInOutcome.alreadyUsed,
         CheckInOutcome.cancelled,
         CheckInOutcome.notFound,
-        CheckInOutcome.unknown,
       ]) {
-        expect(toneForOutcome(other), GateTone.amber, reason: other.name);
+        expect(toneForOutcome(deny), GateTone.red, reason: deny.name);
       }
+      expect(toneForOutcome(CheckInOutcome.expired), GateTone.amber);
+      expect(toneForOutcome(CheckInOutcome.unknown), GateTone.amber,
+          reason: 'a word this app does not know: not admitted, ask the desk');
     });
 
     test('words without the optional parts', () {

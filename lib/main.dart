@@ -10,8 +10,10 @@ import 'motion/app_scroll_behavior.dart';
 import 'motion/motion.dart';
 import 'router.dart';
 import 'services/app_messenger.dart';
+import 'services/bt_printer_service.dart';
 import 'services/network_keepalive.dart';
 import 'services/session_service.dart';
+import 'services/slip_printer.dart';
 import 'services/platform_surfaces.dart';
 import 'services/trace.dart';
 import 'services/update_service.dart';
@@ -27,7 +29,11 @@ void main() {
   _lockOrientationForFormFactor();
   _capImageCache();
 
-  final container = ProviderContainer();
+  // The gate prints its entry slips on the phone's Bluetooth printer (tests
+  // keep the default NoSlipPrinter).
+  final container = ProviderContainer(overrides: [
+    slipPrinterProvider.overrideWith((ref) => ref.watch(btSlipPrinterProvider)),
+  ]);
 
   // Before bootstrap: the supervisor installs the adaptive timeout policy and
   // the RTT hook on SocketService, and the very first connect() should already

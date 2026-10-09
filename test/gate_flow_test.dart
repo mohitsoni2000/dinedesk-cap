@@ -17,11 +17,15 @@ import 'package:restro/screens/gate_screen.dart';
 import 'package:restro/screens/ticket_issue_result_screen.dart';
 import 'package:restro/screens/ticket_issue_screen.dart';
 import 'package:restro/screens/ticket_recent_screen.dart';
+import 'package:restro/services/bt_printer_service.dart';
 import 'package:restro/services/connection_bootstrap.dart';
 import 'package:restro/services/session_service.dart';
+import 'package:restro/services/slip_printer.dart';
 import 'package:restro/services/socket_service.dart';
 import 'package:restro/theme/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/fake_bluetooth_printer.dart';
 
 class _Bootstrap extends ConnectionBootstrap {
   _Bootstrap(super.ref);
@@ -73,16 +77,19 @@ void main() {
     WidgetTester tester, {
     String initial = '/gate/issue',
     FeatureFlags? flags,
+    List<Override> overrides = const <Override>[],
+    Map<String, Object> prefs = const <String, Object>{},
   }) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    SharedPreferences.setMockInitialValues(prefs);
 
     final socket = SocketService()..debugSetState(SocketState.verified);
     addTearDown(socket.dispose);
     final container = ProviderContainer(overrides: [
+      ...overrides,
       socketServiceProvider.overrideWithValue(socket),
       connectionBootstrapProvider.overrideWith((ref) => _Bootstrap(ref)
         ..debugSetPairing(const PairingInfo(
@@ -118,6 +125,9 @@ void main() {
         GoRoute(
             path: '/gate/scan',
             builder: (_, __) => const Scaffold(body: Text('SCANNER'))),
+        GoRoute(
+            path: '/printer-settings',
+            builder: (_, __) => const Scaffold(body: Text('PRINTER SETTINGS'))),
       ],
     );
     addTearDown(router.dispose);
@@ -201,6 +211,85 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('show-qr-et_41a')));
     await tester.pumpAndSettle();
     expect(find.text('ADMITS 2 PAX'), findsOneWidget);
+    await drain(tester);
+  });
+
+  testWidgets('no printer: the chip opens the printer settings',
+      (tester) async {
+    await pumpGate(tester, initial: '/gate');
+    await tester.tap(find.text('No printer'));
+    await tester.pumpAndSettle();
+    expect(find.text('PRINTER SETTINGS'), findsOneWidget);
+  });
+
+  /// A Bluetooth printer is set up on this phone, as main.dart wires it.
+  final printerPrefs = <String, Object>{
+    BtPrinterSettings.prefsKey: jsonEncode(const BtPrinterSettings(
+            printer: BtPrinterInfo(name: 'RPP02N', address: '66:02:BD:06:18:7B'))
+        .toJson()),
+  };
+  List<Override> printerOverrides(FakeBluetoothPrinter printer) => [
+        bluetoothPrinterProvider.overrideWithValue(printer),
+        btPrinterServiceProvider.overrideWith(
+            (ref) => BtPrinterService(printer, interSlipPause: Duration.zero)),
+        slipPrinterProvider
+            .overrideWith((ref) => ref.watch(btSlipPrinterProvider)),
+      ];
+
+  testWidgets(
+      'with a printer set up, a sale\'s slips print by themselves, once each',
+      (tester) async {
+    final printer = FakeBluetoothPrinter();
+    final h = await pumpGate(tester,
+        prefs: printerPrefs, overrides: printerOverrides(printer));
+    await pickTwoCouplesAndCash(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('issue-go')));
+    await tester.pumpAndSettle();
+
+    expect(h.path, '/gate/issue/result');
+    expect(printer.written, hasLength(2), reason: 'one write per slip');
+    expect(latin1.decode(printer.written[0]), contains('ET-041'));
+    expect(latin1.decode(printer.written[1]), contains('ET-042'));
+    expect(find.text('Slip printed'), findsNWidgets(2));
+    expect(find.text('Reprint 2 slips'), findsOneWidget,
+        reason: 'printed already: a second copy only after a warning');
+
+    await tester.ensureVisible(find.text('Reprint 2 slips'));
+    await tester.tap(find.text('Reprint 2 slips'));
+    await tester.pumpAndSettle();
+    expect(find.text('Print again?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(printer.written, hasLength(2), reason: 'nothing reprinted');
+    await drain(tester);
+  });
+
+  testWidgets('a slip that did not print waits on the gate home until it does',
+      (tester) async {
+    final printer = FakeBluetoothPrinter()..writeAnswers.addAll(<bool>[true, false]);
+    final h = await pumpGate(tester,
+        prefs: printerPrefs, overrides: printerOverrides(printer));
+    await pickTwoCouplesAndCash(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('issue-go')));
+    await tester.pumpAndSettle();
+    expect(find.text('Slip printed'), findsOneWidget);
+    expect(find.text("Didn't print"), findsOneWidget);
+    expect(find.text('Print 1 slip'), findsOneWidget,
+        reason: 'only the one that did not print, no warning');
+
+    h.router.go('/gate');
+    await tester.pumpAndSettle();
+    expect(find.text('Printer ready'), findsOneWidget);
+    await tester.tap(find.text('1 slip not printed'));
+    await tester.pumpAndSettle();
+    expect(find.text('ET-042'), findsOneWidget);
+    expect(find.text('ET-041'), findsNothing, reason: 'that one printed');
+
+    await tester.tap(find.byKey(const ValueKey<String>('slip-queue-print')));
+    await tester.pumpAndSettle();
+    expect(printer.written, hasLength(2));
+    expect(latin1.decode(printer.written.last), contains('ET-042'));
+    expect(find.text('Every slip has printed.'), findsOneWidget);
     await drain(tester);
   });
 

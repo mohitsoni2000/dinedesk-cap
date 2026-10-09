@@ -22,9 +22,16 @@ dependencies:
 
   # QR scanning for device pairing and gate check-in
   mobile_scanner: ^7.2.0
-  # Entry-ticket QR drawn on screen (and, later, rastered for slip printers).
-  # Pinned: a slip's QR must stay the same bytes across builds.
+  # Entry-ticket QR drawn on screen and rastered for slip printers that
+  # cannot print a native QR. Pinned: a slip's QR must stay the same bytes
+  # across builds.
   qr: 3.0.2
+
+  # Bluetooth thermal printer for gate slips (Classic SPP on Android, BLE on
+  # iOS), behind the BluetoothPrinter seam in bt_printer_service.dart.
+  # Pinned exactly: a printer driver changes only on purpose, after a
+  # real-printer smoke test.
+  print_bluetooth_thermal: 1.2.5
 
   # Currency formatting (₹), date filters
   intl: ^0.19.0

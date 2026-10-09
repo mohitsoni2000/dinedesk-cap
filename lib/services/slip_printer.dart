@@ -1,8 +1,8 @@
 /// The seam entry-ticket slips are printed through. The gate only ever talks
-/// to a [SlipPrinter]; the Bluetooth printer arrives later (blueprint
-/// decision c) as one more implementation behind [slipPrinterProvider].
-/// Until then [NoSlipPrinter] says there is no printer, and the screens show
-/// the QR on screen instead.
+/// to a [SlipPrinter]; the Bluetooth printer (bt_printer_service.dart,
+/// blueprint decision c) is the implementation main.dart puts behind
+/// [slipPrinterProvider]. [NoSlipPrinter] is the default (and what tests
+/// get): no printer, and the screens show the QR on screen instead.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -53,6 +53,10 @@ abstract class SlipPrinter {
   /// Prints one slip per ticket, in order. Never throws: a slip that did not
   /// print is listed in [SlipPrintResult.failed].
   Future<SlipPrintResult> printSlips(List<TicketSlip> slips);
+
+  /// The desk just confirmed a sale of these tickets: print them now if this
+  /// printer prints after every sale, or keep them for later. Never throws.
+  Future<void> afterSale(List<TicketSlip> slips);
 }
 
 /// No printer on this phone: nothing prints, every slip is reported failed.
@@ -68,6 +72,9 @@ class NoSlipPrinter implements SlipPrinter {
         printed: const <String>[],
         failed: <String>[for (final slip in slips) slip.ticketId],
       );
+
+  @override
+  Future<void> afterSale(List<TicketSlip> slips) async {}
 }
 
 final Provider<SlipPrinter> slipPrinterProvider =

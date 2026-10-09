@@ -3,6 +3,21 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Bluetooth slip printer for gate tickets (print_bluetooth_thermal,
+         see bt_printer_service.dart). The phone only talks to a printer
+         already paired in Android's Bluetooth settings; it never scans for
+         nearby devices, so BLUETOOTH_SCAN is neverForLocation and the
+         location permission is only for Android 11 and older, where the
+         legacy Bluetooth permissions need it. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+
     <!-- Network resilience. See NetworkBinder.kt / NetworkKeepAliveService.kt.
 
          ACCESS_NETWORK_STATE / CHANGE_NETWORK_STATE

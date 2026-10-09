@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/providers.dart';
+import '../models/token.dart';
 import 'escpos_builder.dart';
 import 'lan_printer_service.dart';
 import 'log.dart';
@@ -121,13 +122,18 @@ class OfflineKotCoordinator {
   /// Tries to put [cart] on the kitchen's LAN printers. Never throws.
   ///
   /// [slotId] is the table's / room's server id; [isRoom] and [isTakeaway]
-  /// pick the order type the routing filters on.
+  /// pick the order type the routing filters on. A counter order passes its
+  /// [fulfillment], so a standing order's slip says "Standing", and its
+  /// [token] when the order already has one (it then gets the desk's token
+  /// banner).
   Future<OfflineKotAttempt> printForQueuedKot({
     required List<CartLine> cart,
     required String slotId,
     required bool isRoom,
     bool isTakeaway = false,
     String? orderNotes,
+    FulfillmentType? fulfillment,
+    KotTokenView? token,
   }) async {
     try {
       if (cart.isEmpty) return OfflineKotAttempt.skipped;
@@ -180,11 +186,14 @@ class OfflineKotCoordinator {
           floorId: _ref.read(slotFloorIdsProvider)[slotId],
           floorName: floorName,
           tableName: tableName,
-          slotLabel: isRoom ? 'Room' : (isTakeaway ? 'Takeaway' : 'Table'),
+          slotLabel: isRoom
+              ? 'Room'
+              : (isTakeaway ? (fulfillment?.label ?? 'Takeaway') : 'Table'),
           orderNotes: orderNotes,
           operatorName: operator?.name ?? '',
           offlineRef: ref,
           at: now,
+          token: token,
         ),
       );
       return OfflineKotAttempt(

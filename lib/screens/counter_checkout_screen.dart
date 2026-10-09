@@ -537,8 +537,10 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
 
   /// Runs when the KOT is about to be parked in the outbox: puts it on the
   /// kitchen printer straight away, and hands the outbox what the desk must
-  /// know so it does not print it again.
-  BeforeQueueHook _directPrintHook(List<CartLine> cart, String notes) {
+  /// know so it does not print it again. The slip says Takeaway or
+  /// Standing, as the order leaves.
+  BeforeQueueHook _directPrintHook(
+      List<CartLine> cart, String notes, FulfillmentType fulfillment) {
     final coordinator = ref.read(offlineKotCoordinatorProvider);
     return () async {
       final attempt = await coordinator.printForQueuedKot(
@@ -547,6 +549,7 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
         isRoom: false,
         isTakeaway: true,
         orderNotes: notes,
+        fulfillment: fulfillment,
       );
       _offlinePrint = attempt;
       return attempt.fields;
@@ -592,7 +595,7 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
               },
               orderRequestId: orderRequestId,
               kotRequestId: kotRequestId,
-              beforeQueue: _directPrintHook(cart, notes),
+              beforeQueue: _directPrintHook(cart, notes, fulfillment),
               meta: QueuedCounterOrder.meta(
                   itemCount: itemCount, total: total, fulfillment: fulfillment),
             ),

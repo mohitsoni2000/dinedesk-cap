@@ -14,8 +14,9 @@
 ///   so the desk replays its answer) or dropped on purpose.
 /// - **Offline.** No check-in without the desk: scanning pauses.
 ///
-/// Tones: `valid` green, `already_used` red, everything else amber.
-/// The words are built here; the desk's acks carry none.
+/// Tones (spec §2.5): `valid` green; `already_used`, `cancelled` and
+/// `not_found` red (deny); `expired` amber. The words are built here; the
+/// desk's acks carry none.
 library;
 
 import 'dart:async';
@@ -32,12 +33,16 @@ import '../services/entry_ticket_service.dart';
 /// The colour (and haptic) of a gate answer.
 enum GateTone { green, red, amber }
 
-/// `valid` green, `already_used` red, everything else (expired, cancelled,
-/// not found, a word this app does not know) amber.
+/// Spec §2.5: `valid` green; `already_used`, `cancelled` and `not_found` red
+/// (deny); `expired` amber. A word this app does not know is amber too: not
+/// admitted, ask the desk.
 GateTone toneForOutcome(CheckInOutcome outcome) => switch (outcome) {
       CheckInOutcome.valid => GateTone.green,
-      CheckInOutcome.alreadyUsed => GateTone.red,
-      _ => GateTone.amber,
+      CheckInOutcome.alreadyUsed ||
+      CheckInOutcome.cancelled ||
+      CheckInOutcome.notFound =>
+        GateTone.red,
+      CheckInOutcome.expired || CheckInOutcome.unknown => GateTone.amber,
     };
 
 /// The haptic for [tone].

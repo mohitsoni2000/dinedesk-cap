@@ -34,6 +34,14 @@
 -keep class com.google.android.gms.internal.mlkit_vision_barcode.** { *; }
 -dontwarn com.google.mlkit.**
 
+# print_bluetooth_thermal (gate slip printer). Package verified against the
+# resolved 1.2.5 source: app.web.groons.print_bluetooth_thermal.
+# PrintBluetoothThermalPlugin is registered by name and answers the
+# 'groons.web.app/print' method channel. Printing needs the real-printer
+# smoke test above.
+-keep class app.web.groons.print_bluetooth_thermal.** { *; }
+-dontwarn app.web.groons.print_bluetooth_thermal.**
+
 # flutter_local_notifications.
 -keep class com.dexterous.** { *; }
 

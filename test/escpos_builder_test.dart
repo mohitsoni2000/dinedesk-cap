@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restro/models/token.dart';
 import 'package:restro/services/escpos_builder.dart';
 
 /// The emergency KOT slip must be byte-for-byte what the desk's own printer
@@ -159,6 +160,152 @@ void main() {
         items: <KotSlipItem>[],
       ));
       expect(doc.subtitleLines, contains('Terrace | VIP-3'));
+    });
+  });
+
+  /// The desk's Crew-parity fixture (command.desk
+  /// docs/superpowers/specs/qsr/token-kot-golden.txt, pinned there by
+  /// electron/printer/escpos.spec.ts "is the Crew parity golden").
+  const tokenItems = <KotSlipItem>[
+    KotSlipItem(name: 'Paneer Tikka Roll', quantity: 2),
+  ];
+  const tokenCtx = KotSlipContext(
+    stationLabel: 'Kitchen',
+    kotNumber: 'KOT-0129',
+    orderNumber: 'ORD-0045',
+    tableName: 'Takeaway',
+    dateStr: '09 Oct 2026',
+    timeStr: '8:30:00 pm',
+    items: tokenItems,
+    token: KotTokenView(
+      label: '42',
+      fulfillment: FulfillmentType.takeaway,
+      payment: TokenPayment.prepaid,
+    ),
+  );
+
+  group('token banner (desk parity)', () {
+    test('a token KOT is byte-identical to the desk golden', () {
+      // Verbatim from token-kot-golden.txt (293 bytes).
+      expect(
+        hex(escposBytes(buildKotEscpos(tokenCtx))),
+        '1b401b61013d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d'
+        '3d3d3d0a1d21002a2a2a20544f4b454e202a2a2a0a1d21001b45001d21331b45'
+        '012334320a1d21001b45001d21005b2054414b4541574159202d205052452d50'
+        '414944205d0a1d21001b45003d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d'
+        '3d3d3d3d3d3d3d3d3d3d0a1b61011d21111b45014b69746368656e0a1d21001b'
+        '45004b4f543a204b4f542d303132390a4f726465723a204f52442d303034350a'
+        '5461626c652054616b65617761790a3039204f6374203230323620383a33303a'
+        '303020706d0a2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d'
+        '2d2d2d2d0a1b61003220782050616e6565722054696b6b6120526f6c6c0a0a0a'
+        '0a1d564200',
+      );
+    });
+
+    test('the same KOT without a token is the desk\'s non-token golden', () {
+      final plain = KotSlipContext(
+        stationLabel: tokenCtx.stationLabel,
+        kotNumber: tokenCtx.kotNumber,
+        orderNumber: tokenCtx.orderNumber,
+        tableName: tokenCtx.tableName,
+        dateStr: tokenCtx.dateStr,
+        timeStr: tokenCtx.timeStr,
+        items: tokenItems,
+      );
+      expect(buildKotEscpos(plain).banner, isNull,
+          reason: 'no token, no banner: the bytes stay what they were');
+      // Verbatim from token-kot-golden.txt (156 bytes).
+      expect(
+        hex(escposBytes(buildKotEscpos(plain))),
+        '1b401b61011d21111b45014b69746368656e0a1d21001b45004b4f543a204b4f'
+        '542d303132390a4f726465723a204f52442d303034350a5461626c652054616b'
+        '65617761790a3039204f6374203230323620383a33303a303020706d0a2d2d2d'
+        '2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d0a1b610032'
+        '20782050616e6565722054696b6b6120526f6c6c0a0a0a0a1d564200',
+      );
+    });
+
+    test('caption, the number at its scale in bold, then the mode line', () {
+      final banner = buildKotEscpos(tokenCtx).banner!;
+      expect(<String>[for (final l in banner) l.text],
+          <String>['*** TOKEN ***', '#42', '[ TAKEAWAY - PRE-PAID ]']);
+      expect(<int>[for (final l in banner) l.scale], <int>[1, 4, 1]);
+      expect(<bool>[for (final l in banner) l.bold], <bool>[false, true, false]);
+    });
+
+    test('mode line: fulfillment word, then how it is paid', () {
+      String line(FulfillmentType? f, TokenPayment? p) =>
+          tokenModeLine(KotTokenView(label: '7', fulfillment: f, payment: p));
+      expect(line(FulfillmentType.takeaway, TokenPayment.prepaid),
+          '[ TAKEAWAY - PRE-PAID ]');
+      expect(line(FulfillmentType.takeaway, TokenPayment.postpaid),
+          '[ TAKEAWAY - PAY LATER ]');
+      expect(line(FulfillmentType.takeaway, TokenPayment.partpaid),
+          '[ TAKEAWAY - PART-PAID ]');
+      expect(line(FulfillmentType.standing, TokenPayment.prepaid),
+          '[ STANDING - PRE-PAID ]');
+      expect(line(FulfillmentType.standing, TokenPayment.partpaid),
+          '[ STANDING - PART-PAID ]');
+      expect(line(FulfillmentType.takeaway, null), '[ TAKEAWAY ]',
+          reason: 'payment unknown: the bare word');
+      expect(line(FulfillmentType.standing, null), '[ STANDING ]');
+      expect(line(null, TokenPayment.postpaid), '[ TAKEAWAY - PAY LATER ]',
+          reason: 'a token order with no fulfillment reads as a takeaway');
+    });
+
+    test('payment comes from the KOT\'s payment_tag', () {
+      expect(TokenPayment.fromTag('PRE-PAID'), TokenPayment.prepaid);
+      expect(TokenPayment.fromTag('PAY LATER'), TokenPayment.postpaid);
+      expect(TokenPayment.fromTag('PART-PAID'), TokenPayment.partpaid);
+      expect(TokenPayment.fromTag(null), isNull);
+      expect(TokenPayment.fromTag('PAID'), isNull);
+    });
+
+    test('tokenScale steps down at 8, 10 and 16 characters', () {
+      expect(tokenScale('#42'), 4);
+      expect(tokenScale('12345678'), 4);
+      expect(tokenScale('123456789'), 3);
+      expect(tokenScale('1234567890'), 3);
+      expect(tokenScale('12345678901'), 2);
+      expect(tokenScale('1234567890123456'), 2);
+      expect(tokenScale('12345678901234567'), 1);
+    });
+
+    test('a prefixed label prints as it is; a long one at a smaller size', () {
+      final prefixed = buildKotEscpos(const KotSlipContext(
+        stationLabel: 'Bar',
+        kotNumber: 'k',
+        tableName: 'Takeaway',
+        dateStr: 'd',
+        timeStr: 't',
+        items: <KotSlipItem>[],
+        token:
+            KotTokenView(label: 'T-07', fulfillment: FulfillmentType.standing),
+      ));
+      expect(prefixed.banner![1].text, 'T-07');
+      expect(prefixed.banner![2].text, '[ STANDING ]');
+      final text = latin1.decode(escposBytes(prefixed));
+      expect(text, contains('\x1D!\x33\x1BE\x01T-07\n\x1D!\x00\x1BE\x00'));
+
+      final long = buildKotEscpos(const KotSlipContext(
+        stationLabel: 'Bar',
+        kotNumber: 'k',
+        tableName: 'Takeaway',
+        dateStr: 'd',
+        timeStr: 't',
+        items: <KotSlipItem>[],
+        token: KotTokenView(label: 'TAKEAWAY-123'),
+      ));
+      expect(long.banner![1].scale, 2);
+      expect(latin1.decode(escposBytes(long)),
+          contains('\x1D!\x11\x1BE\x01TAKEAWAY-123\n'));
+    });
+
+    test('the banner sits after ESC @ and before the title, every copy', () {
+      final text = latin1.decode(escposBytes(buildKotEscpos(tokenCtx), copies: 2));
+      expect('\x1B@\x1Ba\x01=============================='.allMatches(text).length,
+          2);
+      expect(text.indexOf('*** TOKEN ***'), lessThan(text.indexOf('Kitchen')));
     });
   });
 

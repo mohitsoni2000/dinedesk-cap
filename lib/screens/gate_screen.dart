@@ -7,13 +7,14 @@ import '../data/parked_providers.dart';
 import '../data/providers.dart';
 import '../models/parked_draft.dart';
 import '../services/offline_guard.dart';
+import '../services/pending_slips_store.dart';
 import '../services/slip_printer.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
-import '../widgets/dynamic_toast.dart';
 import '../widgets/gate/gate_offline_strip.dart';
 import '../widgets/gate/ticket_park_actions.dart';
 import '../widgets/page_content_clamp.dart';
+import '../widgets/slip_queue_sheet.dart';
 
 /// Gate home: sell entry tickets, check guests in, today's tickets, and the
 /// sales parked on this phone. Each tile shows only for the user's rights.
@@ -29,6 +30,7 @@ class GateScreen extends ConsumerWidget {
     final parked = ref.watch(parkedCountProvider(ParkedKind.ticketIssue));
     final pending = ref.watch(pendingTicketIssueProvider);
     final printer = ref.watch(slipPrinterProvider);
+    final unprinted = ref.watch(unprintedSlipsProvider).length;
     // Rebuilt when the link drops or returns; read on every build.
     ref.watch(connectionProvider.select((c) => c.online));
     final offline = isDeskOffline(ref);
@@ -72,6 +74,27 @@ class GateScreen extends ConsumerWidget {
                         child: Text(
                           'The last ticket sale was not confirmed — check it '
                           'before the next sale',
+                          style: AppTypography.bodyMd
+                              .copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Icon(Icons.chevron_right, color: palette.ink50),
+                    ]),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (unprinted > 0) ...[
+                  AppCard(
+                    key: const ValueKey<String>('gate-unprinted'),
+                    onTap: () => SlipQueueSheet.show(context),
+                    child: Row(children: [
+                      const Icon(Icons.receipt_long_outlined,
+                          color: AppColors.warn, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '$unprinted ${unprinted == 1 ? 'slip' : 'slips'} '
+                          'not printed',
                           style: AppTypography.bodyMd
                               .copyWith(fontWeight: FontWeight.w600),
                         ),
@@ -198,8 +221,8 @@ class _GateTile extends StatelessWidget {
   }
 }
 
-/// Whether slips can be printed here. Bluetooth printing is set up in a
-/// later step; until then the QR is shown on screen.
+/// Whether slips can be printed here; a tap opens the printer settings.
+/// Without a printer each ticket's QR is shown on screen instead.
 class _PrinterChip extends StatelessWidget {
   const _PrinterChip({required this.ready});
 
@@ -209,10 +232,7 @@ class _PrinterChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return GestureDetector(
-      onTap: ready
-          ? null
-          : () => DynamicToast.warning(context,
-              'No slip printer yet — show each ticket\'s QR on screen'),
+      onTap: () => context.push('/printer-settings'),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(

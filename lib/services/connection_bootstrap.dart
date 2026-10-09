@@ -11,6 +11,7 @@ import 'discovery_service.dart';
 import 'log.dart';
 import 'offline_order_queue_service.dart';
 import 'offline_session.dart';
+import 'pending_slips_store.dart' show pendingSlipsStoreProvider;
 import 'session_service.dart';
 import 'socket_service.dart';
 import 'trace.dart';
@@ -785,6 +786,10 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
     _wifiBound = false;
     await _ref.read(wifiBindingProvider).unbind();
     await SessionService().clearPairing();
+    // The slips owed to guests hold their names and admission codes, and
+    // belong to the desk being left. (An unanswered sale or Pay & Fire is
+    // kept: its own desk and operator get it back.)
+    await _ref.read(pendingSlipsStoreProvider).wipe();
     state = const BootstrapNoPairing();
   }
 

@@ -318,7 +318,9 @@ class QsrCheckoutService {
     final desk = optionalString(ack, 'message');
     return QsrCheckoutRejected(
       code: code,
-      message: qsrCheckoutErrorCopy(code) ??
+      message: namedTicketRefusal(code, desk,
+              tickets: request.payments.where((p) => p.isCover).length) ??
+          qsrCheckoutErrorCopy(code) ??
           desk ??
           "The desk couldn't take "
               'this order',

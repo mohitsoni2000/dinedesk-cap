@@ -47,6 +47,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   String get orderId => widget.orderId;
 
   List<ServerBill> _bills = [];
+
+  /// What payment sheets recorded on [_bills]: reopened after a part
+  /// payment, the sheet offers only what each bill still owes (the desk
+  /// refuses a settled bill), instead of the stale generated totals.
+  final BillDues _billDues = BillDues();
   String? _billId;
   String? _billNumber;
   Money? _billTotal;
@@ -279,6 +284,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       _generatingBill = false;
       _billGenerated = true;
       _bills = parsedBills;
+      _billDues.clear();
       _billId = bill?['id']?.toString() ?? response['bill_id']?.toString();
       _billNumber = bill?['bill_number']?.toString() ??
           response['bill_number']?.toString();
@@ -355,6 +361,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       context,
       bills: billsToPass,
       hasCustomer: currentOrder != null && _hasLinkedCustomer(currentOrder),
+      dues: _billDues,
     );
     if (paid == true && mounted) {
       setState(() => _paymentCollected = true);

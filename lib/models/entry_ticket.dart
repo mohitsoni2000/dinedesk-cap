@@ -134,14 +134,8 @@ enum TicketStatus {
   const TicketStatus(this.wire);
   final String wire;
 
-  static TicketStatus fromWire(Object? raw) {
-    final key = raw?.toString().trim().toLowerCase();
-    if (key == null || key.isEmpty) return unknown;
-    for (final v in values) {
-      if (v.wire == key) return v;
-    }
-    return unknown;
-  }
+  static TicketStatus fromWire(Object? raw) =>
+      enumFromWire(values, raw, (v) => v.wire) ?? unknown;
 }
 
 /// What a printed slip says, written by the desk (one shared builder for desk
@@ -313,6 +307,23 @@ class TicketPayment {
   }
 }
 
+/// Whether a ticket sale stands.
+enum TicketSaleStatus {
+  active('active'),
+  cancelled('cancelled'),
+
+  /// A word this app does not know yet.
+  unknown('');
+
+  const TicketSaleStatus(this.wire);
+  final String wire;
+
+  /// A sale that says nothing is active, as the desk writes it.
+  static TicketSaleStatus fromWire(Object? raw) => wireWord(raw) == null
+      ? active
+      : enumFromWire(values, raw, (v) => v.wire) ?? unknown;
+}
+
 /// A ticket sale: one invoice for one or more tickets.
 class TicketSale {
   final String id;
@@ -327,8 +338,7 @@ class TicketSale {
   final List<TicketPayment> payments;
   final String? issuedByName;
 
-  /// `active` or `cancelled`.
-  final String status;
+  final TicketSaleStatus status;
 
   /// `desk` or `crew`.
   final String? issuedFrom;
@@ -360,7 +370,7 @@ class TicketSale {
       payments: parseEach(
           mapList(m['payments']), TicketPayment.fromMap, 'TicketPayment'),
       issuedByName: optionalString(m, 'issued_by_name'),
-      status: stringOr(m, 'status', 'active'),
+      status: TicketSaleStatus.fromWire(m['status']),
       issuedFrom: optionalString(m, 'issued_from'),
     );
   }
@@ -483,14 +493,8 @@ enum CheckInOutcome {
   const CheckInOutcome(this.wire);
   final String wire;
 
-  static CheckInOutcome fromWire(Object? raw) {
-    final key = raw?.toString().trim().toLowerCase();
-    if (key == null || key.isEmpty) return unknown;
-    for (final v in values) {
-      if (v.wire == key) return v;
-    }
-    return unknown;
-  }
+  static CheckInOutcome fromWire(Object? raw) =>
+      enumFromWire(values, raw, (v) => v.wire) ?? unknown;
 }
 
 /// The `ticket:check_in` ack.
@@ -535,14 +539,9 @@ enum LookupReason {
   final String wire;
 
   /// Null when there is no reason.
-  static LookupReason? fromWire(Object? raw) {
-    final key = raw?.toString().trim().toLowerCase();
-    if (key == null || key.isEmpty) return null;
-    for (final v in values) {
-      if (v.wire == key) return v;
-    }
-    return other;
-  }
+  static LookupReason? fromWire(Object? raw) => wireWord(raw) == null
+      ? null
+      : enumFromWire(values, raw, (v) => v.wire) ?? other;
 }
 
 /// The `ticket:lookup` ack. An unknown code is a success with no ticket.

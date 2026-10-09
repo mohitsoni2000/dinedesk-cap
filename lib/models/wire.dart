@@ -124,6 +124,29 @@ Money requireMoney(Map<String, dynamic> map, String field, String entity) {
 Money? optionalMoney(Map<String, dynamic> map, String field) =>
     Money.fromWire(map[field]);
 
+/// [raw] as a wire word: trimmed and lower-cased; null when it is missing or
+/// blank.
+String? wireWord(Object? raw) {
+  final word = raw?.toString().trim().toLowerCase();
+  return word == null || word.isEmpty ? null : word;
+}
+
+/// The one of [values] whose [wireOf] is [raw] (read as a [wireWord]); null
+/// when [raw] is missing, blank or none of them. Each enum's `fromWire`
+/// decides what that null means for it.
+T? enumFromWire<T>(
+  Iterable<T> values,
+  Object? raw,
+  String Function(T value) wireOf,
+) {
+  final word = wireWord(raw);
+  if (word == null) return null;
+  for (final value in values) {
+    if (wireOf(value) == word) return value;
+  }
+  return null;
+}
+
 List<Map<String, dynamic>> mapList(Object? raw) {
   if (raw is! List) return const <Map<String, dynamic>>[];
   final out = <Map<String, dynamic>>[];

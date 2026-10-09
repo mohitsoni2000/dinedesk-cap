@@ -12,8 +12,12 @@
 /// desk it was made under and only ever shown to that scope. The rules,
 /// pinned by test/pending_slips_store_test.dart:
 ///
-/// - **Cap:** [maxJobs] in all. Past it the oldest printed jobs go first,
-///   then the oldest of the rest (each is still reprintable from Recent).
+/// - **Cap:** [maxJobs] per operator and desk; one usher's queue never
+///   pushes out another's. Past it the oldest printed jobs go first, then the
+///   oldest of the rest (each is still reprintable from Recent).
+/// - **Unpair:** every slip is wiped ([wipe], from ConnectionBootstrap's
+///   signOut): they hold guests' names and admission codes, and belong to
+///   the desk the phone is leaving.
 /// - **Retention:** printed jobs are pruned [printedRetention] after they
 ///   printed. Unprinted ones stay until they print or are removed.
 /// - **Unreadable entries** are carried through untouched; a whole envelope
@@ -268,7 +272,7 @@ class PendingSlipsStore {
             ));
           }
         }
-        stored.cap(maxJobs);
+        stored.cap(maxJobs, scope);
         final saved = await _save(stored);
         logD(_tag, '${slips.length} ${state.wire} (${stored.entries.length} kept)');
         return saved;
@@ -295,6 +299,23 @@ class PendingSlipsStore {
         move(printed, SlipJobState.printed);
         move(failed, SlipJobState.failed);
         return _save(stored);
+      });
+
+  /// Forgets every slip on the phone, every scope's, readable or not: they
+  /// hold guests' names and admission codes, and belong to the desk the
+  /// phone is leaving. Never throws.
+  Future<void> wipe() => _synchronized(() async {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          if (!prefs.containsKey(prefsKey)) return;
+          if (await prefs.remove(prefsKey)) {
+            logD(_tag, 'wiped the slips (unpaired)');
+          } else {
+            logE(_tag, 'could not wipe the slips');
+          }
+        } catch (error) {
+          logE(_tag, 'could not wipe the slips', error.runtimeType);
+        }
       });
 
   /// Takes [scope]'s jobs for [ticketIds] out (the usher gave up on them).
@@ -393,11 +414,12 @@ class _Stored {
   void replace(int index, SlipJob job) =>
       entries[index] = _Entry(job.toJson(), job);
 
-  /// Drops the oldest printed jobs, then the oldest of the rest, until at
-  /// most [max] are left; equal times go in the order they were saved.
-  /// Unreadable entries are never dropped here.
-  void cap(int max) {
-    var over = entries.length - max;
+  /// Drops [scope]'s oldest printed jobs, then the oldest of the rest, until
+  /// it has at most [max]; equal times go in the order they were saved.
+  /// Other scopes' jobs and unreadable entries are never dropped here.
+  void cap(int max, ParkedScope scope) {
+    bool mine(_Entry e) => e.job != null && e.job!.scope == scope;
+    var over = entries.where(mine).length - max;
     if (over <= 0) return;
     for (final printedOnly in <bool>[true, false]) {
       final order = <_Entry, int>{
@@ -405,8 +427,7 @@ class _Stored {
       };
       final candidates = entries
           .where((e) =>
-              e.job != null &&
-              (!printedOnly || e.job!.state == SlipJobState.printed))
+              mine(e) && (!printedOnly || e.job!.state == SlipJobState.printed))
           .toList()
         ..sort((a, b) {
           final byTime = a.job!.updatedAt.compareTo(b.job!.updatedAt);

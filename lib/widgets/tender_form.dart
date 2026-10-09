@@ -436,22 +436,25 @@ class TenderForm extends StatelessWidget {
               prefix: '₹ ',
             )),
             const SizedBox(width: 8),
+            // Live only once the picked mode has what it needs (a mandatory
+            // reference, a reason): addSplit refuses before that, and a
+            // button that looks ready but does nothing reads as broken.
             GestureDetector(
               key: const ValueKey<String>('tender-add-split'),
-              onTap: selected != null
+              onTap: c.selectedComplete
                   ? () => c.addSplit(remaining: remaining)
                   : null,
               child: Container(
                 width: AppTouchTargets.control,
                 height: AppTouchTargets.control,
                 decoration: BoxDecoration(
-                  color: selected != null
+                  color: c.selectedComplete
                       ? AppColors.terra500
                       : context.palette.ink05,
                   borderRadius: const BorderRadius.all(AppRadii.sm),
                 ),
                 child: Icon(Icons.add,
-                    color: selected != null
+                    color: c.selectedComplete
                         ? Colors.white
                         : context.palette.ink30),
               ),

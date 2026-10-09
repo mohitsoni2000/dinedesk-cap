@@ -11,9 +11,10 @@
 /// - **Retention:** drafts older than [maxAge] are pruned, from every scope.
 /// - **Never delete what we cannot read.** An entry that is corrupt, or of a
 ///   kind this app does not know, is skipped and logged but written back as it
-///   was. A whole envelope from another schema (or not JSON at all) is left
-///   alone: nothing is shown, and nothing can be parked until it is gone,
-///   because a write would replace it.
+///   was. A whole envelope from another schema (or not JSON at all) shows
+///   nothing and is left as it is by reads, resumes and discards; the next
+///   park moves it aside to `parked_drafts_v1.unreadable` (kept on the phone)
+///   and starts a fresh envelope, so it can never block parking for good.
 /// - **Labels:** the Nth draft of a kind an operator parks on an IST day is
 ///   "P<N>"; the count starts again each IST day.
 ///
@@ -32,6 +33,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/ist_time.dart';
 import '../models/parked_draft.dart';
 import 'log.dart';
+import 'prefs_aside.dart';
 
 const String _tag = '[Parked]';
 
@@ -68,12 +70,12 @@ class ParkedDraftsStore {
   static const int maxPerKind = 20;
   static const Duration maxAge = Duration(days: 7);
 
-  static const String _unreadableMessage =
-      'The drafts parked on this phone were saved by another version of the '
-      'app, so nothing new can be parked until it is updated.';
-
   final DateTime Function() _now;
   final Random _random = Random();
+
+  /// The last thing said about what could not be read: said again only when
+  /// it changes, not on every read.
+  String? _lastNote;
 
   /// One lock for the one key, whatever the instance: two stores each with
   /// their own lock would bring back the lost update it exists to prevent.
@@ -104,16 +106,26 @@ class ParkedDraftsStore {
   /// Parks [payload] for [scope] and returns the draft, with its label.
   ///
   /// Throws [ParkedCapReached] at the cap, and [ParkedDraftsException] when
-  /// there is nothing to park, the stored drafts are from another version, or
-  /// the write failed. In every case nothing was parked.
+  /// there is nothing to park or the phone could not save it. In every case
+  /// nothing was parked.
   Future<ParkedDraft> park(ParkedScope scope, ParkedPayload payload) =>
       _synchronized(() async {
         if (payload.isEmpty) {
           throw const ParkedDraftsException('There is nothing to park.');
         }
-        final stored = await _load();
+        var stored = await _load();
         if (!stored.readable) {
-          throw const ParkedDraftsException(_unreadableMessage);
+          // Kept, out of the way: what this app cannot read must not block
+          // parking for good, and is never deleted.
+          if (!await keepAside(stored.prefs, prefsKey)) {
+            throw ParkedDraftsException(
+                "Couldn't save the parked ${payload.kind.noun} on this phone. "
+                'Try again.');
+          }
+          logD(
+              _tag, 'moved unreadable parked drafts aside (kept on the phone)');
+          _lastNote = null;
+          stored = _Stored(stored.prefs, <_Entry>[]);
         }
         final now = _now();
         final mine = stored.drafts
@@ -211,9 +223,12 @@ class ParkedDraftsStore {
   Future<_Stored> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final Object? text = prefs.get(prefsKey);
-    if (text == null) return _Stored(prefs, <_Entry>[]);
+    if (text == null) {
+      _note(null);
+      return _Stored(prefs, <_Entry>[]);
+    }
     if (text is! String) {
-      logD(_tag, 'the stored parked drafts are not text — left untouched');
+      _note('the stored parked drafts are not text — left untouched');
       return _Stored.unreadable(prefs);
     }
 
@@ -221,20 +236,18 @@ class ParkedDraftsStore {
     try {
       decoded = jsonDecode(text);
     } on FormatException {
-      logD(_tag, 'the stored parked drafts are not JSON — left untouched');
+      _note('the stored parked drafts are not JSON — left untouched');
       return _Stored.unreadable(prefs);
     }
     if (decoded is! Map || decoded['schema'] != schema) {
       final found = decoded is Map ? decoded['schema'] : null;
-      logD(
-          _tag,
-          'parked drafts use schema ${found is int ? found : 'unknown'}, '
+      _note('parked drafts use schema ${found is int ? found : 'unknown'}, '
           'this app reads schema $schema — left untouched');
       return _Stored.unreadable(prefs);
     }
     final rawEntries = decoded['drafts'];
     if (rawEntries is! List) {
-      logD(_tag, 'the stored parked drafts have no list — left untouched');
+      _note('the stored parked drafts have no list — left untouched');
       return _Stored.unreadable(prefs);
     }
 
@@ -272,14 +285,20 @@ class ParkedDraftsStore {
         entries.add(_Entry(raw));
       }
     }
-    if (unknown + unreadable > 0) {
-      logD(
-          _tag,
-          'skipped $unknown of an unknown kind and $unreadable unreadable '
-          '(left on disk)');
-    }
+    _note(unknown + unreadable > 0
+        ? 'skipped $unknown of an unknown kind and $unreadable unreadable '
+            '(left on disk)'
+        : null);
     if (expired > 0) logD(_tag, 'pruned $expired expired');
     return _Stored(prefs, entries)..expired = expired;
+  }
+
+  /// Logs [note] about what could not be read, once: not again until it
+  /// changes (null: everything was read).
+  void _note(String? note) {
+    if (note == _lastNote) return;
+    _lastNote = note;
+    if (note != null) logD(_tag, note);
   }
 
   /// Writes [stored] back: every entry it carries, readable or not, in order.

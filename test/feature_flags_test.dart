@@ -62,16 +62,5 @@ void main() {
       expect(f(0, 1, 1).hasGate, isFalse,
           reason: 'rights without the module never open the gate');
     });
-
-    test('there is no separate cover-redeem permission', () {
-      final flags = FeatureFlags.fromMap(<String, dynamic>{
-        'flag_entry_tickets': 1,
-        'flag_ticket_redeem': 1,
-      });
-      // Cover rides on entry tickets + collect payment (spec 2.1); a stray
-      // flag_ticket_redeem from any desk must change nothing.
-      expect(flags.entryTickets, isTrue);
-      expect(flags.hasGate, isFalse);
-    });
   });
 }

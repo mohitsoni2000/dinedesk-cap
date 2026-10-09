@@ -1,7 +1,8 @@
 import 'wire.dart';
 
 /// How the desk runs: a classic table restaurant, or a quick-service counter
-/// (tokens, Counter as the home screen, Tables closed on the phone).
+/// (tokens, Counter as the home screen; Tables stay one tab away, as QSR
+/// mode is hybrid).
 enum OperatingMode {
   restaurant('restaurant'),
   qsr('qsr');
@@ -40,7 +41,7 @@ enum TokenStrategy {
 ///
 /// Parsing never throws: an unknown value falls back to the desk's own
 /// default, and only an explicit `operating_mode: 'qsr'` turns QSR on, so a
-/// strange reply can never close the Tables screen on a restaurant.
+/// strange reply can never turn a restaurant's phones into counters.
 class QsrConfig {
   final OperatingMode operatingMode;
   final QsrPaymentFlow paymentFlow;
@@ -78,30 +79,20 @@ class QsrConfig {
     if (raw is! Map) return null;
     final m = Map<String, dynamic>.from(raw);
     return QsrConfig(
-      operatingMode: _pick(OperatingMode.values, (v) => v.wire,
-          m['operating_mode'], OperatingMode.restaurant),
-      paymentFlow: _pick(QsrPaymentFlow.values, (v) => v.wire,
-          m['qsr_payment_flow'], QsrPaymentFlow.hybrid),
-      tokenStrategy: _pick(TokenStrategy.values, (v) => v.wire,
-          m['token_strategy'], TokenStrategy.unified),
+      operatingMode: enumFromWire(
+              OperatingMode.values, m['operating_mode'], (v) => v.wire) ??
+          OperatingMode.restaurant,
+      paymentFlow: enumFromWire(
+              QsrPaymentFlow.values, m['qsr_payment_flow'], (v) => v.wire) ??
+          QsrPaymentFlow.hybrid,
+      tokenStrategy: enumFromWire(
+              TokenStrategy.values, m['token_strategy'], (v) => v.wire) ??
+          TokenStrategy.unified,
       tokenPrefixTakeaway: _prefix(m, 'token_prefix_takeaway', 'T'),
       tokenPrefixStanding: _prefix(m, 'token_prefix_standing', 'S'),
       tokenReadyClearMinutes:
           intOr(m, 'token_ready_clear_minutes', 10).clamp(1, 120),
     );
-  }
-
-  static T _pick<T>(
-    List<T> values,
-    String Function(T) wireOf,
-    Object? raw,
-    T fallback,
-  ) {
-    final key = raw?.toString().trim().toLowerCase();
-    for (final v in values) {
-      if (wireOf(v) == key) return v;
-    }
-    return fallback;
   }
 
   static String _prefix(

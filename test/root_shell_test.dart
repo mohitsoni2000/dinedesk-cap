@@ -346,6 +346,16 @@ void main() {
       expect(find.byType(TablesScreen, skipOffstage: false), findsNothing);
     });
 
+    testWidgets('in QSR mode Tables stay open: going there stays there',
+        (tester) async {
+      await pumpApp(tester, qsrConfig: qsr, flags: const FeatureFlags());
+      expect(path(), '/counter');
+      router.go('/tables');
+      await tester.pumpAndSettle();
+      expect(path(), '/tables', reason: 'QSR mode is hybrid');
+      expect(find.byType(TablesScreen), findsOneWidget);
+    });
+
     testWidgets('losing gate rights while on the Gate goes home',
         (tester) async {
       await pumpApp(tester, qsrConfig: qsr, flags: gateAndTill);
@@ -370,6 +380,22 @@ void main() {
       await tester.pumpAndSettle();
       expect(path(), '/gate');
     });
+  });
+
+  test('every branch has its own tab; one without a tab gets none', () {
+    for (final (branch, label) in <(int, String)>[
+      (ShellBranch.tables, 'TABLES'),
+      (ShellBranch.rooms, 'ROOMS'),
+      (ShellBranch.history, 'HISTORY'),
+      (ShellBranch.profile, 'PROFILE'),
+      (ShellBranch.settings, 'SETTINGS'),
+      (ShellBranch.gate, 'GATE'),
+      (ShellBranch.counter, 'COUNTER'),
+    ]) {
+      expect(navItemForBranch(branch)?.label, label);
+    }
+    expect(navItemForBranch(ShellBranch.paths.length), isNull,
+        reason: 'never posing as Settings');
   });
 
   group('nav badge', () {

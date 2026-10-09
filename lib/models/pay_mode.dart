@@ -14,13 +14,8 @@ enum PayModeReference {
   const PayModeReference(this.wire);
   final String wire;
 
-  static PayModeReference fromWire(Object? raw) {
-    final key = raw?.toString().trim().toLowerCase();
-    for (final v in values) {
-      if (v.wire == key) return v;
-    }
-    return off;
-  }
+  static PayModeReference fromWire(Object? raw) =>
+      enumFromWire(values, raw, (v) => v.wire) ?? off;
 }
 
 /// A way to pay, as the desk lists it in `payment_modes` (the sync key and

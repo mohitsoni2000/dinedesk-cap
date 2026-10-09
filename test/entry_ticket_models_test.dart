@@ -177,6 +177,12 @@ void main() {
     });
   });
 
+  test('a sale\'s status: none is active, a new word is unknown', () {
+    expect(TicketSaleStatus.fromWire(null), TicketSaleStatus.active);
+    expect(TicketSaleStatus.fromWire(' Cancelled'), TicketSaleStatus.cancelled);
+    expect(TicketSaleStatus.fromWire('refunded'), TicketSaleStatus.unknown);
+  });
+
   group('ticket:issue ack', () {
     final ack = TicketIssueResult.fromAck(fixture('ticket_issue_ack.json'));
 
@@ -189,7 +195,7 @@ void main() {
       expect(sale.guestName, 'Ravi Sharma');
       expect(sale.guestPhoneLast4, '3210');
       expect(sale.issuedByName, 'Asha');
-      expect(sale.status, 'active');
+      expect(sale.status, TicketSaleStatus.active);
       expect(sale.issuedFrom, 'crew');
       final t = sale.totals;
       expect(t.total, const Money.rupees(4000));

@@ -931,6 +931,98 @@ void main() {
   });
 
   testWidgets(
+      'order detail: after a part payment, Collect again offers only what is '
+      'still owed', (tester) async {
+    final h = await pumpCounter(tester, initial: '/counter');
+    h.container.read(historyProvider.notifier).state = <HistoryOrder>[
+      const HistoryOrder(
+        id: 'KOT-0129',
+        orderId: 'ord_9c21',
+        tableId: 'Token T-07',
+        time: '14:58',
+        date: '2026-10-09',
+        itemCount: 2,
+        total: Money.rupees(1000),
+        status: OrderStatus.sent,
+        lines: <HistoryOrderLine>[],
+        tokenLabel: 'T-07',
+        tokenStatus: TokenStatus.ready,
+        fulfillmentType: FulfillmentType.takeaway,
+      ),
+    ];
+    Map<String, dynamic> bill(String id, String type, int total) =>
+        <String, dynamic>{
+          'id': id,
+          'bill_number': 'INV/$id',
+          'bill_type': type,
+          'total_amount': total,
+          'payment_status': 'unpaid',
+          'status': 'active',
+        };
+    var liquorTries = 0;
+    h.answer = (event, data) => switch (event) {
+          'bill:generate' => <String, dynamic>{
+              'kind': 'success',
+              'bills': <Object>[
+                bill('food', 'food', 600),
+                bill('liquor', 'liquor', 400),
+              ],
+            },
+          'bill:payment' => data['bill_id'] == 'liquor' && liquorTries++ == 0
+              ? <String, dynamic>{'kind': 'error', 'message': 'Not now'}
+              : <String, dynamic>{'kind': 'success'},
+          _ => desk(event, data),
+        };
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: h.container,
+      child: MaterialApp(
+        theme: AppTheme.light(),
+        home: const OrderDetailScreen(orderId: 'KOT-0129'),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Collect payment'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cash'));
+    await tester.pump();
+    final pay = find.widgetWithText(LiquidPrimaryButton, 'Pay');
+    await tester.ensureVisible(pay);
+    await tester.pumpAndSettle();
+    await tester.tap(pay);
+    await tester.pumpAndSettle();
+    await drain(tester);
+    final close = find.widgetWithText(LiquidSecondaryButton, 'Close');
+    await tester.ensureVisible(close);
+    await tester.pumpAndSettle();
+    await tester.tap(close);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Close'));
+    await tester.pumpAndSettle();
+    expect(find.text('Collect Payment'), findsNothing, reason: 'closed');
+
+    await tester.tap(find.text('Collect payment'));
+    await tester.pumpAndSettle();
+    expect(h.payloads('bill:generate'), hasLength(1));
+    expect(find.text('₹400 due'), findsOneWidget,
+        reason: 'not the stale ₹1,000 the bills were generated at');
+    expect(find.text('Paid'), findsOneWidget);
+    await tester.tap(find.text('Cash'));
+    await tester.pump();
+    await tester.ensureVisible(pay);
+    await tester.pumpAndSettle();
+    await tester.tap(pay);
+    await tester.pumpAndSettle();
+    final payments = h.payloads('bill:payment');
+    expect(
+        payments.map((p) => p['bill_id']), <String>['food', 'liquor', 'liquor'],
+        reason: 'the settled food bill is never offered again');
+    expect(payments.last['payments'], <Map<String, dynamic>>[
+      <String, dynamic>{'payment_mode': 'cash', 'amount': 400.0},
+    ]);
+    await drain(tester);
+  });
+
+  testWidgets(
       'order detail: one tap Collect bills a counter order, then opens the '
       'payment sheet; the token shows', (tester) async {
     final h = await pumpCounter(tester, initial: '/counter');

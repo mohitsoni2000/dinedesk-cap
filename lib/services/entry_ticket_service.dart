@@ -639,6 +639,20 @@ String? coverErrorCopy(String? code) => switch (code) {
       _ => null,
     };
 
+/// With two or more cover tickets on one payment, the one refused must be
+/// named. This app's copy for a cover or ticket code cannot say which
+/// ("This ticket's cover is used up"); the desk's own words do ("No cover
+/// left on ET-042"), so they are shown instead. Null when [tickets] is under
+/// two, the code is not a cover or ticket one, or the desk said nothing: use
+/// the usual copy then.
+String? namedTicketRefusal(String? code, String? deskMessage,
+    {required int tickets}) {
+  if (tickets < 2 || code == null) return null;
+  if (!code.startsWith('cover_') && !code.startsWith('ticket_')) return null;
+  final words = deskMessage?.trim();
+  return words == null || words.isEmpty ? null : words;
+}
+
 /// Why a looked-up ticket cannot pay a bill, in staff words. A reason this
 /// app does not know shows the desk's [deskMessage].
 String lookupRefusalCopy(LookupReason? reason, {String? deskMessage}) =>

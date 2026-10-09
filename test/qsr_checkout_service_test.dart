@@ -198,6 +198,27 @@ void main() {
       }
     });
 
+    test('two cover tickets, one refused: the desk\'s words name it', () async {
+      answer = (_, __) => <String, dynamic>{
+            'kind': 'error',
+            'code': 'cover_empty',
+            'message': 'No cover left on ET-041',
+          };
+      final r = await service.payAndFire(QsrCheckoutRequest(
+        fulfillment: FulfillmentType.takeaway,
+        items: <Map<String, dynamic>>[
+          <String, dynamic>{'item_id': 'itm_roll', 'quantity': 2},
+        ],
+        payments: const <TenderLine>[
+          TenderLine(mode: 'cover_ticket', ticketCode: 'CDT:P3VJ5LDY2GQA7FEC'),
+          TenderLine(mode: 'cover_ticket', ticketCode: 'CDT:7QKX2MZ4HB6TNW3R'),
+        ],
+        expectedTotal: const Money.rupees(1050),
+      )) as QsrCheckoutRejected;
+      expect(r.message, 'No cover left on ET-041');
+      expect(r.isBusinessRefusal, isTrue);
+    });
+
     test('a code this app does not word shows the desk\'s message', () async {
       final r = await refusedWith(<String, dynamic>{
         'kind': 'error',

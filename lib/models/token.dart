@@ -28,13 +28,8 @@ enum FulfillmentType {
   final String label;
 
   /// Null for anything else (a dine-in or room order has no fulfillment).
-  static FulfillmentType? fromWire(Object? raw) {
-    final key = raw?.toString().trim().toLowerCase();
-    for (final v in values) {
-      if (v.wire == key) return v;
-    }
-    return null;
-  }
+  static FulfillmentType? fromWire(Object? raw) =>
+      enumFromWire(values, raw, (v) => v.wire);
 }
 
 /// Where a token is in its day: cooking, waiting on the pass, handed over.
@@ -49,14 +44,8 @@ enum TokenStatus {
   const TokenStatus(this.wire);
   final String wire;
 
-  static TokenStatus fromWire(Object? raw) {
-    final key = raw?.toString().trim().toLowerCase();
-    if (key == null || key.isEmpty) return unknown;
-    for (final v in values) {
-      if (v.wire == key) return v;
-    }
-    return unknown;
-  }
+  static TokenStatus fromWire(Object? raw) =>
+      enumFromWire(values, raw, (v) => v.wire) ?? unknown;
 }
 
 /// A table-less order's daily token, as the desk allocated it (at the first

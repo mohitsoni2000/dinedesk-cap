@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/feature_flags.dart';
 import '../models/qsr_config.dart';
+import '../services/log.dart';
 import 'providers.dart';
 
 /// The screens the app can treat as "home": where it lands after the PIN,
@@ -158,7 +159,11 @@ class StartScreenNotifier extends StateNotifier<StartScreen> {
       final prefs = await SharedPreferences.getInstance();
       final saved = StartScreen.fromName(prefs.getString(prefsKey));
       if (saved != null && mounted && !_chosen) state = saved;
-    } catch (_) {}
+    } catch (error) {
+      // Opens on the automatic choice; worth knowing when a pin "forgets".
+      logE('[StartScreen]', 'could not read the start screen',
+          error.runtimeType);
+    }
   }
 
   /// Saves [value]; [StartScreen.auto] clears the pin. It takes effect at
@@ -173,7 +178,11 @@ class StartScreenNotifier extends StateNotifier<StartScreen> {
       } else {
         await prefs.setString(prefsKey, value.name);
       }
-    } catch (_) {}
+    } catch (error) {
+      // Holds for this run; the next start opens on the old choice.
+      logE('[StartScreen]', 'could not save the start screen',
+          error.runtimeType);
+    }
   }
 }
 

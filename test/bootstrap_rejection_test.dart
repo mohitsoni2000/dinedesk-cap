@@ -3,8 +3,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restro/data/gate_providers.dart';
 import 'package:restro/data/providers.dart';
+import 'package:restro/models/parked_draft.dart';
 import 'package:restro/services/connection_bootstrap.dart';
+import 'package:restro/services/pending_money_store.dart';
+import 'package:restro/services/pending_slips_store.dart';
 import 'package:restro/services/session_service.dart';
+import 'package:restro/services/slip_printer.dart';
 import 'package:restro/services/socket_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -115,6 +119,32 @@ void main() {
       expect(form.hasTickets, isFalse);
       expect(form.guestName, isEmpty);
       expect(form.guestPhone, isEmpty);
+    });
+
+    test(
+        'signOut wipes the slips owed to guests (names, admission codes); '
+        'an unanswered sale stays for its own desk', () async {
+      FlutterSecureStorage.setMockInitialValues(<String, String>{});
+      const scope = ParkedScope(operatorId: 'op-asha', deskInstanceId: 'd1');
+      await container.read(pendingSlipsStoreProvider).put(
+          scope,
+          const <TicketSlip>[
+            TicketSlip(ticketId: 't1', ticketNumber: 'ET-041', qrData: 'CDT:X'),
+          ],
+          SlipJobState.failed);
+      await PendingMoneyStore(PendingMoneyStore.issueKey)
+          .write(scope, <String, dynamic>{'client_request_id': 'req_1'});
+      bootstrap().debugSetPairing(pairing);
+
+      await bootstrap().signOut();
+
+      expect(
+          await container.read(pendingSlipsStoreProvider).list(scope), isEmpty);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.containsKey(PendingSlipsStore.prefsKey), isFalse);
+      expect(await PendingMoneyStore(PendingMoneyStore.issueKey).read(scope),
+          isNotNull,
+          reason: 'its desk and operator get it back to retry');
     });
   });
 }

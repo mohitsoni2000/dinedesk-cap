@@ -65,7 +65,9 @@ List<int> shellTabsFor({
 
 /// The tab for [branch]. [counterParked] and [gateParked] are the parked carts
 /// and parked ticket sales the signed-in operator has, pinned on those tabs.
-LiquidNavItem _navItemFor(
+/// Null for a branch the bar has no tab for (one appended to the router
+/// before it got one): it gets no tab rather than posing as another.
+LiquidNavItem? navItemForBranch(
   int branch, {
   int counterParked = 0,
   int gateParked = 0,
@@ -87,8 +89,9 @@ LiquidNavItem _navItemFor(
         const LiquidNavItem(icon: Icons.receipt_long, label: 'HISTORY'),
       ShellBranch.profile =>
         const LiquidNavItem(icon: Icons.person_outline, label: 'PROFILE'),
-      _ =>
+      ShellBranch.settings =>
         const LiquidNavItem(icon: Icons.settings_outlined, label: 'SETTINGS'),
+      _ => null,
     };
 
 class RootShell extends ConsumerWidget {
@@ -112,11 +115,10 @@ class RootShell extends ConsumerWidget {
         rooms: roomsEnabled,
         gate: gateEnabled,
       ))
-        (
-          branch,
-          _navItemFor(branch,
-              counterParked: counterParked, gateParked: gateParked)
-        ),
+        if (navItemForBranch(branch,
+                counterParked: counterParked, gateParked: gateParked)
+            case final item?)
+          (branch, item),
     ];
 
     // The open tab went away (rooms switched off, QSR mode turned off, gate

@@ -35,6 +35,24 @@ Map<String, dynamic> _item({
     };
 
 void main() {
+  group('wire words and enums', () {
+    test('a word is trimmed and lower-cased; blank is none', () {
+      expect(wireWord('  Ready '), 'ready');
+      expect(wireWord(42), '42');
+      expect(wireWord('   '), isNull);
+      expect(wireWord(null), isNull);
+    });
+
+    test('an enum is found by its wire word, else null for the caller', () {
+      const values = <String>['takeaway', 'standing'];
+      String wire(String v) => v;
+      expect(enumFromWire(values, ' STANDING', wire), 'standing');
+      expect(enumFromWire(values, 'dine_in', wire), isNull);
+      expect(enumFromWire(values, '', wire), isNull);
+      expect(enumFromWire(values, null, wire), isNull);
+    });
+  });
+
   group('AUDIT #2 — order total has exactly one definition', () {
     test('a genuinely zero total is preserved, not recomputed', () {
       final order = ServerOrder.fromMap(<String, dynamic>{

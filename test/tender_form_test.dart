@@ -201,10 +201,16 @@ void main() {
       await tester.tap(find.text('PhonePe QR'));
       await tester.pump();
       await tester.enterText(fieldWithHint('₹500'), '100');
+      GestureDetector addButton() => tester.widget<GestureDetector>(
+          find.byKey(const ValueKey<String>('tender-add-split')));
+      expect(addButton().onTap, isNull,
+          reason: 'off until the reference is typed, not live and silent');
       await tester.tap(find.byIcon(Icons.add));
       await tester.pump();
       expect(c.splits, isEmpty);
       await tester.enterText(fieldWithHint('Reference number'), 'PP-1');
+      await tester.pump();
+      expect(addButton().onTap, isNotNull);
       await tester.tap(find.byIcon(Icons.add));
       await tester.pump();
       expect(c.splits.single.line.reference, 'PP-1');

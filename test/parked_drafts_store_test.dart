@@ -171,32 +171,48 @@ void main() {
       ('not JSON', 'definitely not json'),
       ('not an object', '[1, 2, 3]'),
     ]) {
-      test('an envelope with $name is skipped and left exactly as it was',
-          () async {
+      test(
+          'an envelope with $name is skipped and left as it was; the next '
+          'park moves it aside and starts afresh', () async {
         SharedPreferences.setMockInitialValues(<String, Object>{key: raw});
 
         expect(await store.list(asha), isEmpty);
-        await expectLater(
-          store.park(asha, cartDraft()),
-          throwsA(isA<ParkedDraftsException>()),
-        );
         expect(await store.take(asha, 'anything'), isNull);
         expect(await store.discard(asha, 'anything'), isFalse);
-
         expect(await rawText(), raw,
-            reason: 'data this app cannot read is never rewritten or deleted');
+            reason: 'reads never rewrite or delete what they cannot read');
+
+        final parked = await store.park(asha, cartDraft());
+        expect(parked.label, 'P1', reason: 'never blocked for good');
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('$key.unreadable'), raw,
+            reason: 'kept on the phone, byte for byte');
+        expect((await store.list(asha)).single.id, parked.id);
       });
     }
 
-    test('a value of the wrong type under the key is left alone too', () async {
+    test('a value of the wrong type under the key is kept aside too', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         key: <String>['not', 'a', 'string']
       });
       expect(await store.list(asha), isEmpty);
-      await expectLater(
-          store.park(asha, cartDraft()), throwsA(isA<ParkedDraftsException>()));
+      await store.park(asha, cartDraft());
       final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getStringList(key), <String>['not', 'a', 'string']);
+      expect(prefs.getStringList('$key.unreadable'),
+          <String>['not', 'a', 'string']);
+      expect(await store.list(asha), hasLength(1));
+    });
+
+    test('a second unreadable envelope never overwrites the first one kept',
+        () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        key: 'second',
+        '$key.unreadable': 'first',
+      });
+      await store.park(asha, cartDraft());
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('$key.unreadable'), 'first');
+      expect(prefs.getString('$key.unreadable.2'), 'second');
     });
 
     test('parking nothing is refused and writes nothing', () async {
@@ -518,10 +534,18 @@ void main() {
       expect(text, contains('left on disk'));
 
       lines.clear();
+      await store.list(asha);
+      await store.list(asha);
+      expect(lines.where((l) => l.contains('unreadable')), isEmpty,
+          reason: 'said once, not on every read');
+
+      lines.clear();
       SharedPreferences.setMockInitialValues(
           <String, Object>{key: envelopeJson(<Object?>[], schema: 7)});
       await store.list(asha);
-      expect(lines.join('\n'), contains('schema 7'));
+      await store.list(asha);
+      expect(lines.where((l) => l.contains('schema 7')), hasLength(1),
+          reason: 'a new state is said, once');
     });
   });
 

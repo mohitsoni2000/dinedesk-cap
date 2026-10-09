@@ -41,6 +41,7 @@ class PaymentSheetHarness {
     bool hasCustomer = false,
     TicketConfig ticketConfig = TicketConfig.none,
     List<PayMode> listedModes = const <PayMode>[],
+    BillDues? dues,
   }) async {
     // Wide enough for the test font, which draws every glyph a full em
     // wide: these tests pin what is sent and shown, not the layout.
@@ -72,7 +73,7 @@ class PaymentSheetHarness {
           body: Builder(
             builder: (context) => TextButton(
               onPressed: () => unawaited(PaymentSheet.show(context,
-                      bills: bills, hasCustomer: hasCustomer)
+                      bills: bills, hasCustomer: hasCustomer, dues: dues)
                   .then((r) {
                 h.result = r;
                 h.closed = true;

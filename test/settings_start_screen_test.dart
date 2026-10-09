@@ -5,6 +5,7 @@ import 'package:restro/data/home_route.dart';
 import 'package:restro/data/providers.dart';
 import 'package:restro/models/feature_flags.dart';
 import 'package:restro/models/qsr_config.dart';
+import 'package:restro/router.dart';
 import 'package:restro/screens/settings_screen.dart';
 import 'package:restro/services/biometric_service.dart';
 import 'package:restro/theme/app_theme.dart';
@@ -173,6 +174,45 @@ void main() {
       expect(find.byType(SettingsScreen), findsOneWidget,
           reason: 'the sheet closes; the next "go home" uses the choice');
       expect(find.text('Always opens on Gate'), findsOneWidget);
+    });
+
+    testWidgets(
+        'inside the real router: picking a start screen stays on Settings',
+        (tester) async {
+      tester.view.physicalSize = const Size(1170, 2532);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      container = ProviderContainer(overrides: [
+        biometricServiceProvider.overrideWithValue(_NoBiometrics()),
+      ]);
+      addTearDown(container.dispose);
+      container.read(connectionProvider.notifier).state =
+          const ConnectionStatus(online: true, label: 'Connected');
+      container.read(qsrConfigProvider.notifier).state = qsr;
+      container.read(isAuthenticatedProvider.notifier).state = true;
+      final router = container.read(routerProvider);
+      String path() => router.routerDelegate.currentConfiguration.uri.path;
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child:
+            MaterialApp.router(theme: AppTheme.light(), routerConfig: router),
+      ));
+      await tester.pumpAndSettle();
+      expect(path(), '/counter');
+
+      router.go('/settings');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start screen'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tables'));
+      await tester.pumpAndSettle();
+
+      expect(container.read(homeRouteProvider), '/tables');
+      expect(path(), '/settings',
+          reason: "the new home re-runs the router's redirect, which must "
+              'not move anyone: the next "go home" uses it');
+      expect(find.byType(SettingsScreen), findsOneWidget);
     });
 
     testWidgets('Automatic clears the pin', (tester) async {

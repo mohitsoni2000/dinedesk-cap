@@ -26,11 +26,46 @@ import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 import 'tender_form.dart';
 
+/// What payment sheets recorded on one order's bills, kept by the screen
+/// that opens them across openings. `bill:generate` only gives each bill's
+/// total; the desk's answers to `bill:payment` say what a bill still owes.
+/// A sheet opened again starts from there: a settled bill is not offered
+/// again, and a part-paid one is offered at what it still owes.
+class BillDues {
+  final Map<String, Money> _owed = <String, Money>{};
+  final Set<String> _settled = <String>{};
+
+  /// The desk recorded a payment on [billId]: it still owes [left], or
+  /// nothing (settled) when [left] is null or not positive.
+  void record(String billId, Money? left) {
+    if (left == null || !left.isPositive) {
+      _settled.add(billId);
+      _owed[billId] = Money.zero;
+    } else {
+      _owed[billId] = left;
+    }
+  }
+
+  /// What [bill] still owes, as far as payments on this phone have shown.
+  Money owedOn(ServerBill bill) => _owed[bill.id] ?? bill.totalAmount;
+
+  bool isSettled(String billId) => _settled.contains(billId);
+
+  /// New bills (generated again): nothing recorded applies to them.
+  void clear() {
+    _owed.clear();
+    _settled.clear();
+  }
+}
+
 class PaymentSheet {
+  /// [dues], when given, is where the sheet starts and what it updates as
+  /// the desk records payments (see [BillDues]).
   static Future<bool?> show(
     BuildContext context, {
     required List<ServerBill> bills,
     bool hasCustomer = false,
+    BillDues? dues,
   }) {
     final grandTotal = bills.map((b) => b.totalAmount).sumMoney();
     return showModalBottomSheet<bool>(
@@ -46,6 +81,7 @@ class PaymentSheet {
         bills: bills,
         grandTotal: grandTotal,
         hasCustomer: hasCustomer,
+        dues: dues,
       ),
     );
   }
@@ -55,10 +91,12 @@ class _PaymentSheetBody extends ConsumerStatefulWidget {
   final List<ServerBill> bills;
   final Money grandTotal;
   final bool hasCustomer;
+  final BillDues? dues;
   const _PaymentSheetBody({
     required this.bills,
     required this.grandTotal,
     required this.hasCustomer,
+    this.dues,
   });
   @override
   ConsumerState<_PaymentSheetBody> createState() => _PaymentSheetBodyState();
@@ -68,12 +106,18 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
   final TenderFormController _tender = TenderFormController();
   final List<AppliedCover> _covers = <AppliedCover>[];
 
+  /// What the desk recorded on these bills, here and in earlier sheets.
+  late final BillDues _kept = widget.dues ?? BillDues();
+
   /// What each bill still owes, as far as this sheet knows: its total until
   /// the desk records a payment on it.
   late final Map<String, Money> _dues = <String, Money>{
-    for (final bill in widget.bills) bill.id: bill.totalAmount,
+    for (final bill in widget.bills) bill.id: _kept.owedOn(bill),
   };
-  final Set<String> _settledBillIds = <String>{};
+  late final Set<String> _settledBillIds = <String>{
+    for (final bill in widget.bills)
+      if (_kept.isSettled(bill.id)) bill.id,
+  };
 
   /// The planned calls, from the moment Pay sends them until the desk has
   /// answered every one. While it is set the fields are locked and Pay
@@ -200,6 +244,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
   void _record(String billId, Map<String, dynamic> response) {
     final ack = BillPaymentAck.fromAck(response);
     final left = ack.bill?.id == billId ? ack.remaining : null;
+    _kept.record(billId, left);
     if (left == null || !left.isPositive) {
       _settledBillIds.add(billId);
       _dues[billId] = Money.zero;
@@ -277,7 +322,10 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       return CallFailure(
         call: call,
         noAnswer: noAnswer,
-        refusal: coverErrorCopy(error.code) ?? error.message,
+        refusal: namedTicketRefusal(error.code, error.message,
+                tickets: call.lines.where((line) => line.isCover).length) ??
+            coverErrorCopy(error.code) ??
+            error.message,
       );
     }
     return null;
@@ -418,8 +466,22 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                   const Text('Collect Payment',
                       style: AppTypography.sheetTitle),
                   const Spacer(),
-                  Text(formatRupeesCompact(widget.grandTotal),
-                      style: AppTypography.headline),
+                  // Once the desk has taken part of it: what is still due,
+                  // not the total it started at.
+                  if (_due != widget.grandTotal)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('${formatRupeesCompact(_due)} due',
+                            style: AppTypography.headline),
+                        Text('of ${formatRupeesCompact(widget.grandTotal)}',
+                            style: AppTypography.caption),
+                      ],
+                    )
+                  else
+                    Text(formatRupeesCompact(widget.grandTotal),
+                        style: AppTypography.headline),
                 ],
               ),
               if (widget.bills.length > 1) ...[
@@ -446,9 +508,19 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                             '${bill.billType[0].toUpperCase()}${bill.billType.substring(1)} · ${bill.billNumber}',
                             style: AppTypography.caption),
                         const Spacer(),
-                        Text(formatRupeesCompact(bill.totalAmount),
-                            style: AppTypography.caption
-                                .copyWith(fontWeight: FontWeight.w600)),
+                        Text(
+                            _settledBillIds.contains(bill.id)
+                                ? 'Paid'
+                                : _dues[bill.id] != bill.totalAmount
+                                    ? '${formatRupeesCompact(_dues[bill.id]!)} '
+                                        'left of '
+                                        '${formatRupeesCompact(bill.totalAmount)}'
+                                    : formatRupeesCompact(bill.totalAmount),
+                            style: AppTypography.caption.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: _settledBillIds.contains(bill.id)
+                                    ? AppColors.success
+                                    : null)),
                       ],
                     ),
                   ),

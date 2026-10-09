@@ -174,6 +174,36 @@ void main() {
     expect(jobs.first.ticketId, 'a1', reason: 'a0, the oldest, made room');
   });
 
+  test('the cap counts each operator and desk on its own', () async {
+    final s = store();
+    await s.put(asha, <TicketSlip>[for (var i = 0; i < 200; i++) slip('a$i')],
+        SlipJobState.pending);
+    clock = clock.add(const Duration(minutes: 1));
+    await s.put(ravi, <TicketSlip>[slip('r0')], SlipJobState.pending);
+    expect(await s.list(asha), hasLength(200),
+        reason: "Ravi's slip pushes out none of Asha's");
+    expect(await s.list(ravi), hasLength(1));
+
+    clock = clock.add(const Duration(minutes: 1));
+    await s.put(asha, <TicketSlip>[slip('a200')], SlipJobState.pending);
+    final mine = await s.list(asha);
+    expect(mine, hasLength(200));
+    expect(mine.first.ticketId, 'a1', reason: 'her own oldest made room');
+    expect(await s.list(ravi), hasLength(1));
+  });
+
+  test('a wipe forgets every slip, every scope\'s, readable or not', () async {
+    final s = store();
+    await s.put(asha, <TicketSlip>[slip('t1')], SlipJobState.pending);
+    await s.put(otherDesk, <TicketSlip>[slip('t2')], SlipJobState.failed);
+    await s.wipe();
+    expect(await s.list(asha), isEmpty);
+    expect(await s.list(otherDesk), isEmpty);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.containsKey(PendingSlipsStore.prefsKey), isFalse,
+        reason: 'guests\' names and admission codes leave with the pairing');
+  });
+
   test('another version\'s slips are left alone, and nothing is saved over them',
       () async {
     SharedPreferences.setMockInitialValues(<String, Object>{

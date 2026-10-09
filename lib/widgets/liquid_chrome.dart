@@ -49,8 +49,8 @@ class LiquidBottomNav extends StatelessWidget {
                                 borderRadius:
                                     const BorderRadius.all(AppRadii.pill),
                               ),
-                              child: Icon(
-                                items[i].icon,
+                              child: LiquidNavIcon(
+                                item: items[i],
                                 size: 20,
                                 color: Color.lerp(
                                     palette.ink50, AppColors.terraDeep, t),
@@ -85,7 +85,74 @@ class LiquidBottomNav extends StatelessWidget {
 class LiquidNavItem {
   final IconData icon;
   final String label;
-  const LiquidNavItem({required this.icon, required this.label});
+
+  /// A count pinned to the icon (parked carts, ticket drafts…); 0 shows
+  /// nothing.
+  final int badge;
+  const LiquidNavItem(
+      {required this.icon, required this.label, this.badge = 0});
+}
+
+/// A nav item's icon with its [LiquidNavItem.badge] on the top-right corner.
+/// Shared by the bottom bar and the side rail.
+class LiquidNavIcon extends StatelessWidget {
+  final LiquidNavItem item;
+  final double size;
+  final Color? color;
+  const LiquidNavIcon({
+    super.key,
+    required this.item,
+    required this.size,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = Icon(item.icon, size: size, color: color);
+    if (item.badge <= 0) return icon;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        icon,
+        Positioned(
+          top: -6,
+          right: -10,
+          child: LiquidNavBadge(count: item.badge),
+        ),
+      ],
+    );
+  }
+}
+
+/// The count pill on a nav icon; above 99 it reads "99+".
+class LiquidNavBadge extends StatelessWidget {
+  final int count;
+  const LiquidNavBadge({super.key, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppColors.terra500,
+        borderRadius: const BorderRadius.all(AppRadii.pill),
+        border: Border.all(color: context.palette.navBar, width: 1.5),
+      ),
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        maxLines: 1,
+        style: AppTypography.micro.copyWith(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          height: 1.1,
+          decoration: TextDecoration.none,
+        ),
+      ),
+    );
+  }
 }
 
 class LiquidPill extends StatelessWidget {

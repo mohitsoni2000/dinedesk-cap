@@ -81,6 +81,16 @@ class FeatureFlags {
   final bool weighedItems;
   final bool billingButton;
 
+  /// Daily tokens for table-less (counter) orders.
+  final bool orderTokens;
+
+  /// The entry-ticket module. Its two per-role rights below only count while
+  /// this is on; there is no separate cover-redeem right (cover rides on this
+  /// plus [collectPayment]).
+  final bool entryTickets;
+  final bool ticketIssue;
+  final bool ticketCheckin;
+
   const FeatureFlags({
     this.discounts = false,
     this.complimentary = false,
@@ -162,7 +172,15 @@ class FeatureFlags {
     this.menuAccessGroups = false,
     this.weighedItems = false,
     this.billingButton = false,
+    this.orderTokens = false,
+    this.entryTickets = false,
+    this.ticketIssue = false,
+    this.ticketCheckin = false,
   });
+
+  /// Whether this user may work the gate: issue tickets, check guests in, or
+  /// both.
+  bool get hasGate => entryTickets && (ticketIssue || ticketCheckin);
 
   factory FeatureFlags.fromMap(Map<String, dynamic> map) {
     bool flag(String key, [bool fallback = false]) {
@@ -258,6 +276,10 @@ class FeatureFlags {
       menuAccessGroups: flag('flag_menu_access_groups'),
       weighedItems: flag('flag_weighed_items'),
       billingButton: flag('flag_billing_button'),
+      orderTokens: flag('flag_order_tokens'),
+      entryTickets: flag('flag_entry_tickets'),
+      ticketIssue: flag('flag_ticket_issue'),
+      ticketCheckin: flag('flag_ticket_checkin'),
     );
   }
 }

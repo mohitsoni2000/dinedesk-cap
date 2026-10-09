@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/home_route.dart';
 import '../data/menu_selectors.dart';
 import '../data/money.dart';
 import '../data/providers.dart';
@@ -281,7 +282,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     if (context.canPop()) {
       context.pop();
     } else {
-      context.go('/tables');
+      goHome(context, ref);
     }
   }
 

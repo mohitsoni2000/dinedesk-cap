@@ -42,6 +42,11 @@ class OfflineSnapshot {
   /// by floor (the cached tables only carry the floor's NAME).
   final Map<String, String> slotFloorIds;
 
+  /// The desk's `qsr_config`, so a cold start offline still opens the Counter
+  /// on a QSR desk. Absent in a file from before QSR (= restaurant mode); an
+  /// older app ignores the key, so the schema stays 1.
+  final Map<String, dynamic>? qsrConfig;
+
   const OfflineSnapshot({
     required this.savedAt,
     this.deskInstanceId,
@@ -56,6 +61,7 @@ class OfflineSnapshot {
     this.kotPrintConfig,
     this.sessionPolicy,
     this.slotFloorIds = const <String, String>{},
+    this.qsrConfig,
   });
 
   /// The PIN grace in the stored `session_policy`; a missing policy is 0
@@ -83,6 +89,7 @@ class OfflineSnapshot {
         'kot_print_config': kotPrintConfig,
         'session_policy': sessionPolicy,
         'slot_floor_ids': slotFloorIds,
+        'qsr_config': qsrConfig,
       };
 
   static OfflineSnapshot? fromJson(Map<String, dynamic> json) {
@@ -103,6 +110,7 @@ class OfflineSnapshot {
       kotPrintConfig: _map(json['kot_print_config']),
       sessionPolicy: _map(json['session_policy']),
       slotFloorIds: _strings(json['slot_floor_ids']),
+      qsrConfig: _map(json['qsr_config']),
     );
   }
 

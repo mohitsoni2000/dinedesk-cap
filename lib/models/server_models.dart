@@ -1,6 +1,7 @@
 import '../data/money.dart';
 import '../services/log.dart';
 import 'room_arrival_hold.dart';
+import 'token.dart';
 import 'wire.dart';
 
 class ServerTable {
@@ -172,12 +173,25 @@ class ServerOrder {
   final List<ServerOrderItem> items;
   final List<ServerBill> bills;
 
+  /// `dine_in` / `takeaway` / `room`…, as the desk stored it; null from a
+  /// desk that does not send it.
+  final String? orderType;
+
+  /// Takeaway or standing, for a counter order; null otherwise.
+  final FulfillmentType? fulfillmentType;
+
+  /// The daily token of a table-less order; null when it has none.
+  final TokenInfo? token;
+
   /// The desk's JSON this order was parsed from, kept so the offline snapshot
   /// can persist exactly what the desk sent (and hydrate it back through
   /// [ServerOrder.fromMap]) instead of re-serialising the parsed model.
   final Map<String, dynamic>? raw;
 
   bool get isRoom => roomId.isNotEmpty;
+
+  /// A counter order: no table and no room.
+  bool get isTableLess => tableId.isEmpty && roomId.isEmpty;
 
   bool get hasBills => bills.isNotEmpty;
 
@@ -198,6 +212,9 @@ class ServerOrder {
     this.createdBy,
     this.customerId,
     this.customerName,
+    this.orderType,
+    this.fulfillmentType,
+    this.token,
     this.raw,
   });
 
@@ -232,6 +249,9 @@ class ServerOrder {
       createdBy: optionalStringAny(m, <String>['created_by', 'operator_id']),
       customerId: optionalString(m, 'customer_id'),
       customerName: optionalString(m, 'customer_name'),
+      orderType: optionalString(m, 'order_type'),
+      fulfillmentType: FulfillmentType.fromWire(m['fulfillment_type']),
+      token: TokenInfo.fromOrderMap(m),
       raw: m,
     );
   }

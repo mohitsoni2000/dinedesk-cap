@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/demo_data.dart';
+import '../data/home_route.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/biometric_service.dart';
@@ -78,7 +79,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
               'enter your PIN',
           kind: ToastKind.error);
     }
-    // On success isAuthenticated flips and the router moves to /tables.
+    // On success isAuthenticated flips and the router moves to home.
   }
 
   @override
@@ -151,7 +152,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     if (!mounted) return;
     setState(() => _verified = true);
     await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (mounted) context.go('/tables');
+    if (mounted) goHome(context, ref);
   }
 
   Future<void> _submitReal(String pin) async {
@@ -207,7 +208,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
     if (!mounted) return;
     setState(() => _verified = true);
     await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (mounted) context.go('/tables');
+    if (mounted) goHome(context, ref);
   }
 
   Future<void> _tryBiometricUnlock() async {

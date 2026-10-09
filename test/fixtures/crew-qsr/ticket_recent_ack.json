@@ -1,0 +1,68 @@
+{
+  "kind": "success",
+  "business_date": "2026-10-09",
+  "tickets": [
+    {
+      "id": "et_43e",
+      "ticket_number": "ET-043",
+      "type_name": "Stag Entry",
+      "pax": 1,
+      "status": "issued",
+      "cover_amount": 400,
+      "cover_balance": 400,
+      "guest_name": null,
+      "guest_phone_last4": null,
+      "issued_at": "2026-10-09 14:52:03",
+      "checked_in_at": null,
+      "valid_date": "2026-10-09"
+    },
+    {
+      "id": "et_42b",
+      "ticket_number": "ET-042",
+      "type_name": "Couple Pass",
+      "pax": 2,
+      "status": "checked_in",
+      "cover_amount": 800,
+      "cover_balance": 800,
+      "guest_name": "Ravi Sharma",
+      "guest_phone_last4": "3210",
+      "issued_at": "2026-10-09 14:40:12",
+      "checked_in_at": "2026-10-09 14:45:30",
+      "valid_date": "2026-10-09"
+    },
+    {
+      "id": "et_41a",
+      "ticket_number": "ET-041",
+      "type_name": "Couple Pass",
+      "pax": 2,
+      "status": "issued",
+      "cover_amount": 800,
+      "cover_balance": 800,
+      "guest_name": "Ravi Sharma",
+      "guest_phone_last4": "3210",
+      "issued_at": "2026-10-09 14:40:12",
+      "checked_in_at": null,
+      "valid_date": "2026-10-09"
+    },
+    {
+      "id": "et_40d",
+      "ticket_number": "ET-040",
+      "type_name": "Stag Entry",
+      "pax": 1,
+      "status": "cancelled",
+      "cover_amount": 400,
+      "cover_balance": 0,
+      "guest_name": null,
+      "guest_phone_last4": null,
+      "issued_at": "2026-10-09 13:05:44",
+      "checked_in_at": null,
+      "valid_date": "2026-10-09"
+    }
+  ],
+  "stats": {
+    "issued": 3,
+    "pax_issued": 5,
+    "checked_in": 1,
+    "pax_inside": 2
+  }
+}

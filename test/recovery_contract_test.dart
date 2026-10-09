@@ -115,6 +115,34 @@ void main() {
     expect(container.read(flagsProvider).rooms, isTrue);
   });
 
+  test('an offset-wrapped ticket_types:updated reaches the real handler', () {
+    container.read(syncServiceProvider).registerListeners();
+
+    deliver('ticket_types:updated', <dynamic>[
+      <String, dynamic>{
+        'entry_ticket_types': <Object>[
+          <String, dynamic>{
+            'id': 'ett_couple',
+            'name': 'Couple Pass',
+            'price': 2000,
+            'unit_total': 2000,
+            'pax': 2,
+          },
+        ],
+        'entry_ticket_config': <String, dynamic>{
+          'cover_payment_mode': 'cover_ticket',
+          'qr_prefix': 'CDT:',
+        },
+      },
+      'AbCdEf12345',
+    ]);
+
+    expect(
+        container.read(ticketTypesProvider).map((t) => t.id), ['ett_couple']);
+    expect(
+        container.read(ticketConfigProvider).coverPaymentMode, 'cover_ticket');
+  });
+
   test('without recovery the plain single-payload shape still works', () {
     container.read(syncServiceProvider).registerListeners();
     Object? seen;

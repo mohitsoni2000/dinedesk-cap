@@ -8,8 +8,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/money.dart';
 import '../data/providers.dart';
 import '../data/rejected_kots.dart';
+import '../models/entry_ticket.dart';
 import '../models/feature_flags.dart';
 import '../models/kot_print_config.dart';
+import '../models/pay_mode.dart';
+import '../models/qsr_config.dart';
 import '../models/server_models.dart';
 import '../models/wire.dart';
 import '../motion/feedback_kind.dart';
@@ -164,6 +167,9 @@ class SyncService {
     'kot:print:failed',
     'error:validation',
     'error:permission',
+    'qsr_config:updated',
+    'ticket_types:updated',
+    'payment_modes:updated',
   ];
 
   bool _listenersRegistered = false;
@@ -362,30 +368,9 @@ class SyncService {
 
     _socket.on('order:ready', (data) {
       if (!_ref.read(flagsProvider).readyToServe) return;
-      final m = asMap(data);
-      final orderId = m['order_id']?.toString();
-      if (orderId == null) return;
-      final tableName = (m['table_name']?.toString().isNotEmpty ?? false)
-          ? m['table_name'].toString()
-          : (m['order_type']?.toString() == 'takeaway' ? 'Takeaway' : 'Order');
-      final rawItems = m['items'];
-      final labels = <String>[];
-      if (rawItems is List) {
-        for (final it in rawItems) {
-          if (it is Map) {
-            final qty = it['quantity'] ?? 1;
-            final name = it['item_name']?.toString() ?? 'Item';
-            labels.add('$qty× $name');
-          }
-        }
-      }
-      final ticket = ReadyTicket(
-        orderId: orderId,
-        tableId: m['table_id']?.toString(),
-        tableName: tableName,
-        kotNumber: m['kot_number']?.toString() ?? '',
-        itemLabels: labels,
-      );
+      // A token order is called "Token T-07" — what the guest holds.
+      final ticket = ReadyTicket.fromPayload(asMap(data));
+      if (ticket == null) return;
 
       final current = _ref.read(readyOrdersProvider);
       _ref.read(readyOrdersProvider.notifier).state = [
@@ -396,8 +381,12 @@ class SyncService {
         ),
       ];
       _ref.read(feedbackServiceProvider).fire(const FeedbackReadyChime());
-      _ref.read(readyAlertsProvider).notifyReady(tableName, labels);
-      _ref.read(liveActivityProvider).markReady(orderId, tableName);
+      _ref
+          .read(readyAlertsProvider)
+          .notifyReady(ticket.tableName, ticket.itemLabels);
+      _ref
+          .read(liveActivityProvider)
+          .markReady(ticket.orderId, ticket.tableName);
       _ref.read(widgetSyncProvider).schedule(_ref);
     });
 
@@ -485,6 +474,36 @@ class SyncService {
     _socket.on('print_config:updated', (data) {
       _applyKotPrintConfig(asMap(data)['kot_print_config']);
       unawaited(saveSnapshot());
+    });
+
+    // QSR settings changed on the desk: `{qsr_config}`. Flips the home
+    // screen (Counter <-> Tables) live; kept in the snapshot so a cold start
+    // offline opens the right one.
+    _socket.on('qsr_config:updated', (data) {
+      final map = asMap(data);
+      if (!map.containsKey('qsr_config')) return;
+      _applyQsrConfig(map['qsr_config']);
+      unawaited(saveSnapshot());
+    });
+
+    // Ticket types or the cover mode changed:
+    // `{entry_ticket_types, entry_ticket_config}`.
+    _socket.on('ticket_types:updated', (data) {
+      final map = asMap(data);
+      if (map.containsKey('entry_ticket_config')) {
+        _applyTicketConfig(map['entry_ticket_config']);
+      }
+      if (map.containsKey('entry_ticket_types')) {
+        _applyTicketTypes(map['entry_ticket_types']);
+      }
+    });
+
+    // The owner's payment modes changed: `{payment_modes}`.
+    _socket.on('payment_modes:updated', (data) {
+      final map = asMap(data);
+      if (map.containsKey('payment_modes')) {
+        _applyPayModes(map['payment_modes']);
+      }
     });
 
     _socket.on('table:shifted', (data) {
@@ -832,6 +851,24 @@ class SyncService {
       _snapPolicy = null;
       _pinGraceMinutes = 0;
     }
+    // QSR mode, entry tickets and payment modes, by the same rule: a key that
+    // is present is applied (null = the desk's "none"); a FULL sync without
+    // it is an older desk, so plain restaurant with no tickets and no custom
+    // modes; a partial reply says nothing about them. The ticket config goes
+    // before the modes: its cover mode is kept out of them.
+    final fullSync = data.containsKey('tables');
+    if (fullSync || data.containsKey('qsr_config')) {
+      _applyQsrConfig(data['qsr_config']);
+    }
+    if (fullSync || data.containsKey('entry_ticket_config')) {
+      _applyTicketConfig(data['entry_ticket_config']);
+    }
+    if (fullSync || data.containsKey('entry_ticket_types')) {
+      _applyTicketTypes(data['entry_ticket_types']);
+    }
+    if (fullSync || data.containsKey('payment_modes')) {
+      _applyPayModes(data['payment_modes']);
+    }
 
     final ordersList = data['active_orders'] ?? data['orders'];
     if (ordersList is List) {
@@ -897,6 +934,32 @@ class SyncService {
     return offers;
   }
 
+  void _applyQsrConfig(Object? raw) {
+    final config = QsrConfig.tryParse(raw);
+    _snapQsr =
+        (config != null && raw is Map) ? Map<String, dynamic>.from(raw) : null;
+    _ref.read(qsrConfigProvider.notifier).state =
+        config ?? QsrConfig.restaurant;
+    logD(_tag,
+        '  Mode: ${config?.isQsr == true ? 'QSR counter' : 'restaurant'}');
+  }
+
+  void _applyTicketConfig(Object? raw) {
+    _ref.read(ticketConfigProvider.notifier).state =
+        TicketConfig.tryParse(raw) ?? TicketConfig.none;
+  }
+
+  void _applyTicketTypes(Object? raw) {
+    final types = TicketType.listFrom(raw);
+    _ref.read(ticketTypesProvider.notifier).state = types;
+    logD(_tag, '  Ticket types: ${types.length}');
+  }
+
+  void _applyPayModes(Object? raw) {
+    _ref.read(payModesProvider.notifier).state = PayMode.listFrom(raw,
+        excludeCode: _ref.read(ticketConfigProvider).coverPaymentMode);
+  }
+
   void _applyKotPrintConfig(Object? raw) {
     final config = KotPrintConfig.tryParse(raw);
     _snapKotConfig =
@@ -917,6 +980,7 @@ class SyncService {
   List<Map<String, dynamic>>? _snapOffers;
   Map<String, dynamic>? _snapKotConfig;
   Map<String, dynamic>? _snapPolicy;
+  Map<String, dynamic>? _snapQsr;
   int _pinGraceMinutes = 0;
   Timer? _ordersSaveTimer;
 
@@ -970,6 +1034,7 @@ class SyncService {
             sessionPolicy: _snapPolicy ??
                 <String, dynamic>{'pin_grace_minutes': _pinGraceMinutes},
             slotFloorIds: _ref.read(slotFloorIdsProvider),
+            qsrConfig: _snapQsr,
           ));
     } catch (e) {
       logD(_tag, 'snapshot save failed: $e');
@@ -1043,6 +1108,8 @@ class SyncService {
     _snapPolicy = snapshot.sessionPolicy;
     _pinGraceMinutes = snapshot.pinGraceMinutes;
     _applyKotPrintConfig(snapshot.kotPrintConfig);
+    // Before QSR existed there was none: restaurant mode.
+    _applyQsrConfig(snapshot.qsrConfig);
     if (snapshot.slotFloorIds.isNotEmpty) {
       _ref.read(slotFloorIdsProvider.notifier).state = snapshot.slotFloorIds;
     }
@@ -1467,8 +1534,12 @@ class SyncService {
   }
 
   HistoryOrder _serverOrderToHistory(ServerOrder so) {
+    final token = so.token;
     String tableDisplay = so.isRoom ? so.roomId : so.tableId;
-    if (so.isRoom) {
+    if (so.isTableLess && token != null) {
+      // A counter order has no table: its badge is the token.
+      tableDisplay = token.title;
+    } else if (so.isRoom) {
       for (final r in _ref.read(roomsProvider)) {
         if (r.serverId == so.roomId) {
           tableDisplay = r.id;
@@ -1508,6 +1579,9 @@ class SyncService {
       createdBy: so.createdBy,
       customerId: so.customerId,
       customerName: so.customerName,
+      tokenLabel: token?.label,
+      tokenStatus: token?.status,
+      fulfillmentType: so.fulfillmentType,
     );
   }
 

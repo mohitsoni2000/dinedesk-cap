@@ -2,10 +2,81 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/home_route.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import 'liquid_chrome.dart';
+
+/// The shell's branches, in the order router.dart declares them. New
+/// branches are only ever appended, so an index never changes meaning.
+abstract final class ShellBranch {
+  static const int tables = 0;
+  static const int rooms = 1;
+  static const int history = 2;
+  static const int profile = 3;
+  static const int settings = 4;
+  static const int gate = 5;
+  static const int counter = 6;
+
+  /// Each branch's route, by index.
+  static const List<String> paths = <String>[
+    '/tables',
+    '/rooms',
+    '/history',
+    '/profile',
+    '/settings',
+    '/gate',
+    '/counter',
+  ];
+
+  /// The branch a home route lives on.
+  static int ofHome(String route) => switch (route) {
+        HomeRoutes.counter => counter,
+        HomeRoutes.gate => gate,
+        _ => tables,
+      };
+}
+
+/// The tabs to show, as branch indices: Tables (restaurant mode) or Counter
+/// (QSR mode), Rooms and Gate when allowed, then History, Profile, Settings,
+/// with the [home] tab moved to the front.
+List<int> shellTabsFor({
+  required String home,
+  required bool isQsr,
+  required bool rooms,
+  required bool gate,
+}) {
+  final tabs = <int>[
+    if (!isQsr) ShellBranch.tables,
+    if (rooms) ShellBranch.rooms,
+    if (isQsr) ShellBranch.counter,
+    if (gate) ShellBranch.gate,
+    ShellBranch.history,
+    ShellBranch.profile,
+    ShellBranch.settings,
+  ];
+  final homeBranch = ShellBranch.ofHome(home);
+  if (tabs.remove(homeBranch)) tabs.insert(0, homeBranch);
+  return tabs;
+}
+
+LiquidNavItem _navItemFor(int branch) => switch (branch) {
+      ShellBranch.tables =>
+        const LiquidNavItem(icon: Icons.grid_view_rounded, label: 'TABLES'),
+      ShellBranch.rooms =>
+        const LiquidNavItem(icon: Icons.hotel_outlined, label: 'ROOMS'),
+      ShellBranch.counter =>
+        const LiquidNavItem(icon: Icons.storefront_outlined, label: 'COUNTER'),
+      ShellBranch.gate => const LiquidNavItem(
+          icon: Icons.confirmation_number_outlined, label: 'GATE'),
+      ShellBranch.history =>
+        const LiquidNavItem(icon: Icons.receipt_long, label: 'HISTORY'),
+      ShellBranch.profile =>
+        const LiquidNavItem(icon: Icons.person_outline, label: 'PROFILE'),
+      _ =>
+        const LiquidNavItem(icon: Icons.settings_outlined, label: 'SETTINGS'),
+    };
 
 class RootShell extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
@@ -14,22 +85,25 @@ class RootShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final roomsEnabled = ref.watch(flagsProvider.select((f) => f.rooms));
+    final gateEnabled = ref.watch(flagsProvider.select((f) => f.hasGate));
+    final isQsr = ref.watch(qsrConfigProvider.select((q) => q.isQsr));
+    final home = ref.watch(homeRouteProvider);
 
     final entries = <(int, LiquidNavItem)>[
-      (0, const LiquidNavItem(icon: Icons.grid_view_rounded, label: 'TABLES')),
-      if (roomsEnabled)
-        (1, const LiquidNavItem(icon: Icons.hotel_outlined, label: 'ROOMS')),
-      (2, const LiquidNavItem(icon: Icons.receipt_long, label: 'HISTORY')),
-      (3, const LiquidNavItem(icon: Icons.person_outline, label: 'PROFILE')),
-      (
-        4,
-        const LiquidNavItem(icon: Icons.settings_outlined, label: 'SETTINGS')
-      ),
+      for (final branch in shellTabsFor(
+        home: home,
+        isQsr: isQsr,
+        rooms: roomsEnabled,
+        gate: gateEnabled,
+      ))
+        (branch, _navItemFor(branch)),
     ];
 
-    if (!roomsEnabled && navigationShell.currentIndex == 1) {
+    // The open tab went away (rooms switched off, QSR mode turned on, gate
+    // rights removed): fall back to this user's home tab.
+    if (!entries.any((e) => e.$1 == navigationShell.currentIndex)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        navigationShell.goBranch(0);
+        navigationShell.goBranch(ShellBranch.ofHome(home));
       });
     }
 
@@ -120,8 +194,8 @@ class _SideNavRail extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        items[i].icon,
+                      LiquidNavIcon(
+                        item: items[i],
                         size: 22,
                         color: i == currentIndex
                             ? AppColors.terraDeep

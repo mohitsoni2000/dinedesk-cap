@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/home_route.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/session_service.dart';
@@ -40,7 +41,7 @@ class DisconnectedScreen extends ConsumerWidget {
     ref.read(connectionSupervisorProvider).retryNow();
     // Straight back into the app. The bootstrap state moves off "rejected"
     // synchronously inside retry(), so the router does not bounce us back.
-    context.go('/tables');
+    goHome(context, ref);
   }
 
   Future<void> _confirmScanQr(BuildContext context, WidgetRef ref) async {
@@ -79,7 +80,7 @@ class DisconnectedScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.listen(connectionProvider.select((c) => c.online), (prev, online) {
-      if (online == true) context.go('/tables');
+      if (online == true) goHome(context, ref);
     });
 
     return ColoredBox(

@@ -1,0 +1,43 @@
+{
+  "kind": "success",
+  "ticket": {
+    "id": "et_42b",
+    "ticket_number": "ET-042",
+    "qr_code": "CDT:P3VJ5LDY2GQA7FEC",
+    "type_id": "ett_couple",
+    "type_name": "Couple Pass",
+    "pax": 2,
+    "price": 2000,
+    "taxable_amount": 1016.95,
+    "gst_amount": 183.05,
+    "cover_amount": 800,
+    "cover_balance": 800,
+    "status": "checked_in",
+    "issued_at": "2026-10-09 14:40:12",
+    "valid_date": "2026-10-09",
+    "slip": {
+      "header": [
+        "Spice Hub",
+        "12 MG Road, Indiranagar, Bengaluru",
+        "GSTIN 29ABCDE1234F1Z5"
+      ],
+      "ticket_no": "ET-042",
+      "title": "COUPLE PASS",
+      "highlight": "ADMITS 2 PAX",
+      "lines": [
+        "COVER ₹800 — use on food & drinks today",
+        "Entry ₹1,200.00 incl. GST",
+        "Sale ET/26-27/000037",
+        "09 Oct 2026, 08:10 PM",
+        "Guest: Ravi Sharma"
+      ],
+      "qr_data": "CDT:P3VJ5LDY2GQA7FEC",
+      "footer": [
+        "Valid on 09 Oct 2026 only.",
+        "Unused cover is forfeited at day close."
+      ]
+    }
+  },
+  "cover_balance": 800,
+  "can_redeem": true
+}

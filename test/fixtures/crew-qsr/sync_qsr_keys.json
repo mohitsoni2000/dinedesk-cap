@@ -1,0 +1,82 @@
+{
+  "qsr_config": {
+    "operating_mode": "qsr",
+    "qsr_payment_flow": "hybrid",
+    "token_strategy": "prefixed",
+    "token_prefix_takeaway": "T",
+    "token_prefix_standing": "S",
+    "token_ready_clear_minutes": 10
+  },
+  "entry_ticket_types": [
+    {
+      "id": "ett_couple",
+      "name": "Couple Pass",
+      "price": 2000,
+      "gst_rate": 18,
+      "gst_inclusive": 1,
+      "cover_amount": 800,
+      "pax": 2,
+      "color": "#C2410C",
+      "sort_order": 1,
+      "unit_total": 2000
+    },
+    {
+      "id": "ett_stag",
+      "name": "Stag Entry",
+      "price": 1000,
+      "gst_rate": 18,
+      "gst_inclusive": 0,
+      "cover_amount": 400,
+      "pax": 1,
+      "color": null,
+      "sort_order": 2,
+      "unit_total": 1108
+    }
+  ],
+  "entry_ticket_config": {
+    "cover_payment_mode": "cover_ticket",
+    "qr_prefix": "CDT:"
+  },
+  "payment_modes": [
+    {
+      "code": "cash",
+      "name": "Cash",
+      "print_name": "Cash",
+      "kind": "revenue",
+      "is_cash": 1,
+      "reference_mode": "off",
+      "require_reason": 0,
+      "sort_order": 0
+    },
+    {
+      "code": "upi",
+      "name": "UPI",
+      "print_name": "UPI",
+      "kind": "revenue",
+      "is_cash": 0,
+      "reference_mode": "optional",
+      "require_reason": 0,
+      "sort_order": 1
+    },
+    {
+      "code": "card",
+      "name": "Card",
+      "print_name": "Card",
+      "kind": "revenue",
+      "is_cash": 0,
+      "reference_mode": "optional",
+      "require_reason": 0,
+      "sort_order": 2
+    },
+    {
+      "code": "custom_phonepe",
+      "name": "PhonePe QR",
+      "print_name": "PhonePe",
+      "kind": "revenue",
+      "is_cash": 0,
+      "reference_mode": "mandatory",
+      "require_reason": 0,
+      "sort_order": 10
+    }
+  ]
+}

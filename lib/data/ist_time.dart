@@ -59,6 +59,14 @@ String formatIstSlipTime(DateTime instant) {
       '${d.hour < 12 ? 'am' : 'pm'}';
 }
 
+/// `08:15 PM` — a clock time in IST as the gate shows it ("Already used at
+/// 08:15 PM"): zero-padded 12-hour, upper-case AM/PM, no seconds.
+String formatIstClock12(DateTime instant) {
+  final d = _istFields(instant);
+  final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  return '${_two(hour)}:${_two(d.minute)} ${d.hour < 12 ? 'AM' : 'PM'}';
+}
+
 String formatIstDayTime(DateTime instant) {
   final d = _istFields(instant);
   return '${d.day} ${_months[d.month - 1]}, ${formatIstTime(instant)}';

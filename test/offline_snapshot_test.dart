@@ -79,6 +79,10 @@ void main() {
         },
         sessionPolicy: const <String, dynamic>{'pin_grace_minutes': 30},
         slotFloorIds: const {'t1': 'f1'},
+        qsrConfig: const <String, dynamic>{
+          'operating_mode': 'qsr',
+          'qsr_payment_flow': 'prepaid',
+        },
       );
 
   setUp(() async {
@@ -116,7 +120,8 @@ void main() {
             'kot_print_config',
             'session_policy',
             'restaurant_info',
-            'feature_flags'
+            'feature_flags',
+            'qsr_config',
           ]));
 
       final back = (await store.load(deskInstanceId: 'desk-1'))!;
@@ -135,6 +140,19 @@ void main() {
       expect(back.kotPrintConfig!['version'], 'kv1');
       expect(back.pinGraceMinutes, 30);
       expect(back.slotFloorIds, {'t1': 'f1'});
+      expect(back.qsrConfig,
+          {'operating_mode': 'qsr', 'qsr_payment_flow': 'prepaid'});
+    });
+
+    test('a file written before QSR existed reads with no qsr_config',
+        () async {
+      await file().writeAsBytes(gzip.encode(utf8.encode(jsonEncode({
+        'schema': 1,
+        'saved_at': '2026-10-05T04:00:00Z',
+        'desk_instance_id': 'desk-1',
+      }))));
+      final back = (await store.load(deskInstanceId: 'desk-1'))!;
+      expect(back.qsrConfig, isNull);
     });
 
     test('no tmp file is left behind and a re-save replaces the file',

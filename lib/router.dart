@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'data/home_route.dart';
 import 'data/providers.dart';
 import 'screens/splash_screen.dart';
 import 'screens/qr_scan_screen.dart';
@@ -10,6 +11,8 @@ import 'screens/connecting_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/tables_screen.dart';
 import 'screens/rooms_screen.dart';
+import 'screens/counter_screen.dart';
+import 'screens/gate_screen.dart';
 import 'screens/order_builder_screen.dart';
 import 'screens/order_review_screen.dart';
 import 'screens/order_success_screen.dart';
@@ -42,6 +45,15 @@ class _RouterRefreshNotifier extends ChangeNotifier {
       connectionBootstrapProvider.select((o) => o is BootstrapPairingRejected),
       (_, __) => notifyListeners(),
     );
+    // QSR mode on/off opens and closes Tables and the Counter; gate rights
+    // open and close the Gate. Re-run the guard on those edges only.
+    ref.listen<bool>(
+        qsrConfigProvider.select((q) => q.isQsr), (_, __) => notifyListeners());
+    ref.listen<bool>(
+        flagsProvider.select((f) => f.hasGate), (_, __) => notifyListeners());
+    // Also starts the start-screen restore now, at boot, so the stored choice
+    // is in place before the first "go home".
+    ref.listen<String>(homeRouteProvider, (_, __) => notifyListeners());
   }
 }
 
@@ -74,12 +86,15 @@ final routerProvider = Provider<GoRouter>((ref) {
           !loc.startsWith('/recovery-login')) {
         return '/disconnected';
       }
-      if (!ref.read(flagsProvider).rooms &&
-          (loc == '/rooms' || loc.startsWith('/order/room'))) {
-        return '/tables';
-      }
+      final closed = routeGuard(
+        location: loc,
+        flags: ref.read(flagsProvider),
+        qsr: ref.read(qsrConfigProvider),
+        pref: ref.read(startScreenProvider),
+      );
+      if (closed != null) return closed;
       if (!authed && !onAuthFlow && !onDisconnect) return '/auth';
-      if (authed && onAuthFlow) return '/tables';
+      if (authed && onAuthFlow) return ref.read(homeRouteProvider);
       return null;
     },
     errorBuilder: (context, state) => const Scaffold(
@@ -147,6 +162,15 @@ final routerProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(routes: [
             GoRoute(
                 path: '/settings', builder: (_, __) => const SettingsScreen()),
+          ]),
+          // Appended, never inserted: RootShell addresses branches by index
+          // (ShellBranch), so existing indices must not move.
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/gate', builder: (_, __) => const GateScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+                path: '/counter', builder: (_, __) => const CounterScreen()),
           ]),
         ],
       ),

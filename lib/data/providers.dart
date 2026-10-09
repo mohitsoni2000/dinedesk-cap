@@ -1,8 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/entry_ticket.dart';
 import '../models/feature_flags.dart';
 import '../models/kot_print_config.dart';
+import '../models/pay_mode.dart';
+import '../models/qsr_config.dart';
 import '../models/server_models.dart';
 import '../models/room_arrival_hold.dart';
+import '../models/token.dart';
+import '../models/wire.dart';
 import '../services/connection_bootstrap.dart';
 import '../services/connection_supervisor.dart';
 import '../services/customer_link_service.dart';
@@ -532,6 +537,11 @@ class HistoryOrder {
   final String? createdBy;
   final String? customerId;
   final String? customerName;
+
+  /// A counter order's token (`T-07`); null for table and room orders.
+  final String? tokenLabel;
+  final TokenStatus? tokenStatus;
+  final FulfillmentType? fulfillmentType;
   const HistoryOrder({
     required this.id,
     required this.orderId,
@@ -546,6 +556,9 @@ class HistoryOrder {
     this.createdBy,
     this.customerId,
     this.customerName,
+    this.tokenLabel,
+    this.tokenStatus,
+    this.fulfillmentType,
   });
 
   HistoryOrder copyWith({
@@ -570,6 +583,9 @@ class HistoryOrder {
         customerName: customerName == _absent
             ? this.customerName
             : customerName as String?,
+        tokenLabel: tokenLabel,
+        tokenStatus: tokenStatus,
+        fulfillmentType: fulfillmentType,
       );
 }
 
@@ -938,14 +954,40 @@ final forceDisconnectedProvider = StateProvider<bool>((_) => false);
 
 final lastKotIdProvider = StateProvider<String?>((_) => null);
 
+/// The token of the order this phone just fired, for the success / token
+/// screen; null when that order has none.
+final lastTokenProvider = StateProvider<TokenInfo?>((_) => null);
+
+/// The desk's QSR settings (sync `qsr_config`, `qsr_config:updated`).
+/// Restaurant mode until a desk says otherwise.
+final qsrConfigProvider = StateProvider<QsrConfig>((_) => QsrConfig.restaurant);
+
+/// Entry-ticket types on sale (sync `entry_ticket_types`,
+/// `ticket_types:updated`), in the desk's order.
+final ticketTypesProvider = StateProvider<List<TicketType>>((_) => const []);
+
+/// The desk's cover / QR settings (sync `entry_ticket_config`).
+final ticketConfigProvider =
+    StateProvider<TicketConfig>((_) => TicketConfig.none);
+
+/// The payment modes the desk lists for this user (sync `payment_modes`,
+/// `payment_modes:updated`). Never the cover mode or a system mode.
+final payModesProvider = StateProvider<List<PayMode>>((_) => const []);
+
 final linkGroupsProvider = StateProvider<Map<String, List<String>>>((_) => {});
 
 class ReadyTicket {
   final String orderId;
   final String? tableId;
+
+  /// What the order is called: the table, "Token T-07", "Takeaway" or
+  /// "Order".
   final String tableName;
   final String kotNumber;
   final List<String> itemLabels;
+
+  /// The token of a counter order; null otherwise.
+  final String? tokenLabel;
 
   const ReadyTicket({
     required this.orderId,
@@ -953,7 +995,34 @@ class ReadyTicket {
     required this.tableName,
     required this.kotNumber,
     required this.itemLabels,
+    this.tokenLabel,
   });
+
+  /// The `order:ready` broadcast; null without an order id. A token order is
+  /// called by its token, since that is what the guest holds.
+  static ReadyTicket? fromPayload(Map<String, dynamic> m) {
+    final orderId = optionalString(m, 'order_id');
+    if (orderId == null) return null;
+    final tokenLabel = optionalString(m, 'token_label');
+    final tableName = tokenLabel != null
+        ? 'Token $tokenLabel'
+        : optionalString(m, 'table_name') ??
+            (optionalString(m, 'order_type') == 'takeaway'
+                ? 'Takeaway'
+                : 'Order');
+    final labels = <String>[
+      for (final it in mapList(m['items']))
+        '${it['quantity'] ?? 1}× ${it['item_name']?.toString() ?? 'Item'}',
+    ];
+    return ReadyTicket(
+      orderId: orderId,
+      tableId: optionalString(m, 'table_id'),
+      tableName: tableName,
+      kotNumber: optionalString(m, 'kot_number') ?? '',
+      itemLabels: labels,
+      tokenLabel: tokenLabel,
+    );
+  }
 }
 
 final readyOrdersProvider = StateProvider<List<ReadyTicket>>((_) => []);

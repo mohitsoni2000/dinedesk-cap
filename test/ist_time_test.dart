@@ -60,6 +60,19 @@ void main() {
       expect(formatIstSlipTime(DateTime.utc(2026, 10, 5, 6, 30)), '12:00:00 pm');
     });
 
+    test('gate clock: zero-padded 12-hour with upper-case AM/PM', () {
+      // 14:45:30 UTC = 20:15:30 IST — "Already used at 08:15 PM".
+      expect(
+          formatIstClock12(DateTime.utc(2026, 10, 9, 14, 45, 30)), '08:15 PM');
+      expect(formatIstClock12(DateTime.utc(2026, 10, 9, 3, 35)), '09:05 AM');
+      expect(formatIstClock12(DateTime.utc(2026, 10, 9, 6, 30)), '12:00 PM');
+      expect(formatIstClock12(DateTime.utc(2026, 10, 9, 18, 30)), '12:00 AM');
+      expect(formatIstClock12(DateTime.utc(2026, 10, 9, 18, 29)), '11:59 PM');
+      // A device-local instant reads the same as its UTC twin.
+      final instant = DateTime.utc(2026, 10, 9, 14, 45);
+      expect(formatIstClock12(instant.toLocal()), formatIstClock12(instant));
+    });
+
     test('time to the next IST midnight', () {
       expect(untilNextIstMidnight(DateTime.utc(2026, 9, 30, 18)),
           const Duration(minutes: 30));

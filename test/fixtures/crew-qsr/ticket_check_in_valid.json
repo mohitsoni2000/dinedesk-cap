@@ -1,0 +1,16 @@
+{
+  "kind": "success",
+  "result": "valid",
+  "ticket": {
+    "id": "et_42b",
+    "ticket_number": "ET-042",
+    "type_name": "Couple Pass",
+    "pax": 2,
+    "status": "checked_in",
+    "cover_balance": 800,
+    "guest_name": "Ravi Sharma",
+    "valid_date": "2026-10-09"
+  },
+  "checked_in_at": "2026-10-09 14:45:30",
+  "checked_in_by_name": "Asha"
+}

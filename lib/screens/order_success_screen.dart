@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import '../data/home_route.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
@@ -64,7 +64,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
           _countdown--;
         } else {
           timer.cancel();
-          context.go('/tables');
+          goHome(context, ref);
         }
       });
     });
@@ -80,7 +80,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
   Widget build(BuildContext context) {
     return DragToDismiss.gesture(
       onDismiss: () {
-        if (mounted) context.go('/tables');
+        if (mounted) goHome(context, ref);
       },
       child: ColoredBox(
         color: context.palette.paper,
@@ -189,7 +189,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                               child: OutlinedButton(
                                 onPressed: () {
                                   _autoNav?.cancel();
-                                  context.go('/tables');
+                                  goHome(context, ref);
                                 },
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: AppColors.gold,
@@ -211,11 +211,13 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                             ),
                             const SizedBox(height: 10),
                             LiquidPrimaryButton(
-                              label: 'Back to Tables ($_countdown)',
+                              label: 'Back to '
+                                  '${homeLabelFor(ref.watch(homeRouteProvider))} '
+                                  '($_countdown)',
                               fullWidth: true,
                               onPressed: () {
                                 _autoNav?.cancel();
-                                context.go('/tables');
+                                goHome(context, ref);
                               },
                             ),
                           ],

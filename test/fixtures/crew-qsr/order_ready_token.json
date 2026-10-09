@@ -1,0 +1,15 @@
+{
+  "order_id": "ord_9c21",
+  "kot_number": "KOT-0129",
+  "table_id": null,
+  "table_name": null,
+  "order_type": "takeaway",
+  "owner_operator_id": "op_asha",
+  "items": [
+    { "item_name": "Paneer Tikka Roll", "quantity": 2 },
+    { "item_name": "Masala Chai", "quantity": 2 }
+  ],
+  "token_label": "T-07",
+  "token_number": 7,
+  "fulfillment_type": "takeaway"
+}

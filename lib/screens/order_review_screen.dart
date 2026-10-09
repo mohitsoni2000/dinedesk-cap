@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/home_route.dart';
 import '../data/money.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
@@ -38,6 +39,18 @@ class OrderReviewScreen extends ConsumerStatefulWidget {
   @override
   ConsumerState<OrderReviewScreen> createState() => _OrderReviewScreenState();
 }
+
+/// The `order:preview-totals` items for [cart]. Amounts go out as rupees
+/// (`toWire()`): a raw [Money] made jsonEncode throw, the ack helper reported
+/// that as a lost connection, and the server total never showed.
+@visibleForTesting
+List<Map<String, dynamic>> previewTotalsItems(List<CartLine> cart) => cart
+    .map((l) => <String, dynamic>{
+          'item_id': l.item.id,
+          'item_type': l.item.kitchenSection,
+          'total_price': l.lineTotal.toWire(),
+        })
+    .toList();
 
 enum _OrderType { dineIn, takeaway }
 
@@ -182,16 +195,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
   Future<void> _fetchTotalsPreview(List<CartLine> cart) async {
     final socketService = ref.read(socketServiceProvider);
-    final items = cart
-        .map((l) => <String, dynamic>{
-              'item_id': l.item.id,
-              'item_type': l.item.kitchenSection,
-              'total_price': l.lineTotal,
-            })
-        .toList();
     final response = await socketService.emitAck(
       'order:preview-totals',
-      <String, dynamic>{'items': items},
+      <String, dynamic>{'items': previewTotalsItems(cart)},
     );
     if (!mounted || response['kind'] == 'error') return;
     final totals = response['totals'];
@@ -806,7 +812,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       ref.read(orderNotesProvider.notifier).state = '';
       DynamicToast.show(context,
           message: 'Order held — table reserved', kind: ToastKind.success);
-      context.go('/tables');
+      goHome(context, ref);
     } finally {
       if (mounted) setState(() => _running = false);
     }

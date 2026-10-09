@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/home_route.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../services/connection_bootstrap.dart';
@@ -71,7 +72,7 @@ class _ConnectingScreenState extends ConsumerState<ConnectingScreen>
     ref.listen<BootstrapOutcome>(connectionBootstrapProvider, (_, next) {
       if (!mounted) return;
       if (next is BootstrapResumed || next is BootstrapOfflineResumed) {
-        context.go('/tables');
+        goHome(context, ref);
       } else if (next is BootstrapNeedsAuth) {
         context.go('/auth');
       } else if (next is BootstrapNoPairing) {

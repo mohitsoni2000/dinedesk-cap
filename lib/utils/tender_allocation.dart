@@ -97,14 +97,23 @@ class BillPaymentCall {
       };
 }
 
-/// The `bill:payment` calls that take [covers] and [tenders] for [bills],
-/// in the bills' order; a bill nothing lands on gets no call.
+/// The `bill:payment` calls that take [covers] and [tenders] for [bills]; a
+/// bill nothing lands on gets no call.
 ///
 /// Each cover, in the order added, fills the cover-eligible bills food →
 /// beverages → liquor → combined, splitting across bills when one is not
 /// enough. [tenders] then split, as they always have, over what each bill
-/// still owes. Throws [ArgumentError] when a cover is more than the eligible
-/// bills owe: amounts are capped when a ticket is added, so that is a bug.
+/// still owes.
+///
+/// The calls come in the order to send them: those carrying cover first,
+/// food → beverages → liquor → combined, so when the desk caps a ticket the
+/// shortfall lands on the least preferred bill; the rest follow in the
+/// bills' order.
+///
+/// Throws [ArgumentError] when a cover is more than the eligible bills owe
+/// (amounts are capped when a ticket is added), and [StateError] when the
+/// tenders do not add up to what the bills owe after cover: both are bugs
+/// in the caller, never something to split around.
 List<BillPaymentCall> planBillPayments({
   required List<PlanBill> bills,
   required List<AppliedCover> covers,
@@ -134,11 +143,7 @@ List<BillPaymentCall> planBillPayments({
         final room = owed[bill.id]!;
         if (!room.isPositive) continue;
         final take = left < room ? left : room;
-        coverLines[bill.id]!.add(TenderLine(
-          mode: coverMode,
-          amount: take,
-          ticketCode: cover.code,
-        ));
+        coverLines[bill.id]!.add(cover.toLine(coverMode).withAmount(take));
         owed[bill.id] = room - take;
         left -= take;
       }
@@ -148,19 +153,40 @@ List<BillPaymentCall> planBillPayments({
       }
     }
   }
+  final owedAfterCover = owed.values.sumMoney();
+  final tendered = <Money>[
+    for (final tender in tenders)
+      tender.amount ??
+          (throw ArgumentError.value(
+              tender.mode, 'tenders', 'a split tender needs an amount')),
+  ].sumMoney();
+  if (tendered != owedAfterCover) {
+    throw StateError('the tenders add up to ${tendered.paise}p, but the '
+        'bills owe ${owedAfterCover.paise}p after cover');
+  }
   final split = allocateTenders(
     bills: <BillWeight>[
       for (final bill in bills) (billId: bill.id, weight: owed[bill.id]!),
     ],
     tenders: tenders,
   );
-  return <BillPaymentCall>[
+  final covered = <PlanBill>[
     for (final bill in bills)
-      if (coverLines[bill.id]!.isNotEmpty || split[bill.id]!.isNotEmpty)
-        BillPaymentCall(
-          billId: bill.id,
-          lines: <TenderLine>[...coverLines[bill.id]!, ...split[bill.id]!],
-        ),
+      if (coverLines[bill.id]!.isNotEmpty) bill,
+  ];
+  // Stable: bills of one type keep their order.
+  mergeSort<PlanBill>(covered,
+      compare: (a, b) => a._coverRank.compareTo(b._coverRank));
+  return <BillPaymentCall>[
+    for (final bill in <PlanBill>[
+      ...covered,
+      for (final bill in bills)
+        if (coverLines[bill.id]!.isEmpty && split[bill.id]!.isNotEmpty) bill,
+    ])
+      BillPaymentCall(
+        billId: bill.id,
+        lines: <TenderLine>[...coverLines[bill.id]!, ...split[bill.id]!],
+      ),
   ];
 }
 

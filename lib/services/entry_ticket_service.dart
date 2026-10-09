@@ -91,16 +91,22 @@ class EntryTicketService {
   }
 }
 
+// Staff words shared by a refused cover payment and a ticket lookup.
+const String _noSuchTicket = 'No ticket matches that code';
+const String _ticketCancelled = 'This ticket was cancelled';
+const String _earlierDay = 'This ticket was for an earlier day';
+const String _coverUsedUp = "This ticket's cover is used up";
+
 /// Staff words for a desk error code on a cover payment or a ticket lookup
 /// (spec §2.10's prefixes, lower-cased), or null for a code this app does not
 /// word itself: show the desk's message then.
 String? coverErrorCopy(String? code) => switch (code) {
       'cover_invalid' => "This ticket can't be used as cover",
-      'cover_expired' => 'This ticket was for an earlier day',
-      'cover_empty' => "This ticket's cover is used up",
+      'cover_expired' => _earlierDay,
+      'cover_empty' => _coverUsedUp,
       'cover_not_applicable' => "Cover can't pay a room, comp or credit bill",
-      'ticket_not_found' => 'No ticket matches that code',
-      'ticket_cancelled' => 'This ticket was cancelled',
+      'ticket_not_found' => _noSuchTicket,
+      'ticket_cancelled' => _ticketCancelled,
       'payment_invalid' => "The desk couldn't take these payments",
       'payment_short' => "The payments don't cover the bill",
       'payment_over' => 'The payments are more than the bill',
@@ -111,11 +117,11 @@ String? coverErrorCopy(String? code) => switch (code) {
 /// app does not know shows the desk's [deskMessage].
 String lookupRefusalCopy(LookupReason? reason, {String? deskMessage}) =>
     switch (reason) {
-      LookupReason.notFound => 'No ticket matches that code',
-      LookupReason.cancelled => 'This ticket was cancelled',
-      LookupReason.expired => 'This ticket was for an earlier day',
+      LookupReason.notFound => _noSuchTicket,
+      LookupReason.cancelled => _ticketCancelled,
+      LookupReason.expired => _earlierDay,
       LookupReason.noCover => 'This ticket has no cover to spend',
-      LookupReason.usedUp => "This ticket's cover is used up",
+      LookupReason.usedUp => _coverUsedUp,
       LookupReason.other ||
       null =>
         deskMessage ?? "This ticket can't pay a bill",

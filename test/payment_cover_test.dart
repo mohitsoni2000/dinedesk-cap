@@ -12,7 +12,11 @@ import 'package:restro/models/server_models.dart';
 import 'package:restro/services/entry_ticket_service.dart';
 import 'package:restro/services/socket_service.dart';
 import 'package:restro/utils/request_id.dart';
+import 'package:restro/utils/payment_run.dart';
 import 'package:restro/utils/tender_allocation.dart';
+import 'package:restro/widgets/cover_redeem_section.dart';
+import 'package:restro/widgets/liquid_chrome.dart';
+import 'package:restro/widgets/tender_form.dart';
 
 import 'support/payment_sheet_harness.dart';
 
@@ -146,14 +150,19 @@ void main() {
         ],
       );
       final code = _applied('et-041', 1500).code;
+      // Sent in cover order, the cover-free room bill last.
       expect(_shape(calls), [
+        [
+          'food',
+          [(_cover, const Money.rupees(300), code)]
+        ],
+        [
+          'bev',
+          [(_cover, const Money.rupees(200), code)]
+        ],
         [
           'liquor',
           [(_cover, const Money.rupees(700), code)]
-        ],
-        [
-          'room',
-          [('cash', const Money.rupees(1000), null)]
         ],
         [
           'combined',
@@ -163,12 +172,8 @@ void main() {
           ]
         ],
         [
-          'food',
-          [(_cover, const Money.rupees(300), code)]
-        ],
-        [
-          'bev',
-          [(_cover, const Money.rupees(200), code)]
+          'room',
+          [('cash', const Money.rupees(1000), null)]
         ],
       ]);
     });
@@ -216,18 +221,18 @@ void main() {
       final code = _applied('et-042', 0).code;
       expect(_shape(calls), [
         [
+          'food',
+          [(_cover, const Money.rupees(300), code)]
+        ],
+        [
           'liquor',
           [
             (_cover, const Money.rupees(500), code),
             ('upi', const Money.rupees(200), null),
           ]
         ],
-        [
-          'food',
-          [(_cover, const Money.rupees(300), code)]
-        ],
       ]);
-      expect(calls.first.lines.last.reference, 'U1');
+      expect(calls.last.lines.last.reference, 'U1');
     });
 
     test('other tenders split by what each bill still owes after cover', () {
@@ -275,9 +280,9 @@ void main() {
           TenderLine(mode: 'cash', amount: Money.rupees(1000)),
         ],
       );
-      expect(calls.first.billId, 'room');
-      expect(calls.first.lines.any((l) => l.isCover), isFalse);
-      expect(calls.first.lines.single.amount, const Money.rupees(1000));
+      final room = calls.singleWhere((c) => c.billId == 'room');
+      expect(room.lines.any((l) => l.isCover), isFalse);
+      expect(room.lines.single.amount, const Money.rupees(1000));
     });
 
     test('without cover it is the old split exactly', () {
@@ -317,6 +322,57 @@ void main() {
                 tenders: const <TenderLine>[],
               ),
           throwsArgumentError);
+    });
+
+    test('calls carrying cover go first in cover order, the rest in bill order',
+        () {
+      final calls = planBillPayments(
+        bills: <PlanBill>[
+          _bill('liquor', 'liquor', 300),
+          _bill('room', 'room', 100, eligible: false),
+          _bill('food', 'food', 200),
+          _bill('combined', 'combined', 100),
+        ],
+        covers: <AppliedCover>[_applied('et-042', 500, balance: 800)],
+        coverMode: _cover,
+        tenders: const <TenderLine>[
+          TenderLine(mode: 'cash', amount: Money.rupees(200)),
+        ],
+      );
+      // If the desk caps the ticket, the shortfall lands on liquor, not food.
+      expect(calls.map((c) => c.billId),
+          <String>['food', 'liquor', 'room', 'combined']);
+    });
+
+    test("tenders that don't add up to what is owed after cover are a bug", () {
+      expect(
+          () => planBillPayments(
+                bills: <PlanBill>[_bill('food', 'food', 500)],
+                covers: <AppliedCover>[_applied('et-042', 100)],
+                coverMode: _cover,
+                tenders: const <TenderLine>[
+                  TenderLine(mode: 'cash', amount: Money.rupees(300)),
+                ],
+              ),
+          throwsStateError);
+      expect(
+          () => planBillPayments(
+                bills: <PlanBill>[_bill('food', 'food', 500)],
+                covers: const <AppliedCover>[],
+                coverMode: null,
+                tenders: const <TenderLine>[TenderLine(mode: 'cash')],
+              ),
+          throwsArgumentError,
+          reason: 'a fill line is for the desk to place');
+      expect(
+          planBillPayments(
+            bills: <PlanBill>[_bill('food', 'food', 0)],
+            covers: const <AppliedCover>[],
+            coverMode: null,
+            tenders: const <TenderLine>[],
+          ),
+          isEmpty,
+          reason: 'nothing owed, nothing tendered');
     });
   });
 
@@ -702,7 +758,18 @@ void main() {
       await tester.pump();
       await h.pay(tester);
 
+      // Food goes first: if the desk caps the ticket, liquor is short.
       expect(h.payloads(), <Map<String, dynamic>>[
+        <String, dynamic>{
+          'bill_id': 'bill_food',
+          'payments': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'payment_mode': _cover,
+              'amount': 300.0,
+              'ticket_code': _et42Qr,
+            },
+          ],
+        },
         <String, dynamic>{
           'bill_id': 'bill_liquor',
           'payments': <Map<String, dynamic>>[
@@ -712,16 +779,6 @@ void main() {
               'ticket_code': _et42Qr,
             },
             <String, dynamic>{'payment_mode': 'cash', 'amount': 200.0},
-          ],
-        },
-        <String, dynamic>{
-          'bill_id': 'bill_food',
-          'payments': <Map<String, dynamic>>[
-            <String, dynamic>{
-              'payment_mode': _cover,
-              'amount': 300.0,
-              'ticket_code': _et42Qr,
-            },
           ],
         },
       ]);
@@ -887,6 +944,335 @@ void main() {
       ]);
       await addTicket(tester, 'ET-042');
       expect(find.text('Nothing left here that cover can pay'), findsOneWidget);
+    });
+
+    group('when a payment goes through in part', () {
+      const food300 = ServerBill(
+          id: 'bill_food',
+          billNumber: 'INV/001',
+          totalAmount: Money.rupees(300),
+          billType: 'food',
+          isPaid: false);
+      const liquor700 = ServerBill(
+          id: 'bill_liquor',
+          billNumber: 'INV/002',
+          totalAmount: Money.rupees(700),
+          billType: 'liquor',
+          isPaid: false);
+      Map<String, dynamic> lost() => <String, dynamic>{
+            'kind': 'error',
+            'code': AckCode.timeout,
+            'message': "The desk didn't respond",
+          };
+
+      bool formEnabled(WidgetTester tester) =>
+          tester.widget<TenderForm>(find.byType(TenderForm)).enabled;
+      bool coverEnabled(WidgetTester tester) => tester
+          .widget<CoverRedeemSection>(find.byType(CoverRedeemSection))
+          .enabled;
+      List<({String event, Map<String, dynamic> data})> billPayments(
+              PaymentSheetHarness h) =>
+          h.sent.where((s) => s.event == 'bill:payment').toList();
+
+      testWidgets(
+          '(a) refused after a bill went through: spent entries cleared, '
+          'the rest planned at what it owes', (tester) async {
+        const food = ServerBill(
+            id: 'bill_food',
+            billNumber: 'INV/001',
+            totalAmount: Money.rupees(600),
+            billType: 'food',
+            isPaid: false);
+        const liquor = ServerBill(
+            id: 'bill_liquor',
+            billNumber: 'INV/002',
+            totalAmount: Money.rupees(400),
+            billType: 'liquor',
+            isPaid: false);
+        final h = await PaymentSheetHarness.open(tester, bills: [food, liquor]);
+        var liquorTries = 0;
+        h.answer = (event, data) =>
+            data['bill_id'] == 'bill_liquor' && liquorTries++ == 0
+                ? <String, dynamic>{
+                    'kind': 'error',
+                    'message': 'Payment amount ₹400 exceeds remaining ₹0.00',
+                  }
+                : <String, dynamic>{'kind': 'success'};
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester);
+
+        expect(
+            find.text('Settled 1 of 2. Take payment for the remaining ₹400.'),
+            findsOneWidget);
+        expect(
+            find.text('₹400 still due — part of the payment went through. '
+                'Take another payment for the rest.'),
+            findsOneWidget);
+        expect(find.text('CASH TENDERED'), findsNothing,
+            reason: 'the spent cash is cleared');
+        expect(h.payButton(tester).onPressed, isNull);
+        expect(h.closed, isFalse);
+
+        await tester.tap(find.text('UPI'));
+        await tester.pump();
+        await h.pay(tester);
+        expect(h.payloads().last, <String, dynamic>{
+          'bill_id': 'bill_liquor',
+          'payments': <Map<String, dynamic>>[
+            <String, dynamic>{'payment_mode': 'upi', 'amount': 400.0},
+          ],
+        });
+        expect(h.payloads().where((p) => p['bill_id'] == 'bill_food'),
+            hasLength(1),
+            reason: 'the settled bill is never sent again');
+        expect(h.result, isTrue);
+        await h.drainToasts(tester);
+      });
+
+      testWidgets(
+          '(b) a bill through, the next unanswered: form and cover lock, '
+          'Pay finishes the rest', (tester) async {
+        var liquorTries = 0;
+        final h = await openWithCover(tester,
+            bills: const <ServerBill>[liquor700, food300],
+            payment: (data) =>
+                data['bill_id'] == 'bill_liquor' && liquorTries++ == 0
+                    ? lost()
+                    : <String, dynamic>{'kind': 'success'});
+        await addTicket(tester, 'ET-042');
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester);
+
+        expect(h.closed, isFalse);
+        expect(formEnabled(tester), isFalse);
+        expect(coverEnabled(tester), isFalse);
+        expect(
+            find.text('Part of this payment went through. Pay retries the '
+                'rest exactly as entered.'),
+            findsOneWidget);
+        expect(find.text('Settled 1 of 2. Retry sends only the remaining 1.'),
+            findsOneWidget);
+        await tester.tap(find.text('Add cover ticket'), warnIfMissed: false);
+        await tester.pumpAndSettle();
+        expect(find.text('Use'), findsNothing,
+            reason: 'no ticket while locked');
+
+        await h.pay(tester);
+        final payments = billPayments(h);
+        expect(payments.map((s) => s.data['bill_id']),
+            <String>['bill_food', 'bill_liquor', 'bill_liquor']);
+        expect(payments[2].data, payments[1].data,
+            reason: 'the same payload and client_request_id');
+        expect(h.result, isTrue);
+        await h.drainToasts(tester);
+      });
+
+      testWidgets('(c) a garbled answer counts as no answer: kept and locked',
+          (tester) async {
+        var tries = 0;
+        final h = await PaymentSheetHarness.open(tester, bills: [foodBill]);
+        h.answer = (event, data) => tries++ == 0
+            ? <String, dynamic>{
+                'kind': 'error',
+                'code': AckCode.badResponse,
+                'message': 'Invalid server response',
+              }
+            : <String, dynamic>{'kind': 'success'};
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester);
+
+        expect(h.closed, isFalse);
+        expect(formEnabled(tester), isFalse);
+        expect(find.text(kPaymentNoAnswer), findsWidgets);
+        expect(find.textContaining('nothing was charged'), findsNothing);
+
+        await h.pay(tester);
+        expect(h.sent, hasLength(2));
+        expect(h.sent[1].data, h.sent[0].data);
+        expect(h.result, isTrue);
+        await h.drainToasts(tester);
+      });
+
+      testWidgets(
+          '(d) cover refused on the second bill after the first went through',
+          (tester) async {
+        final h = await openWithCover(tester,
+            bills: const <ServerBill>[liquor700, food300],
+            payment: (data) => data['bill_id'] == 'bill_liquor'
+                ? _fixture('bill_payment_cover_error_ack.json')
+                : <String, dynamic>{'kind': 'success'});
+        await addTicket(tester, 'ET-042');
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester);
+
+        expect(billPayments(h).map((s) => s.data['bill_id']),
+            <String>['bill_food', 'bill_liquor']);
+        expect(find.text("This ticket's cover is used up"), findsOneWidget);
+        expect(
+            find.text('₹700 still due — part of the payment went through. '
+                'Take another payment for the rest.'),
+            findsOneWidget);
+        expect(find.text('ET-042 · Couple Pass'), findsNothing,
+            reason: 'the spent cover is cleared');
+        expect(formEnabled(tester), isTrue);
+
+        h.answer = (event, data) => <String, dynamic>{'kind': 'success'};
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester);
+        expect(h.payloads().last, <String, dynamic>{
+          'bill_id': 'bill_liquor',
+          'payments': <Map<String, dynamic>>[
+            <String, dynamic>{'payment_mode': 'cash', 'amount': 700.0},
+          ],
+        });
+        expect(h.result, isTrue);
+        await h.drainToasts(tester);
+      });
+
+      testWidgets('(e) the first answer lost: kept, locked, resent identically',
+          (tester) async {
+        var tries = 0;
+        final h = await openWithCover(tester,
+            payment: (_) => tries++ == 0 ? lost() : paidAck());
+        await addTicket(tester, 'ET-042');
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester);
+
+        expect(h.closed, isFalse);
+        expect(find.text(kPaymentNoAnswer), findsWidgets);
+        expect(find.textContaining('nothing was charged'), findsNothing);
+        expect(formEnabled(tester), isFalse);
+        expect(coverEnabled(tester), isFalse);
+        expect(find.text('ET-042 · Couple Pass'), findsOneWidget,
+            reason: 'kept as planned');
+        expect(h.payButton(tester).onPressed, isNotNull);
+
+        await h.pay(tester);
+        final payments = billPayments(h);
+        expect(payments, hasLength(2));
+        expect(payments[1].data, payments[0].data,
+            reason: 'the same payload and client_request_id');
+        expect(h.result, isTrue);
+        await h.drainToasts(tester);
+      });
+
+      testWidgets('a short bill without cover is named plainly',
+          (tester) async {
+        var tries = 0;
+        final h = await PaymentSheetHarness.open(tester, bills: [foodBill]);
+        h.answer = (event, data) {
+          final ack = paidAck();
+          if (tries++ == 0) {
+            final bill = ack['bill'] as Map<String, dynamic>;
+            bill['payment_status'] = 'partial';
+            bill['payments'] = <Map<String, dynamic>>[
+              <String, dynamic>{'payment_mode': 'cash', 'amount': 940},
+            ];
+          }
+          return ack;
+        };
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester);
+
+        expect(
+            find.text('₹10 is still due on Food · INV/26-27/001236. '
+                'Take another payment for it.'),
+            findsOneWidget);
+        expect(find.textContaining('cover'), findsNothing);
+
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester);
+        expect(h.payloads().last['payments'], <Map<String, dynamic>>[
+          <String, dynamic>{'payment_mode': 'cash', 'amount': 10.0},
+        ]);
+        expect(h.result, isTrue);
+        await h.drainToasts(tester);
+      });
+
+      testWidgets('a bill nothing landed on: the spent cover is cleared',
+          (tester) async {
+        const zero = ServerBill(
+            id: 'bill_zero',
+            billNumber: 'INV/000',
+            totalAmount: Money.zero,
+            billType: 'food',
+            isPaid: false);
+        final h = await openWithCover(tester,
+            bills: const <ServerBill>[foodBill, zero]);
+        await addTicket(tester, 'ET-042');
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester);
+
+        expect(
+            h.payloads().map((p) => p['bill_id']), <String>['bill_b7e2_food']);
+        expect(find.text('ET-042 · Couple Pass'), findsNothing);
+        expect(find.text('Settled 1 of 2. Retry sends only the remaining 1.'),
+            findsOneWidget);
+        await h.drainToasts(tester);
+      });
+
+      testWidgets(
+          'while money may have moved, a tap outside or a swipe keeps it '
+          'open, and Close asks first', (tester) async {
+        final h = await PaymentSheetHarness.open(tester, bills: [foodBill]);
+        h.answer = (event, data) => lost();
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester);
+        await h.drainToasts(tester);
+
+        await tester.tapAt(const Offset(20, 20));
+        await tester.pumpAndSettle();
+        expect(h.closed, isFalse);
+        expect(find.text('Close the payment?'), findsOneWidget);
+        await tester.tap(find.text('Keep paying'));
+        await tester.pumpAndSettle();
+        expect(h.closed, isFalse);
+
+        await tester.drag(find.text('Collect Payment'), const Offset(0, 1200));
+        await tester.pumpAndSettle();
+        expect(h.closed, isFalse, reason: 'a swipe does not close it');
+
+        final close = find.widgetWithText(LiquidSecondaryButton, 'Close');
+        await tester.ensureVisible(close);
+        await tester.pumpAndSettle();
+        await tester.tap(close);
+        await tester.pumpAndSettle();
+        expect(
+            find.text('A payment may have gone through or part is still due '
+                '— check the bill on the order screen.'),
+            findsOneWidget);
+        await tester.tap(find.widgetWithText(TextButton, 'Close'));
+        await tester.pumpAndSettle();
+        expect(h.closed, isTrue);
+        expect(h.result, isNull);
+      });
+
+      testWidgets('an idle sheet still closes with a tap outside, as before',
+          (tester) async {
+        final h = await PaymentSheetHarness.open(tester, bills: [foodBill]);
+        await tester.tapAt(const Offset(20, 20));
+        await tester.pumpAndSettle();
+        expect(h.closed, isTrue);
+        expect(find.text('Close the payment?'), findsNothing);
+      });
+
+      testWidgets('an idle sheet still closes with a swipe, as before',
+          (tester) async {
+        final h = await PaymentSheetHarness.open(tester, bills: [foodBill]);
+        await tester.drag(find.text('Collect Payment'), const Offset(0, 1200));
+        await tester.pumpAndSettle();
+        expect(h.closed, isTrue);
+      });
     });
   });
 }

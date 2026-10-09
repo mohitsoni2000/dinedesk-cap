@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restro/data/gate_providers.dart';
 import 'package:restro/data/providers.dart';
 import 'package:restro/services/connection_bootstrap.dart';
 import 'package:restro/services/session_service.dart';
@@ -97,6 +98,23 @@ void main() {
       await done;
       expect(container.read(connectionBootstrapProvider),
           isA<BootstrapNoPairing>());
+    });
+
+    test('signOut empties a half-made ticket sale (it may hold a guest)',
+        () async {
+      FlutterSecureStorage.setMockInitialValues(<String, String>{});
+      bootstrap().debugSetPairing(pairing);
+      container.read(ticketIssueFormProvider.notifier)
+        ..setQty('ett_couple', 2)
+        ..setGuestName('Ravi Sharma')
+        ..setGuestPhone('9876543210');
+
+      await bootstrap().signOut();
+
+      final form = container.read(ticketIssueFormProvider);
+      expect(form.hasTickets, isFalse);
+      expect(form.guestName, isEmpty);
+      expect(form.guestPhone, isEmpty);
     });
   });
 }

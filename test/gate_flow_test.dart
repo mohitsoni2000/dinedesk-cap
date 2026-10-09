@@ -23,9 +23,11 @@ import 'package:restro/services/session_service.dart';
 import 'package:restro/services/slip_printer.dart';
 import 'package:restro/services/socket_service.dart';
 import 'package:restro/theme/app_theme.dart';
+import 'package:restro/widgets/liquid_chrome.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/fake_bluetooth_printer.dart';
+import 'support/payment_sheet_harness.dart' show fieldWithHint;
 
 class _Bootstrap extends ConnectionBootstrap {
   _Bootstrap(super.ref);
@@ -290,6 +292,52 @@ void main() {
     expect(printer.written, hasLength(2));
     expect(latin1.decode(printer.written.last), contains('ET-042'));
     expect(find.text('Every slip has printed.'), findsOneWidget);
+    await drain(tester);
+  });
+
+  /// Taps the split tender's add button, scrolled clear of the sticky bar.
+  Future<void> addSplit(WidgetTester tester) async {
+    final add = find.byKey(const ValueKey<String>('tender-add-split'));
+    await tester.ensureVisible(add);
+    await tester.pump();
+    await tester.tap(add);
+    await tester.pump();
+  }
+
+  testWidgets(
+      'split tenders: ₹1,000 on a ₹4,000 sale leaves Issue off until the '
+      'rest is tendered', (tester) async {
+    final h = await pumpGate(tester,
+        flags: FeatureFlags.fromMap(<String, dynamic>{
+          'flag_entry_tickets': 1,
+          'flag_ticket_issue': 1,
+          'flag_ticket_checkin': 1,
+          'flag_split_payment': 1,
+        }));
+    await pickTwoCouplesAndCash(tester);
+    await tester.enterText(fieldWithHint('₹4,000').last, '1000');
+    await addSplit(tester);
+    expect(find.text('Remaining: ₹3,000'), findsOneWidget);
+    LiquidPrimaryButton issue() => tester.widget<LiquidPrimaryButton>(
+        find.byKey(const ValueKey<String>('issue-go')));
+    expect(issue().onPressed, isNull,
+        reason: 'the fill would charge the ₹3,000 to cash unasked');
+
+    // The picker's Cash (the split row below says Cash too).
+    await tester.ensureVisible(find.text('Cash').first);
+    await tester.tap(find.text('Cash').first);
+    await tester.pump();
+    await tester.enterText(fieldWithHint('₹3,000').last, '3000');
+    await addSplit(tester);
+    expect(issue().onPressed, isNotNull, reason: 'the splits cover the sale');
+
+    await tester.tap(find.byKey(const ValueKey<String>('issue-go')));
+    await tester.pumpAndSettle();
+    final payments = h.payloads('ticket:issue').single['payments'] as List;
+    expect(payments, hasLength(2));
+    expect((payments.first as Map)['amount'], 1000);
+    expect((payments.last as Map).containsKey('amount'), isFalse,
+        reason: 'only the round-off is left to the fill');
     await drain(tester);
   });
 

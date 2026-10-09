@@ -14,6 +14,7 @@ import '../services/entry_ticket_service.dart';
 import '../services/parked_cart_resolver.dart';
 import '../services/slip_printer.dart';
 import 'money.dart';
+import 'providers.dart';
 
 /// Most tickets one sale may carry (the desk refuses more).
 const int kMaxTicketsPerSale = 50;
@@ -88,8 +89,13 @@ String ticketLinesSummary(List<({TicketType type, int qty})> lines) =>
     lines.map((l) => '${l.qty}× ${l.type.name}').join(', ');
 
 final ticketIssueFormProvider =
-    StateNotifierProvider<TicketIssueFormNotifier, TicketIssueForm>(
-        (_) => TicketIssueFormNotifier());
+    StateNotifierProvider<TicketIssueFormNotifier, TicketIssueForm>((ref) {
+  // The form may hold a guest's name and phone: it is its operator's alone,
+  // and starts empty for anyone else. Signing out clears it too
+  // (ConnectionBootstrap.signOut).
+  ref.watch(operatorProvider.select((op) => op?.id));
+  return TicketIssueFormNotifier();
+});
 
 class TicketIssueFormNotifier extends StateNotifier<TicketIssueForm> {
   TicketIssueFormNotifier() : super(const TicketIssueForm());
@@ -174,9 +180,14 @@ class PendingTicketIssue {
     required this.request,
     required this.summary,
     required this.form,
+    required this.operatorId,
   });
 
   final TicketIssueRequest request;
+
+  /// Who sent it. The desk replays by operator, so another operator's retry
+  /// would sell again; and the form shows the guest. It is never theirs.
+  final String operatorId;
 
   /// "2× Couple Pass", for the card.
   final String summary;
@@ -186,8 +197,13 @@ class PendingTicketIssue {
   final TicketIssueForm form;
 }
 
-final pendingTicketIssueProvider =
-    StateProvider<PendingTicketIssue?>((_) => null);
+/// The unanswered sale, its operator's alone: when another operator signs
+/// in (or the session is revoked) it is gone, so nobody else retries it or
+/// sees its guest. Signing out and back in as the same operator keeps it.
+final pendingTicketIssueProvider = StateProvider<PendingTicketIssue?>((ref) {
+  ref.watch(operatorProvider.select((op) => op?.id));
+  return null;
+});
 
 /// The sale the result screen shows; null when there is none.
 final ticketIssueResultProvider =
@@ -229,6 +245,17 @@ void clearTicketFormIfUnchanged(
 /// code) keeps it, as unanswered.
 Future<TicketIssueOutcome> retryPendingIssue(
     ProviderContainer container, PendingTicketIssue pending) async {
+  // Never under another operator's name: the desk would sell again.
+  if (pending.operatorId != container.read(operatorProvider)?.id) {
+    if (identical(container.read(pendingTicketIssueProvider), pending)) {
+      container.read(pendingTicketIssueProvider.notifier).state = null;
+    }
+    return const TicketIssueRejected(
+      code: kOtherOperatorCode,
+      message: 'Another operator started that sale, so it was set aside. '
+          'Check Recent before selling it again.',
+    );
+  }
   final outcome =
       await container.read(entryTicketServiceProvider).issue(pending.request);
   switch (outcome) {
@@ -251,6 +278,7 @@ Future<TicketIssueOutcome> retryPendingIssue(
 /// What the usher is told when a retried sale is refused: "nothing was
 /// charged" only when the refusal proves it.
 String retryIssueRefusalCopy(TicketIssueRejected refused) {
+  if (refused.code == kOtherOperatorCode) return refused.message;
   if (refused.isBusinessRefusal) {
     return '${refused.message}. Nothing was charged.';
   }

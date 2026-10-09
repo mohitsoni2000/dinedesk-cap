@@ -305,9 +305,36 @@ class TicketCheckInRequest {
   })  : code = code.trim(),
         clientRequestId = clientRequestId ?? newRequestId();
 
+  /// The check-in of [code] as one intent: until the desk's answer has been
+  /// shown ([settle]), the same code and method get the same id for
+  /// [kRequestIdTtl]. A re-scan after an answer that never came, a Drop,
+  /// or leaving the screen mid-flight then makes the desk replay its answer
+  /// instead of reading this phone's own check-in back as "already used".
+  factory TicketCheckInRequest.intent({
+    required String code,
+    CheckInMethod method = CheckInMethod.scan,
+  }) {
+    final trimmed = code.trim();
+    return TicketCheckInRequest(
+      code: trimmed,
+      method: method,
+      clientRequestId:
+          requestIdFor(_event, _intentOf(trimmed, method)),
+    );
+  }
+
+  static const String _event = 'ticket:check_in';
+
+  static Map<String, dynamic> _intentOf(String code, CheckInMethod method) =>
+      <String, dynamic>{'code': code, 'method': method.wire};
+
   final String code;
   final CheckInMethod method;
   final String clientRequestId;
+
+  /// The desk's answer was shown: the next check-in of this code is a new
+  /// one, with a new id.
+  void settle() => settleRequestId(_event, _intentOf(code, method));
 
   Map<String, dynamic> toPayload() => <String, dynamic>{
         'code': code,

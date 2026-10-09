@@ -155,9 +155,14 @@ class PendingCheckout {
     required this.request,
     required this.cart,
     required this.estimate,
+    required this.operatorId,
   });
 
   final QsrCheckoutRequest request;
+
+  /// Who sent it. The desk replays by operator, so another operator's retry
+  /// would charge again: it is never theirs.
+  final String operatorId;
 
   /// The cart as it was sent. A confirmed retry clears the cart only if it
   /// is still this one, so nothing added since is lost.
@@ -167,7 +172,13 @@ class PendingCheckout {
   int get itemCount => cart.fold<int>(0, (sum, line) => sum + line.qty);
 }
 
-final pendingCheckoutProvider = StateProvider<PendingCheckout?>((_) => null);
+/// The unanswered Pay & Fire, its operator's alone: when another operator
+/// signs in (or the session is revoked) it is gone, so nobody else retries
+/// it. Signing out and back in as the same operator keeps it.
+final pendingCheckoutProvider = StateProvider<PendingCheckout?>((ref) {
+  ref.watch(operatorProvider.select((op) => op?.id));
+  return null;
+});
 
 /// `order:create` / `qsr:checkout` items for [cart].
 List<Map<String, dynamic>> orderItemsPayload(List<CartLine> cart) => cart

@@ -52,6 +52,12 @@ class TenderFormController extends ChangeNotifier {
   List<TenderEntry> get splits => List<TenderEntry>.unmodifiable(_splits);
   Money get splitTotal => _splits.map((e) => e.amount).sumMoney();
 
+  /// The splits cover [due], short by less than ₹1 at most: the round-off a
+  /// filled last tender exists to settle. A bigger shortfall must be
+  /// tendered, never charged silently to the last split (₹1,000 cash on a
+  /// ₹4,000 sale would record ₹4,000 cash and lose the UPI).
+  bool splitsCover(Money due) => due - splitTotal < const Money.rupees(1);
+
   void select(PayMode mode) {
     _selected = mode;
     notifyListeners();
@@ -348,8 +354,13 @@ class TenderForm extends StatelessWidget {
           Icon(Icons.call_split_outlined,
               color: context.palette.ink70, size: 18),
           const SizedBox(width: 8),
-          const Text('Split Payment', style: AppTypography.bodyMd),
-          const Spacer(),
+          // The label gives way on a narrow phone; the amount never does.
+          const Expanded(
+            child: Text('Split Payment',
+                style: AppTypography.bodyMd,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          ),
           Text('Remaining: ${formatRupeesCompact(remaining)}',
               style: AppTypography.caption.copyWith(
                   color: remaining.isPositive
@@ -426,6 +437,7 @@ class TenderForm extends StatelessWidget {
             )),
             const SizedBox(width: 8),
             GestureDetector(
+              key: const ValueKey<String>('tender-add-split'),
               onTap: selected != null
                   ? () => c.addSplit(remaining: remaining)
                   : null,

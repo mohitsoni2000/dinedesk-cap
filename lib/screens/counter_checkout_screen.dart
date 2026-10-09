@@ -88,6 +88,17 @@ void applyPayAndFire(
 /// the PIN raises the PIN prompt, so the next Retry can go.
 Future<QsrCheckoutResult> retryPendingCheckout(
     ProviderContainer container, PendingCheckout pending) async {
+  // Never under another operator's name: the desk would charge again.
+  if (pending.operatorId != container.read(operatorProvider)?.id) {
+    if (identical(container.read(pendingCheckoutProvider), pending)) {
+      container.read(pendingCheckoutProvider.notifier).state = null;
+    }
+    return const QsrCheckoutRejected(
+      code: kOtherOperatorCode,
+      message: 'Another operator started that order, so it was set aside. '
+          'Check the desk before charging it again.',
+    );
+  }
   final result = await container.read(qsrCheckoutServiceProvider).payAndFire(
         pending.request,
       );
@@ -112,9 +123,11 @@ Future<QsrCheckoutResult> retryPendingCheckout(
 /// What the cashier is told when a retried Pay & Fire is refused: nothing
 /// was charged only when the refusal proves it.
 String retryRefusalCopy(QsrCheckoutRejected refused) =>
-    refused.isBusinessRefusal
-        ? '${refused.message}. Nothing was charged.'
-        : kCheckoutNoAnswer;
+    refused.code == kOtherOperatorCode
+        ? refused.message
+        : refused.isBusinessRefusal
+            ? '${refused.message}. Nothing was charged.'
+            : kCheckoutNoAnswer;
 
 /// Runs [work] behind the money overlay. The overlay closes when [work]
 /// ends, however it ends, and its result or error comes back to the caller.
@@ -290,6 +303,13 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
             context, 'Link a customer before using Credit payment');
         return null;
       }
+      if (flags.splitPayment &&
+          _tender.splits.isNotEmpty &&
+          !_tender.splitsCover(_tenderDue)) {
+        DynamicToast.error(context,
+            'Add a payment for the remaining ${formatRupeesCompact(_tenderDue - _tender.splitTotal)}');
+        return null;
+      }
       final lines = _tender.lines(
           due: _tenderDue, splitMode: flags.splitPayment, fill: true);
       if (lines == null || lines.isEmpty) {
@@ -377,7 +397,11 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
           unawaited(container.read(syncServiceProvider).handleReauthRequired());
         }
         container.read(pendingCheckoutProvider.notifier).state =
-            PendingCheckout(request: request, cart: cart, estimate: estimate);
+            PendingCheckout(
+                request: request,
+                cart: cart,
+                estimate: estimate,
+                operatorId: container.read(operatorProvider)?.id ?? '');
         container.read(counterResultProvider.notifier).state =
             CounterOrderResult(
           outcome: CounterOutcome.unconfirmed,
@@ -723,7 +747,7 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
     } else if (coverPaysAll) {
       payReady = true;
     } else if (flags.splitPayment && _tender.splits.isNotEmpty) {
-      payReady = true;
+      payReady = _tender.splitsCover(_tenderDue);
     } else {
       payReady = _tender.selectedComplete &&
           !_tender.creditBlocked(hasCustomer: _customer != null);

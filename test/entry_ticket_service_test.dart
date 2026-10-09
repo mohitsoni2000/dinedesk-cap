@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restro/data/gate_providers.dart';
 import 'package:restro/data/money.dart';
+import 'package:restro/data/providers.dart';
 import 'package:restro/models/entry_ticket.dart';
 import 'package:restro/models/feature_flags.dart';
 import 'package:restro/models/pay_mode.dart';
@@ -293,20 +294,62 @@ void main() {
   group('a kept (unanswered) sale', () {
     late ProviderContainer container;
 
+    const asha =
+        Operator(name: 'Asha', role: 'Usher', shift: 'Day', id: 'op-asha');
+    const ravi =
+        Operator(name: 'Ravi', role: 'Usher', shift: 'Day', id: 'op-ravi');
+
     setUp(() {
       container = ProviderContainer(overrides: [
         entryTicketServiceProvider.overrideWithValue(service),
       ]);
       addTearDown(container.dispose);
+      container.read(operatorProvider.notifier).state = asha;
     });
 
     PendingTicketIssue keep() {
       final form = container.read(ticketIssueFormProvider);
       final pending = PendingTicketIssue(
-          request: sale(), summary: '2× Couple Pass', form: form);
+          request: sale(),
+          summary: '2× Couple Pass',
+          form: form,
+          operatorId: asha.id);
       container.read(pendingTicketIssueProvider.notifier).state = pending;
       return pending;
     }
+
+    test(
+        'it is its operator\'s: another one signing in drops it and empties '
+        'the form; the same one back keeps both', () {
+      container.read(ticketIssueFormProvider.notifier)
+        ..setQty('ett_couple', 2)
+        ..setGuestName('Ravi Sharma');
+      final pending = keep();
+
+      // Signed out and back in as herself: the same operator id.
+      container.read(operatorProvider.notifier).state =
+          const Operator(name: 'Asha', role: 'Usher', shift: 'Night', id: 'op-asha');
+      expect(container.read(pendingTicketIssueProvider), same(pending));
+      expect(container.read(ticketIssueFormProvider).hasTickets, isTrue);
+
+      container.read(operatorProvider.notifier).state = ravi;
+      expect(container.read(pendingTicketIssueProvider), isNull,
+          reason: 'his retry would sell again: the desk replays by operator');
+      final form = container.read(ticketIssueFormProvider);
+      expect(form.hasTickets, isFalse);
+      expect(form.guestName, isEmpty, reason: "not Asha's guest for Ravi");
+    });
+
+    test('a kept sale is never sent under another operator', () async {
+      final pending = keep();
+      container.read(operatorProvider.notifier).state = ravi;
+      // A screen still holding the old one retries it.
+      final outcome = await retryPendingIssue(container, pending);
+      expect(outcome, isA<TicketIssueRejected>());
+      expect((outcome as TicketIssueRejected).code, kOtherOperatorCode);
+      expect(sent, isEmpty, reason: 'nothing went to the desk');
+      expect(retryIssueRefusalCopy(outcome), contains('Another operator'));
+    });
 
     test('only a business refusal proves nothing was sold', () {
       TicketIssueRejected r(String? code) =>

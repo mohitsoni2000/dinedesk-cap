@@ -3,8 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restro/data/counter_providers.dart';
 import 'package:restro/data/money.dart';
+import 'package:restro/data/providers.dart';
+import 'package:restro/screens/counter_checkout_screen.dart';
 import 'package:restro/models/pay_mode.dart';
 import 'package:restro/models/token.dart';
 import 'package:restro/services/qsr_checkout_service.dart';
@@ -258,5 +262,53 @@ void main() {
       expect(line, isNot(contains('onion')));
       expect(line, isNot(contains('ET-04')));
     }
+  });
+
+  group('a kept Pay & Fire belongs to its operator', () {
+    const asha =
+        Operator(name: 'Asha', role: 'Cashier', shift: 'Day', id: 'op-asha');
+    const ravi =
+        Operator(name: 'Ravi', role: 'Cashier', shift: 'Day', id: 'op-ravi');
+    late ProviderContainer container;
+
+    setUp(() {
+      container = ProviderContainer(overrides: [
+        qsrCheckoutServiceProvider.overrideWithValue(service),
+      ]);
+      addTearDown(container.dispose);
+      container.read(operatorProvider.notifier).state = asha;
+    });
+
+    PendingCheckout keep() {
+      final pending = PendingCheckout(
+        request: request(),
+        cart: const <CartLine>[],
+        estimate: const Money.rupees(1050),
+        operatorId: asha.id,
+      );
+      container.read(pendingCheckoutProvider.notifier).state = pending;
+      return pending;
+    }
+
+    test('another operator signing in drops it; the same one back keeps it',
+        () {
+      final pending = keep();
+      container.read(operatorProvider.notifier).state = const Operator(
+          name: 'Asha', role: 'Cashier', shift: 'Night', id: 'op-asha');
+      expect(container.read(pendingCheckoutProvider), same(pending));
+      container.read(operatorProvider.notifier).state = ravi;
+      expect(container.read(pendingCheckoutProvider), isNull,
+          reason: 'his retry would charge again: the desk replays by operator');
+    });
+
+    test('it is never sent under another operator', () async {
+      final pending = keep();
+      container.read(operatorProvider.notifier).state = ravi;
+      final result = await retryPendingCheckout(container, pending);
+      expect(result, isA<QsrCheckoutRejected>());
+      expect((result as QsrCheckoutRejected).code, kOtherOperatorCode);
+      expect(sent, isEmpty, reason: 'nothing went to the desk');
+      expect(retryRefusalCopy(result), contains('Another operator'));
+    });
   });
 }

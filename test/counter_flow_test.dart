@@ -29,6 +29,7 @@ import 'package:restro/widgets/liquid_chrome.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/parked_fixtures.dart';
+import 'support/payment_sheet_harness.dart' show fieldWithHint;
 
 class _Bootstrap extends ConnectionBootstrap {
   _Bootstrap(super.ref);
@@ -362,6 +363,55 @@ void main() {
       expect(find.text('Standing'), findsOneWidget);
       expect(h.cart, isEmpty);
       expect(h.container.read(lastTokenProvider)!.label, 'T-07');
+    });
+
+    testWidgets(
+        'split: ₹500 cash on a ₹1,050 bill leaves Pay & Fire off until the '
+        'rest is tendered', (tester) async {
+      final h = await pumpCounter(tester,
+          initial: '/counter/order/checkout',
+          qsr: _prepaid,
+          flags: FeatureFlags.fromMap(<String, dynamic>{
+            'flag_collect_payment': 1,
+            'flag_generate_bill': 1,
+            'flag_order_tokens': 1,
+            'flag_takeaway': 1,
+            'flag_split_payment': 1,
+          }),
+          cart: <CartLine>[dosaLine(qty: 2)]);
+      final add = find.byKey(const ValueKey<String>('tender-add-split'));
+      Future<void> addSplit() async {
+        await tester.ensureVisible(add);
+        await tester.pump();
+        await tester.tap(add);
+        await tester.pump();
+      }
+
+      LiquidPrimaryButton pay() => tester.widget<LiquidPrimaryButton>(
+          find.widgetWithText(LiquidPrimaryButton, 'Pay & Fire ₹1,050'));
+
+      await tester.tap(find.text('Cash'));
+      await tester.pumpAndSettle();
+      await tester.enterText(fieldWithHint('₹1,050').last, '500');
+      await addSplit();
+      expect(find.text('Remaining: ₹550'), findsOneWidget);
+      expect(pay().onPressed, isNull,
+          reason: 'the fill would charge the ₹550 to cash unasked');
+
+      await tester.ensureVisible(find.text('Cash').first);
+      await tester.tap(find.text('Cash').first);
+      await tester.pump();
+      await tester.enterText(fieldWithHint('₹550').last, '550');
+      await addSplit();
+      expect(pay().onPressed, isNotNull, reason: 'the splits cover the bill');
+
+      await tester.tap(find.text('Pay & Fire ₹1,050'));
+      await tester.pumpAndSettle();
+      final payments = h.payloads('qsr:checkout').single['payments'] as List;
+      expect(payments, hasLength(2));
+      expect((payments.first as Map)['amount'], 500);
+      expect((payments.last as Map).containsKey('amount'), isFalse,
+          reason: 'the desk fills only the last tender, from the real bill');
     });
 
     testWidgets(

@@ -851,6 +851,11 @@ final linkedTableIdsProvider = Provider<Set<String>>((ref) {
 
 final operatorProvider = StateProvider<Operator?>((_) => null);
 
+/// The refusal a kept money attempt (an unanswered ticket sale or Pay &
+/// Fire) gets when someone other than the operator who sent it retries it:
+/// the desk replays by operator, so their retry would charge again.
+const String kOtherOperatorCode = 'other_operator';
+
 final businessDateProvider = Provider<String?>((ref) {
   final history = ref.watch(historyProvider);
   for (final order in history) {

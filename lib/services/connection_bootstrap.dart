@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show protected, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/gate_providers.dart' show ticketIssueFormProvider;
 import '../data/providers.dart';
 import 'biometric_service.dart';
 import 'discovery_service.dart';
@@ -776,6 +777,8 @@ class ConnectionBootstrap extends StateNotifier<BootstrapOutcome> {
     // Stops the snapshot saves and the live listeners of the ended session.
     _ref.read(syncServiceProvider).onSignedOut();
     _ref.read(isAuthenticatedProvider.notifier).state = false;
+    // A half-made ticket sale may hold a guest's name and phone.
+    _ref.read(ticketIssueFormProvider.notifier).clear();
     _ref.read(offlineResumedProvider.notifier).state = false;
     _ref.read(socketServiceProvider).disconnect();
     // The next pairing may be on another network entirely.

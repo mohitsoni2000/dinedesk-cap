@@ -107,8 +107,15 @@ class _TicketIssueScreenState extends ConsumerState<TicketIssueScreen> {
     final total = form.totalOn(types);
     var pay = const <TenderLine>[];
     if (total.isPositive) {
-      final tendered = _tender.lines(
-          due: total, splitMode: ref.read(flagsProvider).splitPayment);
+      final splitMode = ref.read(flagsProvider).splitPayment;
+      if (splitMode &&
+          _tender.splits.isNotEmpty &&
+          !_tender.splitsCover(total)) {
+        DynamicToast.error(context,
+            'Add a payment for the remaining ${formatRupeesCompact(total - _tender.splitTotal)}');
+        return null;
+      }
+      final tendered = _tender.lines(due: total, splitMode: splitMode);
       if (tendered == null || tendered.isEmpty) {
         DynamicToast.error(
             context,
@@ -212,7 +219,10 @@ class _TicketIssueScreenState extends ConsumerState<TicketIssueScreen> {
         // may have gone through. Keep it, exactly, for the retry.
         container.read(pendingTicketIssueProvider.notifier).state =
             PendingTicketIssue(
-                request: request, summary: summary, form: sentForm);
+                request: request,
+                summary: summary,
+                form: sentForm,
+                operatorId: container.read(operatorProvider)?.id ?? '');
         if (mounted) {
           DynamicToast.warning(
               context,
@@ -434,7 +444,7 @@ class _TicketIssueScreenState extends ConsumerState<TicketIssueScreen> {
     } else if (offline || !total.isPositive) {
       issueReady = true;
     } else if (flags.splitPayment && _tender.splits.isNotEmpty) {
-      issueReady = true;
+      issueReady = _tender.splitsCover(total);
     } else {
       issueReady = _tender.selectedComplete;
     }

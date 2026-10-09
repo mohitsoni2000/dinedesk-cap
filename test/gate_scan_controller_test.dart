@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:restro/controllers/gate_scan_controller.dart';
 import 'package:restro/models/entry_ticket.dart';
 import 'package:restro/services/entry_ticket_service.dart';
+import 'package:restro/utils/request_id.dart';
 
 /// The gate scanner's rules against a fake desk and a fake clock: the local
 /// QR filter, the per-code cooldown, one request in flight, the tone of each
@@ -34,6 +35,7 @@ void main() {
     tones = <GateTone>[];
     reply = (_) => answered('ticket_check_in_valid.json');
     held = null;
+    resetRequestIds();
   });
 
   GateScanController make(FakeAsync async, {bool online = true}) =>
@@ -275,6 +277,94 @@ void main() {
         gate.dismissCard();
         expect(gate.state.card, isNull);
         expect(gate.state.acceptsScans, isTrue);
+        gate.dispose();
+      });
+    });
+  });
+
+  group('the check-in id belongs to the intent, not the screen', () {
+    test(
+        'unconfirmed, the screen is left, a new one scans the same code: '
+        'the same id', () {
+      fakeAsync((async) {
+        reply = (_) => const CheckInUnconfirmed();
+        final first = make(async);
+        first.onDetected(ticketA);
+        async.flushMicrotasks();
+        expect(first.state.pending, isNotNull);
+        first.dispose(); // system back, or the app put away
+
+        reply = (_) => answered('ticket_check_in_valid.json');
+        final again = make(async);
+        again.onDetected(ticketA);
+        async.flushMicrotasks();
+        expect(sent, hasLength(2));
+        expect(sent[1].clientRequestId, sent[0].clientRequestId,
+            reason: 'the desk replays its answer, not "already used by me"');
+        expect(again.state.card?.tone, GateTone.green);
+
+        // Once an answer has been shown, scanning again is a new check-in.
+        again.dismissCard();
+        async.elapse(GateScanController.cooldown);
+        again.onDetected(ticketA);
+        async.flushMicrotasks();
+        expect(sent, hasLength(3));
+        expect(sent[2].clientRequestId, isNot(sent[0].clientRequestId));
+        again.dispose();
+      });
+    });
+
+    test('an answer that lands after the screen was left keeps the id', () {
+      fakeAsync((async) {
+        held = Completer<TicketCheckInOutcome>();
+        final first = make(async);
+        first.onDetected(ticketA);
+        async.flushMicrotasks();
+        first.dispose(); // left while in flight
+        held!.complete(answered('ticket_check_in_valid.json'));
+        async.flushMicrotasks();
+        held = null;
+
+        final again = make(async);
+        again.onDetected(ticketA);
+        async.flushMicrotasks();
+        expect(sent[1].clientRequestId, sent[0].clientRequestId,
+            reason: 'nobody saw the answer: it is replayed');
+        again.dispose();
+      });
+    });
+
+    test('after a Drop the same code goes with the same id', () {
+      fakeAsync((async) {
+        reply = (_) => const CheckInUnconfirmed();
+        final gate = make(async);
+        gate.onDetected(ticketA);
+        async.flushMicrotasks();
+        gate.abandonPending();
+        reply = (_) => answered('ticket_check_in_valid.json');
+        async.elapse(GateScanController.cooldown);
+        gate.onDetected(ticketA);
+        async.flushMicrotasks();
+        expect(sent, hasLength(2));
+        expect(sent[1].clientRequestId, sent[0].clientRequestId);
+        gate.dispose();
+      });
+    });
+
+    test('a typed number and a scan of another ticket are other intents', () {
+      fakeAsync((async) {
+        reply = (_) => const CheckInUnconfirmed();
+        final gate = make(async);
+        gate.onDetected(ticketA);
+        async.flushMicrotasks();
+        gate.abandonPending();
+        expect(gate.submitManual('ET-041'), isTrue);
+        async.flushMicrotasks();
+        gate.abandonPending();
+        async.elapse(GateScanController.cooldown);
+        gate.onDetected(ticketB);
+        async.flushMicrotasks();
+        expect(sent.map((r) => r.clientRequestId).toSet(), hasLength(3));
         gate.dispose();
       });
     });

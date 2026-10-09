@@ -11,7 +11,10 @@
 ///   answering, nor while a result card is up.
 /// - **Unconfirmed.** A check-in the desk never answered is kept, with its
 ///   id, and the scanner stays locked until it is retried (the same request,
-///   so the desk replays its answer) or dropped on purpose.
+///   so the desk replays its answer) or dropped on purpose. The id belongs
+///   to the intent ([TicketCheckInRequest.intent], 15 minutes), not to this
+///   screen: after a Drop, or leaving mid-flight, scanning the same code
+///   again sends the same id until an answer has been shown.
 /// - **Offline.** No check-in without the desk: scanning pauses.
 ///
 /// Tones (spec §2.5): `valid` green; `already_used`, `cancelled` and
@@ -244,7 +247,7 @@ class GateScanController extends StateNotifier<GateScanState> {
       ));
       return;
     }
-    unawaited(_send(TicketCheckInRequest(code: code)));
+    unawaited(_send(TicketCheckInRequest.intent(code: code)));
   }
 
   /// A ticket number or code the usher typed (`ET-042`, `42`, a QR's text):
@@ -253,7 +256,7 @@ class GateScanController extends StateNotifier<GateScanState> {
     final code = typed.trim();
     if (code.isEmpty || !state.online || state.inFlight) return false;
     if (state.pending != null) return false;
-    unawaited(_send(TicketCheckInRequest(
+    unawaited(_send(TicketCheckInRequest.intent(
       code: code,
       method: CheckInMethod.manual,
     )));
@@ -292,10 +295,14 @@ class GateScanController extends StateNotifier<GateScanState> {
     _dismiss?.cancel();
     state = state.copyWith(inFlight: true, card: null);
     final outcome = await _checkIn(request);
+    // Left mid-flight: the answer is not seen, so the intent stays open and
+    // the next scan of this code replays it.
     if (!mounted) return;
     state = state.copyWith(inFlight: false);
     switch (outcome) {
       case CheckInAnswered(:final result):
+        // Seen: scanning this code again is a new check-in.
+        request.settle();
         state = state.copyWith(pending: null);
         _show(GateScanCard(
           kind: GateCardKind.answer,

@@ -14,6 +14,7 @@ import '../models/pay_mode.dart';
 import '../services/entry_ticket_service.dart';
 import '../services/log.dart';
 import '../services/offline_guard.dart';
+import '../services/pending_money_store.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
@@ -194,8 +195,24 @@ class _TicketIssueScreenState extends ConsumerState<TicketIssueScreen> {
   Future<void> _send(TicketIssueRequest request) async {
     final container = ProviderScope.containerOf(context, listen: false);
     final sentForm = ref.read(ticketIssueFormProvider);
-    final summary =
-        ticketLinesSummary(sentForm.linesOn(ref.read(ticketTypesProvider)));
+    final scope = container.read(moneyScopeProvider);
+    final attempt = PendingTicketIssue(
+      request: request,
+      summary:
+          ticketLinesSummary(sentForm.linesOn(ref.read(ticketTypesProvider))),
+      form: sentForm,
+      operatorId: scope?.operatorId ?? '',
+      desk: scope?.deskInstanceId ?? '',
+    );
+    PendingMoneyNotifier<PendingTicketIssue> pending() =>
+        container.read(pendingTicketIssueProvider.notifier);
+    // On the phone before it goes: a crash, a restart or a sign-out while
+    // the desk answers cannot lose its id.
+    await pending().writeAhead(attempt);
+    if (!mounted) {
+      unawaited(pending().settle(attempt));
+      return;
+    }
     final outcome = await _behindOverlay(
       container.read(entryTicketServiceProvider).issue(request),
       title: 'Issuing tickets…',
@@ -203,10 +220,11 @@ class _TicketIssueScreenState extends ConsumerState<TicketIssueScreen> {
     );
     switch (outcome) {
       case TicketIssueOk(:final result):
-        applyTicketSale(container, result, sentForm: sentForm);
+        applyTicketSale(container, result, attempt: attempt);
         _tender.reset();
         if (mounted) context.go('/gate/issue/result');
       case TicketIssueRejected(isBusinessRefusal: true):
+        unawaited(pending().settle(attempt));
         if (!mounted) return;
         if (outcome.priceChanged) {
           await _onPriceChanged(request, outcome);
@@ -217,12 +235,7 @@ class _TicketIssueScreenState extends ConsumerState<TicketIssueScreen> {
       case TicketIssueUnconfirmed() || TicketIssueRejected():
         // No answer, or a refusal that does not prove nothing happened: it
         // may have gone through. Keep it, exactly, for the retry.
-        container.read(pendingTicketIssueProvider.notifier).state =
-            PendingTicketIssue(
-                request: request,
-                summary: summary,
-                form: sentForm,
-                operatorId: container.read(operatorProvider)?.id ?? '');
+        pending().hold(attempt);
         if (mounted) {
           DynamicToast.warning(
               context,
@@ -231,8 +244,12 @@ class _TicketIssueScreenState extends ConsumerState<TicketIssueScreen> {
                   : kIssueNoAnswer);
         }
       case TicketIssueOffline():
+        // Never sent.
+        unawaited(pending().settle(attempt));
         if (mounted) await _offerParkOffline();
       case TicketIssueUnreadable():
+        // The desk has the sale; this phone only cannot show it.
+        unawaited(pending().settle(attempt));
         clearTicketFormIfUnchanged(container, sentForm);
         _tender.reset();
         if (mounted) await _showUnreadable();
@@ -325,7 +342,7 @@ class _TicketIssueScreenState extends ConsumerState<TicketIssueScreen> {
 
   /// Drops the unanswered sale on purpose, after a warning: if it did go
   /// through, selling again charges the guest twice.
-  Future<void> _dropPending() async {
+  Future<void> _dropPending(PendingTicketIssue pending) async {
     final drop = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
@@ -350,7 +367,7 @@ class _TicketIssueScreenState extends ConsumerState<TicketIssueScreen> {
     );
     if (drop != true || !mounted) return;
     logD(_tag, 'an unanswered ticket sale was dropped by the usher');
-    ref.read(pendingTicketIssueProvider.notifier).state = null;
+    unawaited(ref.read(pendingTicketIssueProvider.notifier).settle(pending));
   }
 
   Future<void> _showUnreadable() async {
@@ -457,7 +474,7 @@ class _TicketIssueScreenState extends ConsumerState<TicketIssueScreen> {
                 child: LiquidSecondaryButton(
                   label: 'Drop it',
                   leadingIcon: Icons.delete_outline,
-                  onPressed: _busy ? null : _dropPending,
+                  onPressed: _busy ? null : () => _dropPending(pending),
                 ),
               ),
               const SizedBox(width: 8),

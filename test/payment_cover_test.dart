@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -1158,6 +1159,146 @@ void main() {
         expect(payments, hasLength(2));
         expect(payments[1].data, payments[0].data,
             reason: 'the same payload and client_request_id');
+        expect(h.result, isTrue);
+        await h.drainToasts(tester);
+      });
+
+      testWidgets(
+          'no answer, then the same resend refused: the sheet remembers — '
+          'Close asks first and nothing says "nothing was charged"',
+          (tester) async {
+        var tries = 0;
+        final h = await PaymentSheetHarness.open(tester, bills: [foodBill]);
+        h.answer = (event, data) => tries++ == 0
+            ? lost()
+            : <String, dynamic>{'kind': 'error', 'message': 'Internal error'};
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester); // no answer: kept
+        await h.pay(tester); // the identical resend, refused
+        expect(billPayments(h)[1].data, billPayments(h)[0].data);
+        expect(
+            find.text('Internal error. An earlier try got no answer — check '
+                'the bill on the order screen.'),
+            findsOneWidget);
+        expect(
+            find.text('An earlier try got no answer — check the bill on the '
+                'order screen: it may have gone through. Check it before '
+                'taking the money again.'),
+            findsOneWidget);
+        expect(formEnabled(tester), isTrue, reason: 'the run is let go');
+        await h.drainToasts(tester);
+
+        // A new try, refused too: still no "nothing was charged".
+        await tester.tap(find.text('UPI'));
+        await tester.pump();
+        await h.pay(tester);
+        expect(find.textContaining('nothing was charged'), findsNothing);
+        await h.drainToasts(tester);
+
+        await tester.tapAt(const Offset(20, 20));
+        await tester.pumpAndSettle();
+        expect(h.closed, isFalse);
+        expect(find.text('Close the payment?'), findsOneWidget,
+            reason: 'money may have moved: closing asks first');
+      });
+
+      testWidgets('a resend long after the first try is still the same request',
+          (tester) async {
+        var now = DateTime(2026, 10, 9, 21);
+        requestIdClock = () => now;
+        addTearDown(() => requestIdClock = DateTime.now);
+        var tries = 0;
+        final h = await PaymentSheetHarness.open(tester, bills: [foodBill]);
+        h.answer = (event, data) =>
+            tries++ == 0 ? lost() : <String, dynamic>{'kind': 'success'};
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        await h.pay(tester);
+
+        // Past the 15-minute intent ids; the desk replays for 48 hours.
+        now = now.add(const Duration(minutes: 40));
+        await h.pay(tester);
+        final payments = billPayments(h);
+        expect(payments, hasLength(2));
+        expect(payments[1].data['client_request_id'],
+            payments[0].data['client_request_id']);
+        expect(h.result, isTrue);
+        await h.drainToasts(tester);
+      });
+
+      testWidgets(
+          'a ticket looked up while Pay went ahead is not added under it',
+          (tester) async {
+        final lookup = Completer<Map<String, dynamic>>();
+        final h = await openWithCover(tester);
+        h.answer =
+            (event, data) => event == 'ticket:lookup' ? lookup.future : lost();
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        final add = find.text('Add cover ticket');
+        await tester.ensureVisible(add);
+        await tester.tap(add);
+        await tester.pumpAndSettle();
+        await tester.enterText(
+            fieldWithHint('Ticket number or QR code'), 'ET-042');
+        await tester.tap(find.text('Use'));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.text('Checking the ticket…'), findsOneWidget);
+
+        // Pressed where it is: scrolling to it could take the cover section
+        // (still looking) out of the list.
+        h.payButton(tester).onPressed!();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(formEnabled(tester), isFalse, reason: 'kept: no answer');
+
+        lookup.complete(_fixture('ticket_lookup_ack.json'));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.text('ET-042 · Couple Pass'), findsNothing);
+        expect(find.text('Not added: the payment had already gone ahead'),
+            findsOneWidget);
+        await h.pay(tester);
+        expect(billPayments(h)[1].data, billPayments(h)[0].data,
+            reason: 'the resend is still the payment as planned');
+        await h.drainToasts(tester);
+      });
+
+      testWidgets(
+          'while a call is in flight: form and cover locked, back and a tap '
+          'outside refused, Close off', (tester) async {
+        final payment = Completer<Map<String, dynamic>>();
+        final h = await openWithCover(tester);
+        h.answer = (event, data) => event == 'ticket:lookup'
+            ? _fixture('ticket_lookup_ack.json')
+            : payment.future;
+        await tester.tap(find.text('Cash'));
+        await tester.pump();
+        final pay = find.widgetWithText(LiquidPrimaryButton, 'Pay');
+        await tester.ensureVisible(pay);
+        await tester.tap(pay);
+        await tester.pump(const Duration(milliseconds: 400));
+
+        expect(find.text('Processing...'), findsOneWidget);
+        expect(formEnabled(tester), isFalse);
+        expect(coverEnabled(tester), isFalse);
+        expect(
+            tester
+                .widget<LiquidSecondaryButton>(
+                    find.widgetWithText(LiquidSecondaryButton, 'Cancel'))
+                .onPressed,
+            isNull,
+            reason: 'Close is off while the desk is answering');
+
+        await tester.binding.handlePopRoute(); // system back
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.tapAt(const Offset(20, 20)); // the barrier
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(h.closed, isFalse);
+        expect(find.text('Close the payment?'), findsNothing,
+            reason: 'nothing to confirm mid-flight: it just stays');
+
+        payment.complete(paidAck());
+        await tester.pumpAndSettle();
         expect(h.result, isTrue);
         await h.drainToasts(tester);
       });

@@ -901,15 +901,20 @@ class SocketService {
   /// reconnect-and-resend loop inside [emitAckWhenConnected], carries the same
   /// id, so a first attempt that landed but lost its ack is replayed by the desk
   /// instead of applied twice. The id is retired on success.
+  ///
+  /// [requestId] is an id the caller holds itself (one it stamped earlier
+  /// from `requestIdFor` and keeps past its 15-minute expiry); it is sent
+  /// instead, and the intent is still retired on success.
   Future<Map<String, dynamic>> emitAckIdempotent(
     String event,
     Map<String, dynamic> data, {
     Duration? timeout,
     bool whenConnected = false,
+    String? requestId,
   }) async {
     final stamped = <String, dynamic>{
       ...data,
-      'client_request_id': requestIdFor(event, data),
+      'client_request_id': requestId ?? requestIdFor(event, data),
     };
     final response = whenConnected
         ? await emitAckWhenConnected(event, stamped, timeout: timeout)

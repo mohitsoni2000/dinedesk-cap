@@ -51,7 +51,51 @@ class QsrCheckoutRequest {
     this.customerId,
     this.expectedTotal,
     String? clientRequestId,
-  }) : clientRequestId = clientRequestId ?? newRequestId();
+  })  : clientRequestId = clientRequestId ?? newRequestId(),
+        _sent = null;
+
+  QsrCheckoutRequest._restored({
+    required this.fulfillment,
+    required this.items,
+    required this.payments,
+    required this.notes,
+    required this.customerId,
+    required this.expectedTotal,
+    required this.clientRequestId,
+    required Map<String, dynamic> sent,
+  }) : _sent = sent;
+
+  /// A kept attempt read back from the phone ([toPayload] as it was sent).
+  /// Its [toPayload] is that very payload, id included, so a retry after a
+  /// restart is the same request. Throws [WireFormatException] when it
+  /// cannot be read.
+  factory QsrCheckoutRequest.restore(Map<String, dynamic> payload) {
+    const entity = 'QsrCheckoutRequest';
+    final fulfillment = FulfillmentType.fromWire(payload['fulfillment_type']);
+    if (fulfillment == null) {
+      throw WireFormatException(
+          entity: entity,
+          field: 'fulfillment_type',
+          reason: 'missing or unknown',
+          received: payload['fulfillment_type']);
+    }
+    return QsrCheckoutRequest._restored(
+      fulfillment: fulfillment,
+      items: mapList(payload['items']),
+      payments: <TenderLine>[
+        for (final line in mapList(payload['payments']))
+          TenderLine.fromWire(line),
+      ],
+      notes: stringOr(payload, 'notes', ''),
+      customerId: optionalString(payload, 'customer_id'),
+      expectedTotal: optionalMoney(payload, 'expected_total'),
+      clientRequestId: requireString(payload, 'client_request_id', entity),
+      sent: Map<String, dynamic>.from(payload),
+    );
+  }
+
+  /// What a restored attempt sent; null for one made on this run.
+  final Map<String, dynamic>? _sent;
 
   final FulfillmentType fulfillment;
 
@@ -80,19 +124,21 @@ class QsrCheckoutRequest {
         expectedTotal: total,
       );
 
-  Map<String, dynamic> toPayload() => <String, dynamic>{
-        'fulfillment_type': fulfillment.wire,
-        'items': items,
-        if (notes.trim().isNotEmpty) 'notes': notes.trim(),
-        if (customerId != null && customerId!.isNotEmpty)
-          'customer_id': customerId,
-        'mode': 'pay_and_fire',
-        'payments': <Map<String, dynamic>>[
-          for (final line in payments) line.toWire(),
-        ],
-        if (expectedTotal != null) 'expected_total': expectedTotal!.toWire(),
-        'client_request_id': clientRequestId,
-      };
+  Map<String, dynamic> toPayload() => _sent != null
+      ? Map<String, dynamic>.from(_sent)
+      : <String, dynamic>{
+          'fulfillment_type': fulfillment.wire,
+          'items': items,
+          if (notes.trim().isNotEmpty) 'notes': notes.trim(),
+          if (customerId != null && customerId!.isNotEmpty)
+            'customer_id': customerId,
+          'mode': 'pay_and_fire',
+          'payments': <Map<String, dynamic>>[
+            for (final line in payments) line.toWire(),
+          ],
+          if (expectedTotal != null) 'expected_total': expectedTotal!.toWire(),
+          'client_request_id': clientRequestId,
+        };
 }
 
 /// The desk's success ack, read for what the counter needs: the token, the

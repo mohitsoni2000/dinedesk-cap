@@ -341,6 +341,38 @@ void main() {
     await drain(tester);
   });
 
+  testWidgets(
+      'a sale is on the phone before it is sent; an unanswered one stays '
+      'there, an answered one does not', (tester) async {
+    final h = await pumpGate(tester);
+    String? onPhoneWhenSent;
+    Object? sentId;
+    h.answer = (event, data) async {
+      if (event == 'ticket:issue') {
+        final prefs = await SharedPreferences.getInstance();
+        onPhoneWhenSent = prefs.getString('pending_issue_v1');
+        sentId = data['client_request_id'];
+        return TimeoutException('ack timed out');
+      }
+      return desk(event, data);
+    };
+    await pickTwoCouplesAndCash(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('issue-go')));
+    await tester.pumpAndSettle();
+
+    expect(onPhoneWhenSent, contains('$sentId'));
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('pending_issue_v1'), contains('$sentId'),
+        reason: 'unanswered: kept for a retry after a restart');
+
+    h.answer = desk;
+    await tester.tap(find.text('Retry sale'));
+    await tester.pumpAndSettle();
+    expect(h.path, '/gate/issue/result');
+    expect(prefs.getString('pending_issue_v1'), isNull);
+    await drain(tester);
+  });
+
   testWidgets('an unanswered sale locks the form; Retry sends the same one',
       (tester) async {
     final h = await pumpGate(tester);
@@ -379,7 +411,9 @@ void main() {
         reason: 'an error with no code may follow a sale that went through');
     await drain(tester);
 
-    h.container.read(pendingTicketIssueProvider.notifier).state = null;
+    await h.container
+        .read(pendingTicketIssueProvider.notifier)
+        .settle(h.container.read(pendingTicketIssueProvider)!);
     await tester.pumpAndSettle();
     h.answer = (_, __) => <String, dynamic>{
           'kind': 'error',

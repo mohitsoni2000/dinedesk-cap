@@ -5,6 +5,7 @@ library;
 
 import '../data/currency.dart';
 import '../data/money.dart';
+import 'request_id.dart';
 import 'tender_allocation.dart';
 
 /// Shown when a `bill:payment` got no answer: it may have gone through.
@@ -12,9 +13,14 @@ const String kPaymentNoAnswer =
     "The desk didn't answer — it may have gone through. "
     'Pay retries exactly as entered.';
 
+/// Shown while a try that got no answer was let go unanswered: it may have
+/// gone through.
+const String kEarlierTryUnanswered =
+    'An earlier try got no answer — check the bill on the order screen';
+
 /// The `bill:payment` calls one Pay planned. Kept until the desk has
 /// answered each of them, so a retry resends exactly these: the same
-/// payloads, so the same `client_request_id`s.
+/// payloads under the same `client_request_id`s.
 class PaymentRun {
   PaymentRun(this.calls);
 
@@ -26,6 +32,17 @@ class PaymentRun {
   /// Some attempt got no answer (timeout, dropped link, garbled reply), so
   /// a later refusal cannot mean "nothing was charged".
   bool sawNoAnswer = false;
+
+  /// Each call's `client_request_id`, by bill, stamped on its first send.
+  final Map<String, String> _ids = <String, String>{};
+
+  /// [call]'s `client_request_id`: the intent's id ([requestIdFor], so a
+  /// sheet closed and opened again on the same entries still replays) when
+  /// first sent, then held for the run's life. The intent id lapses after
+  /// [kRequestIdTtl]; the desk replays for 48 hours, so a resend an hour
+  /// later must still be the same request.
+  String idFor(BillPaymentCall call) => _ids.putIfAbsent(
+      call.billId, () => requestIdFor('bill:payment', call.toPayload()));
 
   bool get started => done.isNotEmpty;
 
@@ -94,6 +111,11 @@ class PayVerdict {
   /// Keep the run: Pay resends its unsent calls unchanged, the fields lock.
   final bool keepRun;
 
+  /// A try in this run got no answer and the run is let go without one:
+  /// what it did is unknown. The sheet remembers it (Close asks first; no
+  /// later refusal says "nothing was charged").
+  final bool unresolved;
+
   /// What was entered is spent (recorded on some bill): clear the covers
   /// and tenders.
   final bool clearInputs;
@@ -106,6 +128,7 @@ class PayVerdict {
   const PayVerdict({
     this.close = false,
     this.keepRun = false,
+    this.unresolved = false,
     this.clearInputs = false,
     this.stillDue,
     this.toast,
@@ -117,9 +140,12 @@ class PayVerdict {
 /// [failure] is the call it stopped at, if any. [settled] of [total] bills
 /// are settled, the open ones owe [due], and [short] are the bills this run
 /// reached that the desk says still owe money (it took less than was sent).
+/// [earlierUnanswered]: an earlier run on this sheet was let go with a try
+/// unanswered.
 ///
 /// "Nothing was charged" is said only when the desk refused outright, no
-/// call went through and no earlier attempt went unanswered.
+/// call went through and no attempt, in this run or an earlier one, went
+/// unanswered.
 PayVerdict decidePay({
   required PaymentRun run,
   required CallFailure? failure,
@@ -127,6 +153,7 @@ PayVerdict decidePay({
   required int total,
   required Money due,
   required List<ShortBill> short,
+  bool earlierUnanswered = false,
 }) {
   if (failure == null) {
     if (settled == total) return const PayVerdict(close: true);
@@ -154,21 +181,28 @@ PayVerdict decidePay({
     );
   }
   // The desk refused that call outright, so nothing on its bill was
-  // recorded by it.
+  // recorded by it. An earlier try that got no answer may have been.
+  final unanswered = run.sawNoAnswer || earlierUnanswered;
   if (run.started) {
     return PayVerdict(
       clearInputs: true,
+      unresolved: run.sawNoAnswer,
       stillDue: const StillDue(StillDueReason.partly),
       toast: failure.carriesCover
-          ? failure.refusal
-          : 'Settled $settled of $total. Take payment for the remaining '
-              '${formatRupeesCompact(due)}.',
+          ? (unanswered
+              ? '${failure.refusal}. $kEarlierTryUnanswered.'
+              : failure.refusal)
+          : unanswered
+              ? 'Settled $settled of $total. $kEarlierTryUnanswered before '
+                  'taking the remaining ${formatRupeesCompact(due)}.'
+              : 'Settled $settled of $total. Take payment for the remaining '
+                  '${formatRupeesCompact(due)}.',
     );
   }
-  if (run.sawNoAnswer) {
+  if (unanswered) {
     return PayVerdict(
-        toast: '${failure.refusal}. An earlier try got no answer — check the '
-            'bill on the order screen.');
+        unresolved: run.sawNoAnswer,
+        toast: '${failure.refusal}. $kEarlierTryUnanswered.');
   }
   return PayVerdict(
     toast: failure.carriesCover ? failure.refusal : _retryText(0, total),

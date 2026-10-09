@@ -10,10 +10,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/entry_ticket.dart';
 import '../models/parked_draft.dart';
 import '../models/pay_mode.dart';
+import '../models/wire.dart';
 import '../services/entry_ticket_service.dart';
 import '../services/parked_cart_resolver.dart';
+import '../services/pending_money_store.dart';
 import '../services/slip_printer.dart';
 import 'money.dart';
+import 'parked_providers.dart' show moneyScopeProvider;
 import 'providers.dart';
 
 /// Most tickets one sale may carry (the desk refuses more).
@@ -175,13 +178,40 @@ List<PayMode> ticketPayModes(List<PayMode> catalog, {String? coverMode}) =>
 /// A sale the desk never answered. It may have gone through, so it is kept:
 /// the only ways on are to retry it exactly (same request, same id, so the
 /// desk replays rather than sells twice) or to drop it on purpose.
-class PendingTicketIssue {
+///
+/// It is written to the phone before it is sent ([PendingMoneyStore]), so a
+/// restart or a sign-out cannot lose it.
+class PendingTicketIssue implements PendingMoney {
   const PendingTicketIssue({
     required this.request,
     required this.summary,
     required this.form,
     required this.operatorId,
+    this.desk = '',
   });
+
+  /// Read back from the phone. The form is rebuilt from the request, a form
+  /// of its own: a confirmed retry never clears the form on screen.
+  factory PendingTicketIssue.fromJson(Map<String, dynamic> json) {
+    final request = TicketIssueRequest.restore(asMap(json['payload']));
+    final quantities = <String, int>{};
+    for (final line in request.lines) {
+      quantities[line.ticketTypeId] =
+          (quantities[line.ticketTypeId] ?? 0) + line.qty;
+    }
+    return PendingTicketIssue(
+      request: request,
+      summary: stringOr(json, 'summary',
+          '${request.units} ${request.units == 1 ? 'ticket' : 'tickets'}'),
+      form: TicketIssueForm(
+        quantities: quantities,
+        guestName: request.guestName ?? '',
+        guestPhone: request.guestPhone ?? '',
+      ),
+      operatorId: requireString(json, 'operator_id', 'PendingTicketIssue'),
+      desk: stringOr(json, 'desk', ''),
+    );
+  }
 
   final TicketIssueRequest request;
 
@@ -189,39 +219,67 @@ class PendingTicketIssue {
   /// would sell again; and the form shows the guest. It is never theirs.
   final String operatorId;
 
+  /// The desk it went to ([moneyScopeProvider]'s desk key).
+  final String desk;
+
   /// "2× Couple Pass", for the card.
   final String summary;
 
   /// The form as it was sent. A confirmed retry clears the form only if it
   /// is still this one.
   final TicketIssueForm form;
+
+  @override
+  String get clientRequestId => request.clientRequestId;
+
+  @override
+  ParkedScope get scope =>
+      ParkedScope(operatorId: operatorId, deskInstanceId: desk);
+
+  @override
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'client_request_id': request.clientRequestId,
+        'operator_id': operatorId,
+        'desk': desk,
+        'payload': request.toPayload(),
+        'summary': summary,
+      };
 }
 
-/// The unanswered sale, its operator's alone: when another operator signs
-/// in (or the session is revoked) it is gone, so nobody else retries it or
-/// sees its guest. Signing out and back in as the same operator keeps it.
-final pendingTicketIssueProvider = StateProvider<PendingTicketIssue?>((ref) {
-  ref.watch(operatorProvider.select((op) => op?.id));
-  return null;
-});
+final pendingIssueStoreProvider = Provider<PendingMoneyStore>(
+    (_) => PendingMoneyStore(PendingMoneyStore.issueKey));
+
+/// The unanswered sale of the signed-in operator on this desk, read back
+/// from the phone when they sign in. Another operator never sees it (their
+/// retry would sell again, and it names the guest); signing out, a revoked
+/// session, a restart or a crash only hide it until its operator is back.
+final pendingTicketIssueProvider = StateNotifierProvider<
+        PendingMoneyNotifier<PendingTicketIssue>, PendingTicketIssue?>(
+    (ref) => PendingMoneyNotifier<PendingTicketIssue>(
+          ref.watch(pendingIssueStoreProvider),
+          ref.watch(moneyScopeProvider),
+          restore: PendingTicketIssue.fromJson,
+          what: 'ticket sale',
+        ));
 
 /// The sale the result screen shows; null when there is none.
 final ticketIssueResultProvider =
     StateProvider<TicketIssueResult?>((_) => null);
 
 /// Applies a sale the desk confirmed: the result screen's subject, the form
-/// cleared if it is still [sentForm], nothing pending, and its slips handed
-/// to the slip printer (printed now when auto-print is on). Works off
-/// [container] so a screen that went away meanwhile cannot drop a sale the
-/// desk made.
+/// cleared if it is still the one [attempt] sent, nothing pending (here or
+/// on the phone), and its slips handed to the slip printer (printed now when
+/// auto-print is on). Works off [container] so a screen that went away
+/// meanwhile cannot drop a sale the desk made.
 void applyTicketSale(
   ProviderContainer container,
   TicketIssueResult result, {
-  required TicketIssueForm sentForm,
+  required PendingTicketIssue attempt,
 }) {
   container.read(ticketIssueResultProvider.notifier).state = result;
-  clearTicketFormIfUnchanged(container, sentForm);
-  container.read(pendingTicketIssueProvider.notifier).state = null;
+  clearTicketFormIfUnchanged(container, attempt.form);
+  unawaited(
+      container.read(pendingTicketIssueProvider.notifier).settle(attempt));
   // Slips only for numbers the result screen will show.
   if (ticketSaleProblem(result) != null) return;
   unawaited(container.read(slipPrinterProvider).afterSale(<TicketSlip>[
@@ -245,11 +303,9 @@ void clearTicketFormIfUnchanged(
 /// code) keeps it, as unanswered.
 Future<TicketIssueOutcome> retryPendingIssue(
     ProviderContainer container, PendingTicketIssue pending) async {
-  // Never under another operator's name: the desk would sell again.
+  // Never under another operator's name: the desk would sell again. Theirs
+  // stays on the phone for them.
   if (pending.operatorId != container.read(operatorProvider)?.id) {
-    if (identical(container.read(pendingTicketIssueProvider), pending)) {
-      container.read(pendingTicketIssueProvider.notifier).state = null;
-    }
     return const TicketIssueRejected(
       code: kOtherOperatorCode,
       message: 'Another operator started that sale, so it was set aside. '
@@ -260,13 +316,15 @@ Future<TicketIssueOutcome> retryPendingIssue(
       await container.read(entryTicketServiceProvider).issue(pending.request);
   switch (outcome) {
     case TicketIssueOk(:final result):
-      applyTicketSale(container, result, sentForm: pending.form);
+      applyTicketSale(container, result, attempt: pending);
     case TicketIssueUnreadable():
       // The desk has the sale; this phone only cannot show it.
       clearTicketFormIfUnchanged(container, pending.form);
-      container.read(pendingTicketIssueProvider.notifier).state = null;
+      unawaited(
+          container.read(pendingTicketIssueProvider.notifier).settle(pending));
     case TicketIssueRejected(isBusinessRefusal: true):
-      container.read(pendingTicketIssueProvider.notifier).state = null;
+      unawaited(
+          container.read(pendingTicketIssueProvider.notifier).settle(pending));
     case TicketIssueRejected() ||
           TicketIssueUnconfirmed() ||
           TicketIssueOffline():

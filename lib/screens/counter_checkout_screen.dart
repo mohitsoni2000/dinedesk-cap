@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../data/counter_providers.dart';
 import '../data/currency.dart';
 import '../data/money.dart';
+import '../data/parked_providers.dart' show moneyScopeProvider;
 import '../data/providers.dart';
 import '../models/entry_ticket.dart';
 import '../models/pay_mode.dart';
@@ -16,6 +17,7 @@ import '../services/log.dart';
 import '../services/offline_guard.dart';
 import '../services/offline_kot_coordinator.dart';
 import '../services/offline_order_queue_service.dart';
+import '../services/pending_money_store.dart';
 import '../services/pin_guard.dart';
 import '../services/qsr_checkout_service.dart';
 import '../theme/tokens.dart';
@@ -35,16 +37,17 @@ import '../widgets/token_badge.dart';
 const String _tag = '[Counter]';
 
 /// Applies a Pay & Fire the desk confirmed: the order into history, the
-/// token for the token screen, the receipts to the printer, and the cart
-/// cleared if it is still the one that was sent. Works off [container] so a
-/// screen that went away meanwhile cannot drop a charge the desk took.
+/// token for the token screen, the receipts to the printer, the cart cleared
+/// if it is still the one [attempt] sent, and nothing kept any more (here or
+/// on the phone). Works off [container] so a screen that went away meanwhile
+/// cannot drop a charge the desk took.
 void applyPayAndFire(
   ProviderContainer container,
   QsrCheckoutAck ack, {
-  required QsrCheckoutRequest request,
-  required List<CartLine> sentCart,
-  required Money estimate,
+  required PendingCheckout attempt,
 }) {
+  final request = attempt.request;
+  final sentCart = attempt.cart;
   container
       .read(syncServiceProvider)
       .applyOrderAck(ack.raw, includeHistory: true);
@@ -61,7 +64,7 @@ void applyPayAndFire(
     container.read(cartProvider.notifier).clear();
     container.read(orderNotesProvider.notifier).state = '';
   }
-  container.read(pendingCheckoutProvider.notifier).state = null;
+  unawaited(container.read(pendingCheckoutProvider.notifier).settle(attempt));
   for (final line in request.payments) {
     if (line.isCover) continue;
     container.read(lastCounterPayModeProvider.notifier).state = line.mode;
@@ -71,8 +74,8 @@ void applyPayAndFire(
     outcome: CounterOutcome.fired,
     fulfillment: request.fulfillment,
     paid: true,
-    itemCount: sentCart.fold<int>(0, (sum, line) => sum + line.qty),
-    total: ack.bills.isEmpty ? estimate : ack.total,
+    itemCount: attempt.itemCount,
+    total: ack.bills.isEmpty ? attempt.estimate : ack.total,
     token: ack.token,
     orderId: ack.orderId,
     kotNumber: ack.kotNumber,
@@ -89,10 +92,8 @@ void applyPayAndFire(
 Future<QsrCheckoutResult> retryPendingCheckout(
     ProviderContainer container, PendingCheckout pending) async {
   // Never under another operator's name: the desk would charge again.
+  // Theirs stays on the phone for them.
   if (pending.operatorId != container.read(operatorProvider)?.id) {
-    if (identical(container.read(pendingCheckoutProvider), pending)) {
-      container.read(pendingCheckoutProvider.notifier).state = null;
-    }
     return const QsrCheckoutRejected(
       code: kOtherOperatorCode,
       message: 'Another operator started that order, so it was set aside. '
@@ -104,12 +105,10 @@ Future<QsrCheckoutResult> retryPendingCheckout(
       );
   switch (result) {
     case QsrCheckoutOk(:final ack):
-      applyPayAndFire(container, ack,
-          request: pending.request,
-          sentCart: pending.cart,
-          estimate: pending.estimate);
+      applyPayAndFire(container, ack, attempt: pending);
     case QsrCheckoutRejected(isBusinessRefusal: true):
-      container.read(pendingCheckoutProvider.notifier).state = null;
+      unawaited(
+          container.read(pendingCheckoutProvider.notifier).settle(pending));
     case QsrCheckoutRejected(needsPin: true):
       unawaited(container.read(syncServiceProvider).handleReauthRequired());
     case QsrCheckoutRejected() ||
@@ -271,6 +270,9 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
   bool get _coverOn =>
       canRedeemCover(ref.read(flagsProvider), ref.read(ticketConfigProvider));
 
+  /// Covers, tenders and the note can change: nothing kept or in flight.
+  bool get _editable => ref.read(pendingCheckoutProvider) == null && !_busy;
+
   List<AppliedCover> get _activeCovers =>
       _coverOn ? _covers : const <AppliedCover>[];
 
@@ -370,8 +372,23 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
   /// One attempt; the caller holds [_busy].
   Future<void> _send(QsrCheckoutRequest request) async {
     final container = ProviderScope.containerOf(context, listen: false);
-    final cart = ref.read(cartProvider);
-    final estimate = request.expectedTotal ?? _subtotal;
+    final scope = container.read(moneyScopeProvider);
+    final attempt = PendingCheckout(
+      request: request,
+      cart: ref.read(cartProvider),
+      estimate: request.expectedTotal ?? _subtotal,
+      operatorId: scope?.operatorId ?? '',
+      desk: scope?.deskInstanceId ?? '',
+    );
+    PendingMoneyNotifier<PendingCheckout> pending() =>
+        container.read(pendingCheckoutProvider.notifier);
+    // On the phone before it goes: a crash, a restart or a sign-out while
+    // the desk answers cannot lose its id.
+    await pending().writeAhead(attempt);
+    if (!mounted) {
+      unawaited(pending().settle(attempt));
+      return;
+    }
     final result = await runBehindMoneyOverlay(
       context,
       container.read(qsrCheckoutServiceProvider).payAndFire(request),
@@ -380,10 +397,10 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
     );
     switch (result) {
       case QsrCheckoutOk(:final ack):
-        applyPayAndFire(container, ack,
-            request: request, sentCart: cart, estimate: estimate);
+        applyPayAndFire(container, ack, attempt: attempt);
         if (mounted) context.go('/counter/order/token');
       case QsrCheckoutRejected(isBusinessRefusal: true):
+        unawaited(pending().settle(attempt));
         if (!mounted) return;
         if (result.priceChanged) {
           await _onPriceChanged(request, result);
@@ -396,22 +413,19 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
         if (result case QsrCheckoutRejected(needsPin: true)) {
           unawaited(container.read(syncServiceProvider).handleReauthRequired());
         }
-        container.read(pendingCheckoutProvider.notifier).state =
-            PendingCheckout(
-                request: request,
-                cart: cart,
-                estimate: estimate,
-                operatorId: container.read(operatorProvider)?.id ?? '');
+        pending().hold(attempt);
         container.read(counterResultProvider.notifier).state =
             CounterOrderResult(
           outcome: CounterOutcome.unconfirmed,
           fulfillment: request.fulfillment,
           paid: true,
-          itemCount: cart.fold<int>(0, (sum, line) => sum + line.qty),
-          total: estimate,
+          itemCount: attempt.itemCount,
+          total: attempt.estimate,
         );
         if (mounted) context.go('/counter/order/token');
       case QsrCheckoutOffline():
+        // Never sent.
+        unawaited(pending().settle(attempt));
         if (mounted) await _offerParkOffline();
     }
   }
@@ -494,7 +508,7 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
 
   /// Drops the unanswered attempt on purpose, after a warning: if it did go
   /// through, charging again takes the money twice.
-  Future<void> _dropPending() async {
+  Future<void> _dropPending(PendingCheckout pending) async {
     final drop = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
@@ -519,7 +533,7 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
     );
     if (drop != true || !mounted) return;
     logD(_tag, 'an unanswered pay & fire was dropped by the cashier');
-    ref.read(pendingCheckoutProvider.notifier).state = null;
+    unawaited(ref.read(pendingCheckoutProvider.notifier).settle(pending));
   }
 
   /// Pay & Fire needs the desk; money never queues. Offer to park the cart.
@@ -761,7 +775,7 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
                 child: LiquidSecondaryButton(
                   label: 'Drop it',
                   leadingIcon: Icons.delete_outline,
-                  onPressed: _busy ? null : _dropPending,
+                  onPressed: _busy ? null : () => _dropPending(pending),
                 ),
               ),
               const SizedBox(width: 8),
@@ -941,10 +955,18 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
                                     ? Money.zero
                                     : estimate - covered,
                             enabled: editable,
-                            onAdd: (cover) =>
-                                setState(() => _covers.add(cover)),
-                            onRemove: (cover) =>
-                                setState(() => _covers.remove(cover)),
+                            // A lookup may answer after Pay & Fire locked
+                            // the screen: nothing is added under it.
+                            onAdd: (cover) {
+                              if (_editable) {
+                                setState(() => _covers.add(cover));
+                              }
+                            },
+                            onRemove: (cover) {
+                              if (_editable) {
+                                setState(() => _covers.remove(cover));
+                              }
+                            },
                           ),
                         if (coverPaysAll) ...[
                           const SizedBox(height: 12),

@@ -221,6 +221,17 @@ class TenderLine {
     this.ticketCode,
   });
 
+  /// A line as [toWire] wrote it (`ticket:issue`'s narrower shape reads the
+  /// same way), for a kept attempt read back from the phone.
+  factory TenderLine.fromWire(Map<String, dynamic> m) => TenderLine(
+        mode: requireString(m, 'payment_mode', 'TenderLine'),
+        amount: Money.fromWire(m['amount']),
+        reference: optionalString(m, 'reference_number'),
+        reason: optionalString(m, 'mode_reason'),
+        notes: optionalString(m, 'notes'),
+        ticketCode: optionalString(m, 'ticket_code'),
+      );
+
   bool get isCover => ticketCode != null;
 
   /// This line for [share] of the money (one bill's part of a tender).

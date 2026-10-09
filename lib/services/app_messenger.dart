@@ -5,10 +5,14 @@ import '../theme/tokens.dart';
 import '../widgets/dynamic_toast.dart';
 import '../widgets/pin_verify_sheet.dart';
 
+/// A toast from outside any screen (the sync service's refused KOTs and
+/// orders, the desk's validation and permission errors). It goes on the root
+/// navigator's overlay: the navigator's own context is above that overlay,
+/// so looking one up from it found nothing and the toast never showed.
 void showAppToast(String message, {ToastKind kind = ToastKind.error}) {
-  final context = rootNavigatorKey.currentContext;
-  if (context == null) return;
-  DynamicToast.show(context, message: message, kind: kind);
+  final overlay = rootNavigatorKey.currentState?.overlay;
+  if (overlay == null) return;
+  DynamicToast.showOn(overlay, message: message, kind: kind);
 }
 
 bool _printFailedAlertShowing = false;

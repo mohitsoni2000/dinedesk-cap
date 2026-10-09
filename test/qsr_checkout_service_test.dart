@@ -13,6 +13,7 @@ import 'package:restro/models/pay_mode.dart';
 import 'package:restro/models/token.dart';
 import 'package:restro/services/qsr_checkout_service.dart';
 import 'package:restro/services/socket_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Counter "Pay & Fire" over a fake desk: one `qsr:checkout`, a money event
 /// with a 15s timeout, one request id per attempt (kept for the retry of an
@@ -272,6 +273,7 @@ void main() {
     late ProviderContainer container;
 
     setUp(() {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
       container = ProviderContainer(overrides: [
         qsrCheckoutServiceProvider.overrideWithValue(service),
       ]);
@@ -286,7 +288,7 @@ void main() {
         estimate: const Money.rupees(1050),
         operatorId: asha.id,
       );
-      container.read(pendingCheckoutProvider.notifier).state = pending;
+      container.read(pendingCheckoutProvider.notifier).hold(pending);
       return pending;
     }
 

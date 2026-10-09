@@ -19,10 +19,30 @@ class DynamicToast {
     Duration duration = const Duration(seconds: 3),
     String? actionLabel,
     VoidCallback? onAction,
+  }) =>
+      showOn(
+        Overlay.of(context, rootOverlay: true),
+        message: message,
+        kind: kind,
+        duration: duration,
+        actionLabel: actionLabel,
+        onAction: onAction,
+      );
+
+  /// [show] on [overlay] itself, for a caller with no context under it: the
+  /// root navigator's own context sits above its overlay, so
+  /// `Overlay.of(rootNavigatorKey.currentContext)` finds nothing (see
+  /// showAppToast).
+  static void showOn(
+    OverlayState overlay, {
+    required String message,
+    ToastKind kind = ToastKind.info,
+    Duration duration = const Duration(seconds: 3),
+    String? actionLabel,
+    VoidCallback? onAction,
   }) {
     _removeCurrent();
 
-    final overlay = Overlay.of(context, rootOverlay: true);
     final stateKey = GlobalKey<_DynamicIslandToastState>();
     late final OverlayEntry entry;
 

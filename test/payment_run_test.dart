@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:restro/data/money.dart';
 import 'package:restro/models/pay_mode.dart';
 import 'package:restro/utils/payment_run.dart';
+import 'package:restro/utils/request_id.dart';
 import 'package:restro/utils/tender_allocation.dart';
 
 const _cash = TenderLine(mode: 'cash', amount: Money.rupees(100));
@@ -241,6 +242,105 @@ void main() {
       expect(v.stillDue!.reason, StillDueReason.partly);
       expect(v.toast, "This ticket's cover is used up");
     });
+  });
+
+  group('a try that got no answer, then let go unanswered', () {
+    test('after a bill went through: the hint, and it stays unresolved', () {
+      final run = _run({
+        'food': [_cash],
+        'liquor': [_cash]
+      })
+        ..done.add('food')
+        ..sawNoAnswer = true;
+      final v = decidePay(
+          run: run,
+          failure: _failure(run, 'liquor',
+              refusal: 'Payment amount exceeds remaining'),
+          settled: 1,
+          total: 2,
+          due: const Money.rupees(400),
+          short: const <ShortBill>[]);
+      expect(v.unresolved, isTrue);
+      expect(v.clearInputs, isTrue);
+      expect(
+          v.toast,
+          'Settled 1 of 2. An earlier try got no answer — check the bill on '
+          'the order screen before taking the remaining ₹400.');
+    });
+
+    test('nothing through: unresolved, never "nothing was charged"', () {
+      final run = _run({
+        'food': [_cash]
+      })
+        ..sawNoAnswer = true;
+      final v = decidePay(
+          run: run,
+          failure: _failure(run, 'food', refusal: 'Bill already fully paid'),
+          settled: 0,
+          total: 1,
+          due: const Money.rupees(100),
+          short: const <ShortBill>[]);
+      expect(v.unresolved, isTrue);
+      expect(v.keepRun, isFalse);
+    });
+
+    test('a later run on the same sheet: still never "nothing was charged"',
+        () {
+      final run = _run({
+        'food': [_cash]
+      });
+      final v = decidePay(
+          run: run,
+          failure: _failure(run, 'food', refusal: 'Internal error'),
+          settled: 0,
+          total: 1,
+          due: const Money.rupees(100),
+          short: const <ShortBill>[],
+          earlierUnanswered: true);
+      expect(v.toast, isNot(contains('nothing was charged')));
+      expect(
+          v.toast,
+          'Internal error. An earlier try got no answer — check the bill on '
+          'the order screen.');
+      expect(v.unresolved, isFalse, reason: 'this run itself was answered');
+    });
+
+    test('an answered run is not unresolved', () {
+      final run = _run({
+        'food': [_cash]
+      })
+        ..done.add('food')
+        ..sawNoAnswer = true;
+      final v = decidePay(
+          run: run,
+          failure: null,
+          settled: 1,
+          total: 1,
+          due: Money.zero,
+          short: const <ShortBill>[]);
+      expect(v.close, isTrue);
+      expect(v.unresolved, isFalse);
+    });
+  });
+
+  test('a run holds each call\'s id past the 15-minute intent expiry', () {
+    var now = DateTime(2026, 10, 9, 21);
+    requestIdClock = () => now;
+    addTearDown(() {
+      requestIdClock = DateTime.now;
+      resetRequestIds();
+    });
+    final run = _run({
+      'food': [_cash]
+    });
+    final call = run.calls.single;
+    final first = run.idFor(call);
+    expect(first, requestIdFor('bill:payment', call.toPayload()),
+        reason: 'stamped from the intent, so a reopened sheet still replays');
+    now = now.add(kRequestIdTtl + const Duration(minutes: 1));
+    expect(requestIdFor('bill:payment', call.toPayload()), isNot(first),
+        reason: 'the intent id has lapsed');
+    expect(run.idFor(call), first, reason: 'the run still sends the same id');
   });
 
   test('PaymentRun: what is still unsent, and which bills carry cover', () {

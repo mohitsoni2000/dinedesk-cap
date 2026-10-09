@@ -13,6 +13,7 @@ import 'package:restro/models/feature_flags.dart';
 import 'package:restro/models/pay_mode.dart';
 import 'package:restro/services/entry_ticket_service.dart';
 import 'package:restro/services/socket_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// The gate over a fake desk: a ticket sale and a check-in are money events
 /// (15s, one request id per attempt, kept for the retry of an unanswered
@@ -300,6 +301,7 @@ void main() {
         Operator(name: 'Ravi', role: 'Usher', shift: 'Day', id: 'op-ravi');
 
     setUp(() {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
       container = ProviderContainer(overrides: [
         entryTicketServiceProvider.overrideWithValue(service),
       ]);
@@ -314,7 +316,7 @@ void main() {
           summary: '2× Couple Pass',
           form: form,
           operatorId: asha.id);
-      container.read(pendingTicketIssueProvider.notifier).state = pending;
+      container.read(pendingTicketIssueProvider.notifier).hold(pending);
       return pending;
     }
 

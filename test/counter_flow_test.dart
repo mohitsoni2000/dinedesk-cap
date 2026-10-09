@@ -493,6 +493,36 @@ void main() {
     });
 
     testWidgets(
+        'the attempt is on the phone before it is sent, and gone once the '
+        'desk answered', (tester) async {
+      final h = await pumpCounter(tester,
+          initial: '/counter/order/checkout',
+          qsr: _prepaid,
+          cart: <CartLine>[dosaLine(qty: 2)]);
+      String? onPhoneWhenSent;
+      Object? sentId;
+      h.answer = (event, data) async {
+        if (event == 'qsr:checkout') {
+          final prefs = await SharedPreferences.getInstance();
+          onPhoneWhenSent = prefs.getString('pending_checkout_v1');
+          sentId = data['client_request_id'];
+        }
+        return desk(event, data);
+      };
+      await tester.tap(find.text('Cash'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pay & Fire ₹1,050'));
+      await tester.pumpAndSettle();
+
+      expect(onPhoneWhenSent, contains('$sentId'),
+          reason: 'a crash in flight cannot lose the id');
+      expect(find.text('S-03'), findsOneWidget);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('pending_checkout_v1'), isNull,
+          reason: 'answered for certain');
+    });
+
+    testWidgets(
         'price_changed shows the desk\'s total and charges it only once the '
         'cashier agrees, as a new attempt', (tester) async {
       final h = await pumpCounter(tester,

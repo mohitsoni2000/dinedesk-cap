@@ -8,13 +8,17 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/parked_draft.dart' show ParkedScope;
 import '../models/server_models.dart';
 import '../models/token.dart';
+import '../models/wire.dart';
 import '../services/log.dart';
 import '../services/offline_order_queue_service.dart';
+import '../services/pending_money_store.dart';
 import '../services/qsr_checkout_service.dart';
 import '../widgets/dynamic_toast.dart';
 import 'money.dart';
+import 'parked_providers.dart' show moneyScopeProvider;
 import 'providers.dart';
 
 const String _tag = '[Counter]';
@@ -150,13 +154,32 @@ final counterResultProvider = StateProvider<CounterOrderResult?>((_) => null);
 /// A Pay & Fire the desk never answered. It may have gone through, so it is
 /// kept: the only ways on are to retry it exactly (same request, same id, so
 /// the desk replays rather than charges twice) or to drop it on purpose.
-class PendingCheckout {
-  const PendingCheckout({
+///
+/// It is written to the phone before it is sent ([PendingMoneyStore]), so a
+/// restart or a sign-out cannot lose it.
+class PendingCheckout implements PendingMoney {
+  PendingCheckout({
     required this.request,
     required this.cart,
     required this.estimate,
     required this.operatorId,
-  });
+    this.desk = '',
+    int? itemCount,
+  }) : itemCount =
+            itemCount ?? cart.fold<int>(0, (sum, line) => sum + line.qty);
+
+  /// Read back from the phone. The cart is not kept there, so a confirmed
+  /// retry never clears the cart on screen (it is another one by then).
+  factory PendingCheckout.fromJson(Map<String, dynamic> json) =>
+      PendingCheckout(
+        request: QsrCheckoutRequest.restore(asMap(json['payload'])),
+        // A list of its own: never identical to the cart on screen.
+        cart: List<CartLine>.unmodifiable(const <CartLine>[]),
+        estimate: optionalMoney(json, 'estimate') ?? Money.zero,
+        operatorId: requireString(json, 'operator_id', 'PendingCheckout'),
+        desk: stringOr(json, 'desk', ''),
+        itemCount: intOr(json, 'item_count', 0),
+      );
 
   final QsrCheckoutRequest request;
 
@@ -164,21 +187,48 @@ class PendingCheckout {
   /// would charge again: it is never theirs.
   final String operatorId;
 
+  /// The desk it went to ([moneyScopeProvider]'s desk key).
+  final String desk;
+
   /// The cart as it was sent. A confirmed retry clears the cart only if it
   /// is still this one, so nothing added since is lost.
   final List<CartLine> cart;
   final Money estimate;
+  final int itemCount;
 
-  int get itemCount => cart.fold<int>(0, (sum, line) => sum + line.qty);
+  @override
+  String get clientRequestId => request.clientRequestId;
+
+  @override
+  ParkedScope get scope =>
+      ParkedScope(operatorId: operatorId, deskInstanceId: desk);
+
+  @override
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'client_request_id': request.clientRequestId,
+        'operator_id': operatorId,
+        'desk': desk,
+        'payload': request.toPayload(),
+        'estimate': estimate.toWire(),
+        'item_count': itemCount,
+      };
 }
 
-/// The unanswered Pay & Fire, its operator's alone: when another operator
-/// signs in (or the session is revoked) it is gone, so nobody else retries
-/// it. Signing out and back in as the same operator keeps it.
-final pendingCheckoutProvider = StateProvider<PendingCheckout?>((ref) {
-  ref.watch(operatorProvider.select((op) => op?.id));
-  return null;
-});
+final pendingCheckoutStoreProvider = Provider<PendingMoneyStore>(
+    (_) => PendingMoneyStore(PendingMoneyStore.checkoutKey));
+
+/// The unanswered Pay & Fire of the signed-in operator on this desk, read
+/// back from the phone when they sign in. Another operator never sees it
+/// (their retry would charge again); signing out, a revoked session, a
+/// restart or a crash only hide it until its operator is back.
+final pendingCheckoutProvider = StateNotifierProvider<
+        PendingMoneyNotifier<PendingCheckout>, PendingCheckout?>(
+    (ref) => PendingMoneyNotifier<PendingCheckout>(
+          ref.watch(pendingCheckoutStoreProvider),
+          ref.watch(moneyScopeProvider),
+          restore: PendingCheckout.fromJson,
+          what: 'Pay & Fire',
+        ));
 
 /// `order:create` / `qsr:checkout` items for [cart].
 List<Map<String, dynamic>> orderItemsPayload(List<CartLine> cart) => cart

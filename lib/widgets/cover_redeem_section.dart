@@ -50,11 +50,21 @@ class _CoverRedeemSectionState extends ConsumerState<CoverRedeemSection> {
     setState(() => _refusal = null);
     final code = await QrCapture.show(context,
         title: 'Cover ticket', hint: 'Ticket number or QR code');
-    if (code == null || !mounted) return;
+    if (code == null || !mounted || !widget.enabled) return;
     if (!requireDesk(context, ref)) return;
     setState(() => _looking = true);
     final outcome = await ref.read(entryTicketServiceProvider).lookup(code);
     if (!mounted) return;
+    if (!widget.enabled) {
+      // The payment locked while the desk was looking (Pay was tapped): a
+      // ticket is never added under a payment already planned or sent.
+      logD('[Cover]', 'a ticket looked up after the payment locked: not added');
+      setState(() {
+        _looking = false;
+        _refusal = 'Not added: the payment had already gone ahead';
+      });
+      return;
+    }
     final decision = switch (outcome) {
       TicketLookupFailed(:final message) => CoverRefused(message),
       TicketFound(:final result, :final message) => decideCover(

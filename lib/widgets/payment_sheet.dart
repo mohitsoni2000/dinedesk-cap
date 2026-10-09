@@ -84,9 +84,19 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
   StillDue? _stillDue;
   bool _confirmingClose = false;
 
+  /// A try got no answer and its run was let go without one (the desk
+  /// refused the identical resend): it may have gone through. Kept for the
+  /// sheet's life, so Close asks first and no later refusal reads "nothing
+  /// was charged".
+  bool _unresolved = false;
+
   /// Closing now would lose track of money: a payment in flight, one that
   /// may have gone through, or a part still due.
-  bool get _holdOpen => _submitting || _pending != null || _stillDue != null;
+  bool get _holdOpen =>
+      _submitting || _pending != null || _stillDue != null || _unresolved;
+
+  /// Covers and tenders can change: nothing planned is kept or in flight.
+  bool get _editable => _pending == null && !_submitting;
 
   @override
   void initState() {
@@ -243,10 +253,15 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       // charge instead of repeating it, retired on success and expired when
       // unanswered. A per-widget id map here used to do that by hand, without
       // the retirement or the expiry.
+      //
+      // The run holds the id it first stamped (PaymentRun.idFor): the intent
+      // id lapses after 15 minutes, and a resend after that must still be
+      // the same request for the desk to replay it.
       final response = await socketService.emitAckIdempotent(
         'bill:payment',
         call.toPayload(),
         timeout: const Duration(seconds: 15),
+        requestId: run.idFor(call),
       );
       if (response['kind'] == 'success') {
         run.done.add(call.billId);
@@ -280,6 +295,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
           if (run.done.contains(bill.id) && !_settledBillIds.contains(bill.id))
             (label: _billLabel(bill), hadCover: run.carriesCover(bill.id)),
       ],
+      earlierUnanswered: _unresolved,
     );
     logD('[Payment]',
         '${_settledBillIds.length} of ${widget.bills.length} settled; ${verdict.keepRun ? 'kept for a retry' : 'done'}');
@@ -295,6 +311,7 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       _submitting = false;
       _pending = verdict.keepRun ? run : null;
       if (verdict.stillDue != null) _stillDue = verdict.stillDue;
+      if (verdict.unresolved) _unresolved = true;
     });
     final toast = verdict.toast;
     if (toast != null) {
@@ -354,10 +371,11 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
     final modes =
         payModeCatalog(flags: flags, listed: ref.watch(payModesProvider));
     final pending = _pending;
-    final editable = pending == null && !_submitting;
+    final editable = _editable;
     final tenderDue = _tenderDue;
     final coverPaysAll = _activeCovers.isNotEmpty && tenderDue.isZero;
-    final moneyMayHaveMoved = pending != null || _stillDue != null;
+    final moneyMayHaveMoved =
+        pending != null || _stillDue != null || _unresolved;
 
     final bool canPay;
     if (_submitting) {
@@ -453,14 +471,31 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                           'rest exactly as entered.'
                       : kPaymentNoAnswer,
                 ),
+              ] else if (_unresolved && !_submitting) ...[
+                const SizedBox(height: 12),
+                const _Notice(
+                  color: AppColors.amber,
+                  icon: Icons.sync_problem_outlined,
+                  text: '$kEarlierTryUnanswered: it may have gone through. '
+                      'Check it before taking the money again.',
+                ),
               ],
               if (coverOn)
                 CoverRedeemSection(
+                  // Keyed: a notice appearing above it must not rebuild it
+                  // and drop a lookup it is waiting on.
+                  key: const ValueKey<String>('cover-redeem-section'),
                   covers: _covers,
                   coverable: _coverable(isSplitMode),
                   enabled: editable,
-                  onAdd: (cover) => setState(() => _covers.add(cover)),
-                  onRemove: (cover) => setState(() => _covers.remove(cover)),
+                  // A lookup may answer after Pay locked the sheet: nothing
+                  // is added under a planned (or sent) payment.
+                  onAdd: (cover) {
+                    if (_editable) setState(() => _covers.add(cover));
+                  },
+                  onRemove: (cover) {
+                    if (_editable) setState(() => _covers.remove(cover));
+                  },
                 ),
               if (_activeCovers.isNotEmpty) ...[
                 const SizedBox(height: 10),

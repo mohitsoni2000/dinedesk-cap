@@ -115,7 +115,52 @@ class TicketIssueRequest {
     this.guestName,
     this.guestPhone,
     String? clientRequestId,
-  }) : clientRequestId = clientRequestId ?? newRequestId();
+  })  : clientRequestId = clientRequestId ?? newRequestId(),
+        _sent = null;
+
+  TicketIssueRequest._restored({
+    required this.lines,
+    required this.payments,
+    required this.expectedTotal,
+    required this.guestName,
+    required this.guestPhone,
+    required this.clientRequestId,
+    required Map<String, dynamic> sent,
+  }) : _sent = sent;
+
+  /// A kept sale read back from the phone ([toPayload] as it was sent). Its
+  /// [toPayload] is that very payload, id included, so a retry after a
+  /// restart is the same request. Throws [WireFormatException] when it
+  /// cannot be read.
+  factory TicketIssueRequest.restore(Map<String, dynamic> payload) {
+    const entity = 'TicketIssueRequest';
+    final lines = <TicketIssueLine>[
+      for (final line in mapList(payload['lines']))
+        TicketIssueLine(
+          ticketTypeId: requireString(line, 'ticket_type_id', entity),
+          qty: requireInt(line, 'qty', entity),
+        ),
+    ];
+    if (lines.isEmpty) {
+      throw const WireFormatException(
+          entity: entity, field: 'lines', reason: 'empty');
+    }
+    return TicketIssueRequest._restored(
+      lines: lines,
+      payments: <TenderLine>[
+        for (final line in mapList(payload['payments']))
+          TenderLine.fromWire(line),
+      ],
+      expectedTotal: requireMoney(payload, 'expected_total', entity),
+      guestName: optionalString(payload, 'guest_name'),
+      guestPhone: optionalString(payload, 'guest_phone'),
+      clientRequestId: requireString(payload, 'client_request_id', entity),
+      sent: Map<String, dynamic>.from(payload),
+    );
+  }
+
+  /// What a restored sale sent; null for one made on this run.
+  final Map<String, dynamic>? _sent;
 
   final List<TicketIssueLine> lines;
 
@@ -142,6 +187,8 @@ class TicketIssueRequest {
       );
 
   Map<String, dynamic> toPayload() {
+    final sent = _sent;
+    if (sent != null) return Map<String, dynamic>.from(sent);
     final name = guestName?.trim();
     final phone = guestPhone?.trim();
     return <String, dynamic>{

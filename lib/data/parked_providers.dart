@@ -52,6 +52,27 @@ final parkedScopeProvider = Provider<ParkedScope?>((ref) {
 /// The stand-in desk key for a pairing without a desk instance id.
 String legacyDeskKey(String host, int port) => 'pairing:$host:$port';
 
+/// Whose kept money attempts are in play (an unanswered Pay & Fire or ticket
+/// sale): the signed-in operator, on the paired desk as for
+/// [parkedScopeProvider]. With no desk paired the desk is '' (nothing is
+/// ever sent then), so another operator signing in still never sees the
+/// last one's. Null with nobody signed in.
+final moneyScopeProvider = Provider<ParkedScope?>((ref) {
+  final operatorId = ref.watch(operatorProvider.select((op) => op?.id));
+  if (operatorId == null || operatorId.isEmpty) return null;
+  ref.watch(connectionBootstrapProvider);
+  final pairing = ref.read(connectionBootstrapProvider.notifier).currentPairing;
+  final deskId = pairing?.deskInstanceId;
+  return ParkedScope(
+    operatorId: operatorId,
+    deskInstanceId: pairing == null
+        ? ''
+        : deskId != null && deskId.isNotEmpty
+            ? deskId
+            : legacyDeskKey(pairing.host, pairing.port),
+  );
+});
+
 /// The current scope's drafts, all kinds, in the order they were parked.
 /// Park, resume and discard go through here so the lists and counts follow.
 final parkedDraftsProvider =

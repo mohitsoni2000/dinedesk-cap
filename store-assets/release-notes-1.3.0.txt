@@ -1,0 +1,13 @@
+What's new in 1.3.0
+
+- Counter mode for quick-service desks: take takeaway or standing orders with no table, charge them with Pay & Fire (the kitchen gets the KOT once it is paid) or fire now and collect at pickup, and hand the guest a token number.
+- Park a cart (or a half-made ticket sale) and resume it later; parked carts are repriced against today's menu.
+- Entry-ticket gate: sell entry tickets at the door, scan or type a ticket to check guests in (a ticket works once), and see today's tickets.
+- Prints ticket slips on a Bluetooth thermal printer (58 or 80 mm), with the QR; a slip that did not print waits until it does.
+- A guest's entry-ticket cover can pay for food and drinks in the payment screen.
+- An unanswered payment is never lost or charged twice: after a restart or a sign-out it comes back to the same person to retry.
+- Payment screen: the desk's own payment modes now appear in the list.
+- Payment screen: when one of several bills was paid and the next did not answer, Retry sends only the unpaid rest.
+- Payment screen: if the desk takes only part of a payment, the screen stays open showing what is still due.
+- Payment screen: if a payment is refused after part of it went through, what was already spent is cleared so it is not charged again.
+- Messages about orders or KOTs the desk refused now show up again.

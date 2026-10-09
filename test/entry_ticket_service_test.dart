@@ -539,6 +539,48 @@ void main() {
       final failed = await service.recent() as RecentTicketsFailed;
       expect(failed.message, "Couldn't reach the desk — try again");
     });
+
+    test('the PIN grace ran out: asks for the PIN, then asks the desk again',
+        () async {
+      var calls = 0;
+      answer =
+          (_, __) => ++calls == 1 ? reauth : fixture('ticket_recent_ack.json');
+      final loaded = await service.recent() as RecentTicketsLoaded;
+      expect(pinPrompts, 1);
+      expect(sent, hasLength(2));
+      expect(sent[1].data, sent[0].data);
+      expect(loaded.recent.tickets, hasLength(4));
+    });
+
+    test('the PIN not entered: says so, in words', () async {
+      pinEntered = false;
+      answer = (_, __) => reauth;
+      final failed = await service.recent() as RecentTicketsFailed;
+      expect(pinPrompts, 1);
+      expect(sent, hasLength(1), reason: 'not asked again without the PIN');
+      expect(failed.message, kPinAgainMessage);
+    });
+  });
+
+  group('ticket:lookup after the PIN grace', () {
+    test('asks for the PIN, then looks the ticket up again', () async {
+      var calls = 0;
+      answer =
+          (_, __) => ++calls == 1 ? reauth : fixture('ticket_lookup_ack.json');
+      final found = await service.lookup('ET-042',
+          purpose: TicketLookupPurpose.peek) as TicketFound;
+      expect(pinPrompts, 1);
+      expect(sent.map((s) => s.data['purpose']), <String>['peek', 'peek']);
+      expect(found.result.ticket?.ticketNumber, 'ET-042');
+    });
+
+    test('the PIN not entered: says so', () async {
+      pinEntered = false;
+      answer = (_, __) => reauth;
+      final failed = await service.lookup('ET-042') as TicketLookupFailed;
+      expect(failed.message, kPinAgainMessage);
+      expect(failed.code, 'reauth_required');
+    });
   });
 
   test('a ticket is paid in cash, UPI, card or a revenue mode — never comp, '

@@ -23,7 +23,9 @@ import 'socket_service.dart';
 /// gone through, so the attempt is kept and a retry sends exactly the same
 /// request; the desk then replays its answer instead of selling twice or
 /// reading its own check-in back as "already used". A `reauth_required`
-/// asks for the PIN once and resends that same request.
+/// (the desk's PIN grace ran out) asks for the PIN once and resends that
+/// same request; the reads (today's list, a lookup) ask again the same way,
+/// rather than showing the desk's refusal.
 ///
 /// Logs carry outcomes, counts and modes only: never a ticket code, number,
 /// search text or guest.
@@ -451,6 +453,9 @@ final class RecentTicketsFailed extends RecentTicketsOutcome {
 /// How many of today's tickets the Recent list asks for.
 const int kRecentTicketsLimit = 100;
 
+/// What a read says when the desk wants the PIN and it was not entered.
+const String kPinAgainMessage = 'Enter your PIN again, then try again';
+
 class EntryTicketService {
   EntryTicketService(this._socket, {ReauthPrompt? reauth}) : _reauth = reauth;
 
@@ -480,6 +485,16 @@ class EntryTicketService {
     if (!await _reauthenticated(ack)) return ack;
     logD(_tag, '$event: PIN entered again, resending the same request');
     return _socket.emitAck(event, payload, timeout: kTicketMoneyTimeout);
+  }
+
+  /// Sends a read, and once more after a PIN prompt when the desk asked for
+  /// one (a read is safe to repeat).
+  Future<Map<String, dynamic>> _emitRead(
+      String event, Map<String, dynamic> payload) async {
+    final ack = await _socket.emitAck(event, payload);
+    if (!await _reauthenticated(ack)) return ack;
+    logD(_tag, '$event: PIN entered again, asking again');
+    return _socket.emitAck(event, payload);
   }
 
   /// Sells [request] once (plus one resend after a PIN prompt). Never throws.
@@ -561,7 +576,7 @@ class EntryTicketService {
   }) async {
     var q = query?.trim() ?? '';
     if (q.length > 40) q = q.substring(0, 40);
-    final ack = await _socket.emitAck('ticket:recent', <String, dynamic>{
+    final ack = await _emitRead('ticket:recent', <String, dynamic>{
       if (q.isNotEmpty) 'q': q,
       'limit': limit.clamp(1, 100),
     });
@@ -577,9 +592,12 @@ class EntryTicketService {
           code: code);
     }
     return RecentTicketsFailed(
-      code == 'permission_denied'
-          ? "You can't see the gate's tickets — ask the desk"
-          : optionalString(ack, 'message') ?? "Couldn't load today's tickets",
+      switch (code) {
+        'permission_denied' =>
+          "You can't see the gate's tickets — ask the desk",
+        'reauth_required' => kPinAgainMessage,
+        _ => optionalString(ack, 'message') ?? "Couldn't load today's tickets",
+      },
       code: code,
     );
   }
@@ -590,7 +608,7 @@ class EntryTicketService {
     String code, {
     TicketLookupPurpose purpose = TicketLookupPurpose.redeem,
   }) async {
-    final ack = await _socket.emitAck('ticket:lookup', <String, dynamic>{
+    final ack = await _emitRead('ticket:lookup', <String, dynamic>{
       'code': code.trim(),
       'purpose': purpose.wire,
     });
@@ -609,7 +627,8 @@ class EntryTicketService {
           code: errorCode);
     }
     return TicketLookupFailed(
-      coverErrorCopy(errorCode) ??
+      (errorCode == 'reauth_required' ? kPinAgainMessage : null) ??
+          coverErrorCopy(errorCode) ??
           optionalString(ack, 'message') ??
           "Couldn't look the ticket up",
       code: errorCode,

@@ -15,6 +15,7 @@ import 'package:restro/models/parked_draft.dart';
 import 'package:restro/models/qsr_config.dart';
 import 'package:restro/models/token.dart';
 import 'package:restro/screens/counter_checkout_screen.dart';
+import 'package:restro/screens/counter_screen.dart';
 import 'package:restro/screens/order_builder_screen.dart';
 import 'package:restro/screens/order_detail_screen.dart';
 import 'package:restro/screens/order_success_screen.dart';
@@ -25,6 +26,7 @@ import 'package:restro/services/qsr_checkout_service.dart';
 import 'package:restro/services/session_service.dart';
 import 'package:restro/services/socket_service.dart';
 import 'package:restro/theme/app_theme.dart';
+import 'package:restro/widgets/desk_offline_strip.dart';
 import 'package:restro/widgets/liquid_chrome.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -555,6 +557,26 @@ void main() {
       expect(find.text('S-03'), findsOneWidget);
     });
 
+    testWidgets('without the desk the checkout says what still works',
+        (tester) async {
+      await pumpCounter(tester,
+          initial: '/counter/order/checkout',
+          qsr: _prepaid,
+          online: false,
+          cart: <CartLine>[dosaLine(qty: 2)]);
+      expect(find.text(counterOfflineMessage(canCharge: true, canFire: false)),
+          findsOneWidget);
+      expect(find.textContaining('Park the cart'), findsOneWidget);
+    });
+
+    testWidgets('with the desk there is no offline strip', (tester) async {
+      await pumpCounter(tester,
+          initial: '/counter/order/checkout',
+          qsr: _prepaid,
+          cart: <CartLine>[dosaLine(qty: 2)]);
+      expect(find.byType(DeskOfflineStrip), findsNothing);
+    });
+
     testWidgets('without the desk, Pay & Fire offers to park the cart',
         (tester) async {
       final h = await pumpCounter(tester,
@@ -928,6 +950,30 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(h.path, '/tables');
+  });
+
+  testWidgets('the counter home says what still works without the desk',
+      (tester) async {
+    final h = await pumpCounter(tester, initial: '/counter', online: false);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: h.container,
+      child: MaterialApp(theme: AppTheme.light(), home: const CounterScreen()),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text(counterOfflineMessage(canCharge: true, canFire: true)),
+        findsOneWidget,
+        reason: 'hybrid: Pay & Fire waits, Fire KOT still queues');
+  });
+
+  test('the counter\'s offline words follow what this cashier may do', () {
+    expect(counterOfflineMessage(canCharge: true, canFire: true),
+        contains('Fire KOT still goes'));
+    expect(counterOfflineMessage(canCharge: true, canFire: false),
+        contains('Park the cart'));
+    expect(counterOfflineMessage(canCharge: false, canFire: true),
+        contains('queue on this phone'));
+    expect(counterOfflineMessage(canCharge: false, canFire: false),
+        contains('nothing can be charged'));
   });
 
   testWidgets(

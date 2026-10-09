@@ -8,11 +8,13 @@ import '../data/parked_providers.dart';
 import '../data/providers.dart';
 import '../models/parked_draft.dart';
 import '../models/token.dart';
+import '../services/offline_guard.dart';
 import '../services/offline_order_queue_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/counter_notices.dart';
 import '../widgets/counter_park_actions.dart';
+import '../widgets/desk_offline_strip.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/page_content_clamp.dart';
 import '../widgets/token_badge.dart';
@@ -34,6 +36,12 @@ class CounterScreen extends ConsumerWidget {
     final tokens = ref.watch(flagsProvider.select((f) => f.orderTokens));
     final open = ref.watch(openCounterOrdersProvider);
     final pending = ref.watch(pendingCheckoutProvider);
+    final canCharge = ref.watch(qsrConfigProvider.select((q) => q.canPayNow)) &&
+        ref.watch(flagsProvider.select((f) => f.collectPayment));
+    final canFire = ref.watch(qsrConfigProvider.select((q) => q.canPayLater));
+    // Rebuilt when the link drops or returns; read on every build.
+    ref.watch(connectionProvider.select((c) => c.online));
+    final offline = isDeskOffline(ref);
     final palette = context.palette;
 
     return ColoredBox(
@@ -48,6 +56,12 @@ class CounterScreen extends ConsumerWidget {
                 const CounterNotices(),
                 const Text('Counter', style: AppTypography.displayLg),
                 const SizedBox(height: 16),
+                if (offline) ...[
+                  DeskOfflineStrip(
+                      message: counterOfflineMessage(
+                          canCharge: canCharge, canFire: canFire)),
+                  const SizedBox(height: 12),
+                ],
                 if (pending != null) ...[
                   AppCard(
                     onTap: () => context.push('/counter/order/checkout'),

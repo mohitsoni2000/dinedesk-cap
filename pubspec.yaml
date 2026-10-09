@@ -1,7 +1,7 @@
 name: restro
 description: Restro Operator — Indian restaurant POS for waiters..
 publish_to: 'none'
-version: 1.2.3+22
+version: 1.3.0+23
 
 environment:
   sdk: ">=3.5.0 <4.0.0"

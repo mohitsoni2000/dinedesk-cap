@@ -208,6 +208,58 @@ The connection layer never gives up and never ends a shift on its own:
   once the session is verified again. Bills, payments, cancels, shifts and
   discounts need the desk and say so immediately instead of waiting.
 
+## Counter, Gate and Bluetooth slips (1.3.0)
+
+Three desk-driven modes. Each appears only when the desk turns it on, so with
+every flag off and `operating_mode` absent the app is the table restaurant it
+always was.
+
+- **Counter (QSR mode).** `qsr_config.operating_mode: 'qsr'` puts a Counter
+  tab first (Tables stay one tab away). Table-less orders are Takeaway or
+  Standing (`counter_fulfillment_v1`).
+  - **Pay & Fire** (`qsr_checkout_service.dart`) sends one `qsr:checkout`:
+    the desk makes the order, fires its KOT, bills it, takes the payment and
+    gives the token in one transaction. Money never queues: it needs the
+    desk, and offers to park the cart without it.
+  - **Fire KOT, pay at pickup** goes through `order:create` + `kot:send` and
+    the outbox, so it still queues offline (as `Q-3`, turned into its token
+    when it lands). The order screen's Collect bills it and opens the payment
+    sheet later.
+  - The desk's `qsr_payment_flow` (prepaid / postpaid / hybrid) decides which
+    of the two a counter offers.
+- **Parked drafts.** A cart or a half-made ticket sale can be parked on the
+  phone (`parked_drafts_v1`, per operator and desk, 20 per kind, 7 days) and
+  resumed, repriced against today's menu. A value the app cannot read is
+  moved aside to `parked_drafts_v1.unreadable`, never deleted.
+- **Gate (entry tickets).** `flag_entry_tickets` plus `flag_ticket_issue`
+  and/or `flag_ticket_checkin` open the Gate tab.
+  - Issue: `ticket:issue`, priced by the desk (`price_changed` asks before
+    charging a new total).
+  - Scan and check in: `ticket:check_in` with a 4 s per-code cooldown, one
+    request in flight and a local `CDT:` filter. A ticket admits once; the
+    desk is the only authority.
+  - Recent: `ticket:recent`. A ticket's cover can pay food and drink bills in
+    the payment sheet (`bill:payment` with `ticket_code`).
+- **Bluetooth slips** (`bt_printer_service.dart`, `print_bluetooth_thermal`):
+  ticket slips on a 58 or 80 mm printer, set up under Settings › Slip
+  printer. The QR prints natively (or as an image, for printers that need
+  it). Slips are kept in `pending_slips_v1` until they print (200 per
+  operator and desk) and wiped when the phone is unpaired: they hold guests'
+  names and admission codes.
+- **Money that got no answer.** Pay & Fire, a ticket sale, a check-in and
+  `bill:payment` are money events: an explicit 15 s ack, and one
+  `client_request_id` per attempt, reused by every retry so the desk replays
+  instead of charging twice.
+  - An unanswered Pay & Fire or ticket sale is written to the phone before
+    it is sent (`pending_checkout_v1`, `pending_issue_v1`, per operator and
+    desk). A restart, a crash or a sign-out cannot lose it: its operator gets
+    the same request back to retry or drop. Another operator, or another
+    desk, never sees it.
+  - When the desk's PIN grace runs out (`reauth_required`), the gate asks
+    for the PIN once and resends the same request, or asks again for a read.
+- **Without the desk.** The gate and the counter each show a strip saying
+  what still works: nothing is sold or checked in; a Fire KOT still queues.
+
 ## Liquid Glass guidelines (HIG-aligned)
 
 Glass goes on **floating chrome only** — app bar, bottom nav, pills, FABs,

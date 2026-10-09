@@ -28,6 +28,7 @@ import '../widgets/cart_row.dart';
 import '../widgets/counter_notices.dart';
 import '../widgets/counter_park_actions.dart';
 import '../widgets/cover_redeem_section.dart';
+import '../widgets/desk_offline_strip.dart';
 import '../widgets/dynamic_toast.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/order_submitting_overlay.dart';
@@ -746,7 +747,9 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
     final covered = _activeCovers.map((c) => c.amount).sumMoney();
     final coverPaysAll = _activeCovers.isNotEmpty && _tenderDue.isZero;
     final editable = pending == null && !_busy;
-    // Read on every build: a tap without the desk says so and offers to park.
+    // Rebuilt when the link drops or returns; read on every build: a tap
+    // without the desk says so and offers to park.
+    ref.watch(connectionProvider.select((c) => c.online));
     final offline = isDeskOffline(ref);
 
     final bool payReady;
@@ -861,6 +864,12 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                   children: [
+                    if (offline) ...[
+                      DeskOfflineStrip(
+                          message: counterOfflineMessage(
+                              canCharge: canCharge, canFire: canFire)),
+                      const SizedBox(height: 12),
+                    ],
                     if (pending != null)
                       _PendingCheckoutCard(pending: pending)
                     else if (cart.isEmpty)

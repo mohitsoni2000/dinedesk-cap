@@ -200,6 +200,10 @@ class EntryTicket {
   final Money taxableAmount;
   final Money gstAmount;
   final Money coverAmount;
+
+  /// What the guest can still spend on a bill today: 0 once the ticket is
+  /// cancelled or its day has passed (unused cover is forfeited at the
+  /// cutover).
   final Money coverBalance;
   final TicketStatus status;
   final DateTime? issuedAt;
@@ -369,19 +373,36 @@ class TicketIssueResult {
 
   const TicketIssueResult({required this.sale, required this.tickets});
 
-  /// Throws [WireFormatException] when the ack has no usable sale: a paid
-  /// sale the phone cannot read must surface, never pass as an empty one.
+  /// Throws [WireFormatException] unless the sale and EVERY ticket parse. A
+  /// paid sale must never pass as an empty one, or as fewer slips than were
+  /// paid for: the guest would be short a ticket with nothing on screen.
   factory TicketIssueResult.fromAck(Map<String, dynamic> ack) {
+    const entity = 'TicketIssueResult';
     final sale = optionalMap(ack, 'sale');
     if (sale == null) {
       throw const WireFormatException(
-          entity: 'TicketIssueResult', field: 'sale', reason: 'missing');
+          entity: entity, field: 'sale', reason: 'missing');
     }
-    return TicketIssueResult(
-      sale: TicketSale.fromMap(sale),
-      tickets: parseEach(
-          mapList(ack['tickets']), EntryTicket.fromMap, 'EntryTicket'),
-    );
+    final rows = ack['tickets'];
+    if (rows is! List || rows.isEmpty) {
+      throw WireFormatException(
+          entity: entity,
+          field: 'tickets',
+          reason: 'missing or empty',
+          received: rows);
+    }
+    final tickets = <EntryTicket>[
+      for (final row in rows)
+        if (row is Map)
+          EntryTicket.fromMap(Map<String, dynamic>.from(row))
+        else
+          throw WireFormatException(
+              entity: entity,
+              field: 'tickets',
+              reason: 'a row is not an object',
+              received: row),
+    ];
+    return TicketIssueResult(sale: TicketSale.fromMap(sale), tickets: tickets);
   }
 }
 
@@ -394,6 +415,8 @@ class TicketSummary {
   final int pax;
   final TicketStatus status;
   final Money coverAmount;
+
+  /// Usable today: 0 once cancelled or expired (see [EntryTicket.coverBalance]).
   final Money coverBalance;
   final String? guestName;
   final String? guestPhoneLast4;
@@ -525,6 +548,8 @@ enum LookupReason {
 /// The `ticket:lookup` ack. An unknown code is a success with no ticket.
 class LookupResult {
   final EntryTicket? ticket;
+
+  /// Usable today: 0 once cancelled or expired (see [EntryTicket.coverBalance]).
   final Money coverBalance;
   final bool canRedeem;
   final LookupReason? reason;

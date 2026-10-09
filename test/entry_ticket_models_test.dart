@@ -76,7 +76,8 @@ void main() {
       for (final name in names) {
         walk(fixture(name), (key, value) {
           expect(maskedKeys.contains(key), isFalse, reason: '$name: $key');
-          if ((key == 'qr_code' || key == 'qr_data') && value != null) {
+          if ((key == 'qr_code' || key == 'qr_data' || key == 'ticket_code') &&
+              value != null) {
             expect(qr.hasMatch(value as String), isTrue,
                 reason: '$name: $value');
           }
@@ -225,10 +226,125 @@ void main() {
       expect(slip.footer, hasLength(2));
     });
 
+    test('an ack with no tickets is a wire error: a paid sale needs its slips',
+        () {
+      final ack = fixture('ticket_issue_ack.json');
+      expect(
+          () => TicketIssueResult.fromAck(
+              <String, dynamic>{...ack, 'tickets': <Object>[]}),
+          throwsA(isA<WireFormatException>()));
+      expect(
+          () => TicketIssueResult.fromAck(
+              <String, dynamic>{...ack}..remove('tickets')),
+          throwsA(isA<WireFormatException>()));
+    });
+
+    test('one unreadable ticket fails the whole ack instead of a missing slip',
+        () {
+      final ack = fixture('ticket_issue_ack.json');
+      final tickets = <Object?>[
+        for (final t in ack['tickets'] as List<dynamic>)
+          Map<String, dynamic>.from(t as Map),
+      ];
+      (tickets.first! as Map<String, dynamic>).remove('ticket_number');
+      expect(
+          () => TicketIssueResult.fromAck(
+              <String, dynamic>{...ack, 'tickets': tickets}),
+          throwsA(isA<WireFormatException>()));
+      expect(
+          () => TicketIssueResult.fromAck(<String, dynamic>{
+                ...ack,
+                'tickets': <Object?>[...(ack['tickets'] as List<dynamic>), 'x'],
+              }),
+          throwsA(isA<WireFormatException>()));
+    });
+
     test('an ack without a sale is a wire error, not a half sale', () {
       expect(
           () => TicketIssueResult.fromAck(<String, dynamic>{'kind': 'success'}),
           throwsA(isA<WireFormatException>()));
+    });
+  });
+
+  group('the fixtures follow the spec 2.5 ticket pricing', () {
+    // Paise, so every comparison is exact.
+    int paise(Object? v) => Money.fromWire(v)!.paise;
+
+    /// Per unit: E = price - cover. Inclusive: taxable = round2(E*100/(100+r)),
+    /// gst = E - taxable, unit_total = price. Exclusive: taxable = E,
+    /// gst = round2(E*r/100), unit_total = E + gst + cover.
+    ({int taxable, int gst, int unitTotal}) unit(Map<String, dynamic> type) {
+      final price = paise(type['price']);
+      final cover = paise(type['cover_amount']);
+      final rate = (type['gst_rate'] as num).toDouble();
+      final inclusive =
+          type['gst_inclusive'] == 1 || type['gst_inclusive'] == true;
+      final entry = price - cover;
+      if (inclusive) {
+        final taxable = (entry * 100 / (100 + rate)).round();
+        return (taxable: taxable, gst: entry - taxable, unitTotal: price);
+      }
+      final gst = (entry * rate / 100).round();
+      return (taxable: entry, gst: gst, unitTotal: entry + gst + cover);
+    }
+
+    final types = <String, Map<String, dynamic>>{
+      for (final t in fixture('sync_qsr_keys.json')['entry_ticket_types']
+          as List<dynamic>)
+        (t as Map<String, dynamic>)['id'] as String: t,
+    };
+
+    test('every type\'s unit_total', () {
+      expect(types.keys, <String>['ett_couple', 'ett_stag']);
+      for (final type in types.values) {
+        expect(paise(type['unit_total']), unit(type).unitTotal,
+            reason: type['id'] as String);
+      }
+      expect(unit(types['ett_couple']!).taxable, 101695);
+      expect(unit(types['ett_stag']!).unitTotal, 110800);
+    });
+
+    test('every issued ticket matches its type', () {
+      final tickets = <Map<String, dynamic>>[
+        for (final t
+            in fixture('ticket_issue_ack.json')['tickets'] as List<dynamic>)
+          t as Map<String, dynamic>,
+        fixture('ticket_lookup_ack.json')['ticket'] as Map<String, dynamic>,
+      ];
+      for (final ticket in tickets) {
+        final type = types[ticket['type_id']]!;
+        final want = unit(type);
+        final no = ticket['ticket_number'] as String;
+        expect(paise(ticket['price']), paise(type['price']), reason: no);
+        expect(paise(ticket['taxable_amount']), want.taxable, reason: no);
+        expect(paise(ticket['gst_amount']), want.gst, reason: no);
+        expect(paise(ticket['cover_amount']), paise(type['cover_amount']),
+            reason: no);
+      }
+    });
+
+    test('the sale adds up, and the payments cover it exactly', () {
+      final ack = fixture('ticket_issue_ack.json');
+      final sale = ack['sale'] as Map<String, dynamic>;
+      final totals = sale['totals'] as Map<String, dynamic>;
+      final tickets =
+          (ack['tickets'] as List<dynamic>).cast<Map<String, dynamic>>();
+      int sum(String key) =>
+          tickets.fold<int>(0, (acc, t) => acc + paise(t[key]));
+      expect(paise(totals['subtotal']), sum('taxable_amount'));
+      expect(paise(totals['gst']), sum('gst_amount'));
+      expect(paise(totals['cover_total']), sum('cover_amount'));
+      final total = paise(totals['total']);
+      expect(
+          paise(totals['subtotal']) +
+              paise(totals['gst']) +
+              paise(totals['cover_total']) +
+              paise(totals['round_off']),
+          total);
+      expect(
+          (sale['payments'] as List<dynamic>).fold<int>(0,
+              (acc, p) => acc + paise((p as Map<String, dynamic>)['amount'])),
+          total);
     });
   });
 
@@ -293,6 +409,8 @@ void main() {
     test('expired carries the day it was valid for', () {
       final r = CheckInResult.fromAck(fixture('ticket_check_in_expired.json'));
       expect(r.outcome, CheckInOutcome.expired);
+      expect(r.ticket!.coverBalance, Money.zero,
+          reason: 'usable balance: the cover was forfeited at the cutover');
       expect(r.ticket!.validDate, '2026-10-08');
       expect(r.ticket!.guestName, isNull);
       expect(r.checkedInAt, isNull);
@@ -505,13 +623,12 @@ void main() {
       expect(modes.map((m) => m.code), <String>['custom_a', 'custom_b']);
     });
 
-    test('system modes and the cover mode never become pay modes', () {
+    test('system modes and rows without a code never become pay modes', () {
       final modes = PayMode.listFrom(<Object>[
-        <String, dynamic>{'code': 'cover_ticket', 'name': 'Cover Ticket'},
         <String, dynamic>{'code': 'complimentary', 'is_system': 1},
         <String, dynamic>{'code': 'custom_swiggy', 'name': 'Swiggy'},
         <String, dynamic>{'name': 'no code'},
-      ], excludeCode: 'cover_ticket');
+      ]);
       expect(modes.map((m) => m.code), <String>['custom_swiggy']);
       expect(PayMode.listFrom(null), isEmpty);
     });

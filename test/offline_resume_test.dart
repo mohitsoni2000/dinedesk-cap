@@ -100,6 +100,9 @@ void main() {
 
   tearDown(() async {
     container.dispose();
+    // A live sync saves the snapshot fire-and-forget; let that write land
+    // before the folder is deleted under it.
+    await store.idle;
     if (dir.existsSync()) await dir.delete(recursive: true);
   });
 

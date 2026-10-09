@@ -38,9 +38,9 @@ abstract final class ShellBranch {
       };
 }
 
-/// The tabs to show, as branch indices: Tables (restaurant mode) or Counter
-/// (QSR mode), Rooms and Gate when allowed, then History, Profile, Settings,
-/// with the [home] tab moved to the front.
+/// The tabs to show, as branch indices: the Counter (QSR mode only), Tables
+/// (always: QSR mode is hybrid), Rooms and Gate when allowed, then History,
+/// Profile, Settings, with the [home] tab moved to the front.
 List<int> shellTabsFor({
   required String home,
   required bool isQsr,
@@ -48,9 +48,9 @@ List<int> shellTabsFor({
   required bool gate,
 }) {
   final tabs = <int>[
-    if (!isQsr) ShellBranch.tables,
-    if (rooms) ShellBranch.rooms,
     if (isQsr) ShellBranch.counter,
+    ShellBranch.tables,
+    if (rooms) ShellBranch.rooms,
     if (gate) ShellBranch.gate,
     ShellBranch.history,
     ShellBranch.profile,
@@ -99,7 +99,7 @@ class RootShell extends ConsumerWidget {
         (branch, _navItemFor(branch)),
     ];
 
-    // The open tab went away (rooms switched off, QSR mode turned on, gate
+    // The open tab went away (rooms switched off, QSR mode turned off, gate
     // rights removed): fall back to this user's home tab.
     if (!entries.any((e) => e.$1 == navigationShell.currentIndex)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

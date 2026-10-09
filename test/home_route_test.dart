@@ -138,10 +138,14 @@ void main() {
           '/counter');
     });
 
-    test('is ignored when that screen is not available', () {
+    test('a QSR user who pinned Tables lands on Tables', () {
+      expect(homeRouteFor(flags: flags(), qsr: qsr), '/counter',
+          reason: 'the automatic home stays the Counter');
       expect(homeRouteFor(flags: flags(), qsr: qsr, pref: StartScreen.tables),
-          '/counter',
-          reason: 'Tables are closed in QSR mode');
+          '/tables');
+    });
+
+    test('is ignored when that screen is not available', () {
       expect(
           homeRouteFor(
               flags: flags(), qsr: restaurant, pref: StartScreen.counter),
@@ -165,9 +169,10 @@ void main() {
           routeGuard(location: '/order/t1', flags: f, qsr: restaurant), isNull);
     });
 
-    test('QSR mode: Tables go home, Counter and table orders stay open', () {
+    test('QSR mode keeps Tables open (hybrid), as well as the Counter', () {
       final f = flags();
-      expect(routeGuard(location: '/tables', flags: f, qsr: qsr), '/counter');
+      expect(routeGuard(location: '/tables', flags: f, qsr: qsr), isNull,
+          reason: 'owner decision 6: the floor stays reachable in QSR mode');
       expect(routeGuard(location: '/counter', flags: f, qsr: qsr), isNull);
       expect(routeGuard(location: '/counter/order/token', flags: f, qsr: qsr),
           isNull);
@@ -241,6 +246,14 @@ void main() {
             expect(routeGuard(location: home, flags: f, qsr: cfg, pref: pref),
                 isNull,
                 reason: 'home $home must be open');
+            expect(
+                routeGuard(location: '/tables', flags: f, qsr: cfg, pref: pref),
+                isNull,
+                reason: 'Tables are open in both modes');
+            if (cfg.isQsr && pref != StartScreen.tables) {
+              expect(home, isNot('/tables'),
+                  reason: 'only a pinned Tables beats the QSR home');
+            }
             for (final loc in locations) {
               final to =
                   routeGuard(location: loc, flags: f, qsr: cfg, pref: pref);

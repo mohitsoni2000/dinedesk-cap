@@ -854,8 +854,7 @@ class SyncService {
     // QSR mode, entry tickets and payment modes, by the same rule: a key that
     // is present is applied (null = the desk's "none"); a FULL sync without
     // it is an older desk, so plain restaurant with no tickets and no custom
-    // modes; a partial reply says nothing about them. The ticket config goes
-    // before the modes: its cover mode is kept out of them.
+    // modes; a partial reply says nothing about them.
     final fullSync = data.containsKey('tables');
     if (fullSync || data.containsKey('qsr_config')) {
       _applyQsrConfig(data['qsr_config']);
@@ -955,9 +954,10 @@ class SyncService {
     logD(_tag, '  Ticket types: ${types.length}');
   }
 
+  /// The cover mode is taken out on read (payModesProvider), so it stays
+  /// out whichever of this and the ticket config arrives last.
   void _applyPayModes(Object? raw) {
-    _ref.read(payModesProvider.notifier).state = PayMode.listFrom(raw,
-        excludeCode: _ref.read(ticketConfigProvider).coverPaymentMode);
+    _ref.read(listedPayModesProvider.notifier).state = PayMode.listFrom(raw);
   }
 
   void _applyKotPrintConfig(Object? raw) {

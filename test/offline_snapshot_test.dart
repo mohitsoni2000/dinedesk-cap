@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -92,6 +93,7 @@ void main() {
   });
 
   tearDown(() async {
+    await store.idle;
     if (dir.existsSync()) await dir.delete(recursive: true);
   });
 
@@ -202,6 +204,15 @@ void main() {
       expect(await store.load(deskInstanceId: 'desk-2'), isNull);
       expect(file().existsSync(), isFalse,
           reason: 'not re-parsed on every launch');
+    });
+
+    test('idle waits for every queued save, in order', () async {
+      unawaited(store.save(snapshot(orders: const [])));
+      unawaited(store.save(snapshot()));
+      await store.idle;
+      expect(File('${file().path}.tmp').existsSync(), isFalse);
+      expect((await store.load())!.activeOrders.single['id'], 'o1',
+          reason: 'the later save is the one on disk');
     });
 
     test('a missing file is simply null', () async {

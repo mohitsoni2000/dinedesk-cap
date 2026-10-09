@@ -91,10 +91,10 @@ class PayMode {
   }
 
   /// The modes in [raw] (the desk's list), in its sort order. A system mode
-  /// (`is_system`) and the cover mode ([excludeCode], the ticket config's
-  /// `cover_payment_mode`) never become a pay mode: cover is only taken
+  /// (`is_system`) never becomes a pay mode. The cover mode is taken out
+  /// where the list is read (payModesProvider): cover is only ever taken
   /// through a scanned ticket.
-  static List<PayMode> listFrom(Object? raw, {String? excludeCode}) {
+  static List<PayMode> listFrom(Object? raw) {
     final modes = parseEach(
       <Map<String, dynamic>>[
         for (final row in mapList(raw))
@@ -102,7 +102,7 @@ class PayMode {
       ],
       PayMode.fromMap,
       'PayMode',
-    ).where((m) => m.code != excludeCode).toList();
+    );
     // Stable: modes sharing a sort_order keep the desk's order.
     mergeSort<PayMode>(modes,
         compare: (a, b) => a.sortOrder.compareTo(b.sortOrder));

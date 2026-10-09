@@ -970,9 +970,22 @@ final ticketTypesProvider = StateProvider<List<TicketType>>((_) => const []);
 final ticketConfigProvider =
     StateProvider<TicketConfig>((_) => TicketConfig.none);
 
-/// The payment modes the desk lists for this user (sync `payment_modes`,
-/// `payment_modes:updated`). Never the cover mode or a system mode.
-final payModesProvider = StateProvider<List<PayMode>>((_) => const []);
+/// The payment modes the desk listed for this user (sync `payment_modes`,
+/// `payment_modes:updated`), as received. Read [payModesProvider].
+final listedPayModesProvider = StateProvider<List<PayMode>>((_) => const []);
+
+/// The payment modes this user may pick: the desk's list without the cover
+/// mode, filtered on read so it stays out whichever of the payment-mode and
+/// ticket-config updates arrived last. (System modes never get this far.)
+final payModesProvider = Provider<List<PayMode>>((ref) {
+  final cover = ref.watch(ticketConfigProvider).coverPaymentMode;
+  final listed = ref.watch(listedPayModesProvider);
+  if (cover == null) return listed;
+  return <PayMode>[
+    for (final mode in listed)
+      if (mode.code != cover) mode,
+  ];
+});
 
 final linkGroupsProvider = StateProvider<Map<String, List<String>>>((_) => {});
 

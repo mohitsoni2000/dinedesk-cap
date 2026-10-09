@@ -40,13 +40,38 @@ void main() {
           ]);
     });
 
-    test('QSR mode swaps Tables for the Counter', () {
+    test('QSR mode puts the Counter first and keeps Tables right after it', () {
+      // Owner decision 6: QSR is hybrid; the floor stays reachable.
       expect(
           shellTabsFor(home: '/counter', isQsr: true, rooms: true, gate: true),
           <int>[
             ShellBranch.counter,
+            ShellBranch.tables,
             ShellBranch.rooms,
             ShellBranch.gate,
+            ShellBranch.history,
+            ShellBranch.profile,
+            ShellBranch.settings,
+          ]);
+      expect(
+          shellTabsFor(
+              home: '/counter', isQsr: true, rooms: false, gate: false),
+          <int>[
+            ShellBranch.counter,
+            ShellBranch.tables,
+            ShellBranch.history,
+            ShellBranch.profile,
+            ShellBranch.settings,
+          ]);
+    });
+
+    test('a QSR user who pinned Tables gets Tables first, then the Counter',
+        () {
+      expect(
+          shellTabsFor(home: '/tables', isQsr: true, rooms: false, gate: false),
+          <int>[
+            ShellBranch.tables,
+            ShellBranch.counter,
             ShellBranch.history,
             ShellBranch.profile,
             ShellBranch.settings,
@@ -65,9 +90,15 @@ void main() {
             ShellBranch.settings,
           ]);
       expect(
-          shellTabsFor(home: '/gate', isQsr: true, rooms: false, gate: true)
-              .first,
-          ShellBranch.gate);
+          shellTabsFor(home: '/gate', isQsr: true, rooms: false, gate: true),
+          <int>[
+            ShellBranch.gate,
+            ShellBranch.counter,
+            ShellBranch.tables,
+            ShellBranch.history,
+            ShellBranch.profile,
+            ShellBranch.settings,
+          ]);
     });
 
     test('ShellBranch.ofHome maps each home route to its branch', () {
@@ -164,7 +195,7 @@ void main() {
       expect(find.text('page /tables'), findsOneWidget);
     });
 
-    testWidgets('QSR mode: Counter first, Tables gone, Gate for gate staff',
+    testWidgets('QSR mode: Counter first, then Tables; Gate for gate staff',
         (tester) async {
       await pumpShell(
         tester,
@@ -176,11 +207,30 @@ void main() {
           'flag_ticket_checkin': 1,
         }),
       );
-      expect(find.text('TABLES'), findsNothing);
-      expect(x(tester, 'COUNTER'), lessThan(x(tester, 'ROOMS')));
+      expect(x(tester, 'COUNTER'), lessThan(x(tester, 'TABLES')));
+      expect(x(tester, 'TABLES'), lessThan(x(tester, 'ROOMS')));
       expect(x(tester, 'ROOMS'), lessThan(x(tester, 'GATE')));
       expect(x(tester, 'GATE'), lessThan(x(tester, 'HISTORY')));
       expect(find.text('page /counter'), findsOneWidget);
+    });
+
+    testWidgets('seven tabs still lay out on a small phone', (tester) async {
+      tester.view.physicalSize = const Size(720, 1600);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpShell(
+        tester,
+        initial: '/counter',
+        qsrConfig: qsr,
+        flags: FeatureFlags.fromMap(<String, dynamic>{
+          'flag_rooms': 1,
+          'flag_entry_tickets': 1,
+          'flag_ticket_checkin': 1,
+        }),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.byType(LiquidNavIcon), findsNWidgets(7));
     });
 
     testWidgets('a gate-first user gets the Gate tab first', (tester) async {
@@ -204,17 +254,29 @@ void main() {
       expect(find.text('page /history'), findsOneWidget);
     });
 
-    testWidgets('when the open tab goes away the shell falls back to home',
+    testWidgets('QSR mode turned on keeps an open Tables tab where it is',
         (tester) async {
       final router = await pumpShell(tester);
-      expect(find.text('page /tables'), findsOneWidget);
-
       container.read(qsrConfigProvider.notifier).state = qsr;
       await tester.pumpAndSettle();
 
-      expect(router.routerDelegate.currentConfiguration.uri.path, '/counter');
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/tables');
+      expect(find.text('page /tables'), findsOneWidget);
+      expect(x(tester, 'COUNTER'), lessThan(x(tester, 'TABLES')));
+    });
+
+    testWidgets('when the open tab goes away the shell falls back to home',
+        (tester) async {
+      final router =
+          await pumpShell(tester, initial: '/counter', qsrConfig: qsr);
       expect(find.text('page /counter'), findsOneWidget);
-      expect(find.text('TABLES'), findsNothing);
+
+      container.read(qsrConfigProvider.notifier).state = QsrConfig.restaurant;
+      await tester.pumpAndSettle();
+
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/tables');
+      expect(find.text('page /tables'), findsOneWidget);
+      expect(find.text('COUNTER'), findsNothing);
     });
 
     testWidgets('rooms switched off while on Rooms still falls back',
@@ -273,17 +335,14 @@ void main() {
       'flag_collect_payment': 1,
     });
 
-    testWidgets('a signed-in QSR user lands on the Counter; /tables stays shut',
+    testWidgets(
+        'a signed-in QSR user lands on the Counter, Tables one tab away',
         (tester) async {
       await pumpApp(tester, qsrConfig: qsr, flags: const FeatureFlags());
       expect(path(), '/counter');
-      expect(find.text('TABLES'), findsNothing);
-
-      router.go('/tables');
-      await tester.pumpAndSettle();
-      expect(path(), '/counter');
-      // The router turned both away before Tables was ever built (the shell's
-      // own fallback would only have moved on after building it).
+      expect(find.text('TABLES'), findsOneWidget);
+      // The router sent the PIN straight to the Counter: Tables was never
+      // built on the way (a '/tables' landing would have built it).
       expect(find.byType(TablesScreen, skipOffstage: false), findsNothing);
     });
 

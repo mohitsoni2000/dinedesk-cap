@@ -38,9 +38,10 @@ enum StartScreen {
   }
 }
 
-/// Whether [screen] opens for this user on this desk: Tables only in
-/// restaurant mode, the Counter only in QSR mode, the Gate only with gate
-/// rights ([FeatureFlags.hasGate]). [StartScreen.auto] always does.
+/// Whether [screen] opens for this user on this desk: Tables always (QSR
+/// mode is hybrid, the floor stays reachable), the Counter only in QSR mode,
+/// the Gate only with gate rights ([FeatureFlags.hasGate]).
+/// [StartScreen.auto] always does.
 bool isStartScreenAvailable(
   StartScreen screen, {
   required FeatureFlags flags,
@@ -48,28 +49,38 @@ bool isStartScreenAvailable(
 }) =>
     switch (screen) {
       StartScreen.auto => true,
-      StartScreen.tables => !qsr.isQsr,
+      StartScreen.tables => true,
       StartScreen.counter => qsr.isQsr,
       StartScreen.gate => flags.hasGate,
     };
 
-/// The screens this user could pin as their start, in tab order (Automatic
-/// is not one of them). Settings offers the choice only when there are two
-/// or more.
+/// The screens this user could pin as their start (Automatic is not one of
+/// them), the desk's main screen first: Counter, Tables, Gate in QSR mode;
+/// Tables, Gate otherwise. Settings offers the choice only when there are
+/// two or more.
 List<StartScreen> availableStartScreens({
   required FeatureFlags flags,
   required QsrConfig qsr,
 }) =>
     <StartScreen>[
-      for (final screen in StartScreen.values)
-        if (screen != StartScreen.auto &&
-            isStartScreenAvailable(screen, flags: flags, qsr: qsr))
-          screen,
+      for (final screen in qsr.isQsr
+          ? const <StartScreen>[
+              StartScreen.counter,
+              StartScreen.tables,
+              StartScreen.gate
+            ]
+          : const <StartScreen>[
+              StartScreen.tables,
+              StartScreen.counter,
+              StartScreen.gate
+            ])
+        if (isStartScreenAvailable(screen, flags: flags, qsr: qsr)) screen,
     ];
 
 /// This user's home on this desk.
 ///
-/// - [pref] wins when that screen is available ([isStartScreenAvailable]).
+/// - [pref] wins when that screen is available ([isStartScreenAvailable]);
+///   a QSR user may pin Tables.
 /// - Otherwise staff who sell tickets but can neither bill nor take money
 ///   start on the Gate. Check-in alone is not enough: the desk's default
 ///   waiter may check guests in, and must keep landing on Tables.
@@ -91,11 +102,12 @@ String homeRouteFor({
   return qsr.isQsr ? HomeRoutes.counter : HomeRoutes.tables;
 }
 
-/// Where [location] must go instead, or null when it is open to this user:
+/// Where [location] must go instead, or null when it is open to this user.
+/// A home screen's routes follow [isStartScreenAvailable]:
 ///
 /// - `/counter…` needs QSR mode;
 /// - `/gate…` needs gate rights;
-/// - `/tables` is closed in QSR mode;
+/// - `/tables` is always open (QSR mode is hybrid);
 /// - `/rooms` and `/order/room…` need the rooms flag (as before).
 ///
 /// Every redirect goes to home, which is always open, so it never loops.
@@ -106,14 +118,13 @@ String? routeGuard({
   StartScreen pref = StartScreen.auto,
 }) {
   bool shut(StartScreen screen) {
-    final root = screen.route!;
+    final root = screen.route;
+    if (root == null) return false;
     final under = location == root || location.startsWith('$root/');
     return under && !isStartScreenAvailable(screen, flags: flags, qsr: qsr);
   }
 
-  final closed = shut(StartScreen.counter) ||
-      shut(StartScreen.gate) ||
-      shut(StartScreen.tables) ||
+  final closed = StartScreen.values.any(shut) ||
       (!flags.rooms &&
           (location == '/rooms' || location.startsWith('/order/room')));
   return closed ? homeRouteFor(flags: flags, qsr: qsr, pref: pref) : null;

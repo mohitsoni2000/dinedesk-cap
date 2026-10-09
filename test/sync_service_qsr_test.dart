@@ -51,6 +51,8 @@ void main() {
 
   tearDown(() async {
     container.dispose();
+    // Saves run fire-and-forget; let them land before the folder goes.
+    await store.idle;
     if (tmp.existsSync()) await tmp.delete(recursive: true);
   });
 
@@ -183,6 +185,31 @@ void main() {
       expect(container.read(ticketTypesProvider).single.unitTotal,
           const Money.rupees(5000));
       expect(container.read(ticketConfigProvider).coverPaymentMode, isNull);
+    });
+
+    test('the cover mode stays out of pay modes in whatever order updates come',
+        () async {
+      // The modes arrive first; then the config names one of them as the
+      // cover mode, and then names another code again.
+      await sync().applyInitialSync(full(fixture('sync_qsr_keys.json')));
+      expect(container.read(payModesProvider).map((m) => m.code),
+          contains('custom_phonepe'));
+
+      deliver('ticket_types:updated', <String, dynamic>{
+        'entry_ticket_config': <String, dynamic>{
+          'cover_payment_mode': 'custom_phonepe',
+        },
+      });
+      expect(container.read(payModesProvider).map((m) => m.code),
+          <String>['cash', 'upi', 'card']);
+
+      deliver('ticket_types:updated', <String, dynamic>{
+        'entry_ticket_config': <String, dynamic>{
+          'cover_payment_mode': 'cover_ticket',
+        },
+      });
+      expect(container.read(payModesProvider).map((m) => m.code),
+          <String>['cash', 'upi', 'card', 'custom_phonepe']);
     });
 
     test('payment_modes:updated replaces the pay modes', () async {

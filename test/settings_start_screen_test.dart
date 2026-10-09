@@ -39,13 +39,16 @@ void main() {
           <StartScreen>[StartScreen.tables]);
     });
 
-    test('gate rights add the Gate; QSR swaps Tables for the Counter', () {
+    test('gate rights add the Gate; QSR adds the Counter before Tables', () {
       expect(availableStartScreens(flags: gateUser, qsr: QsrConfig.restaurant),
           <StartScreen>[StartScreen.tables, StartScreen.gate]);
-      expect(availableStartScreens(flags: gateUser, qsr: qsr),
-          <StartScreen>[StartScreen.counter, StartScreen.gate]);
+      expect(availableStartScreens(flags: gateUser, qsr: qsr), <StartScreen>[
+        StartScreen.counter,
+        StartScreen.tables,
+        StartScreen.gate
+      ]);
       expect(availableStartScreens(flags: const FeatureFlags(), qsr: qsr),
-          <StartScreen>[StartScreen.counter]);
+          <StartScreen>[StartScreen.counter, StartScreen.tables]);
     });
 
     test('Automatic is always possible but never listed', () {
@@ -99,9 +102,20 @@ void main() {
       expect(find.text('Start screen'), findsNothing);
     });
 
-    testWidgets('is hidden on a QSR desk without gate rights', (tester) async {
+    testWidgets('a QSR desk offers Automatic, Counter and Tables',
+        (tester) async {
       await pumpSettings(tester, qsrConfig: qsr);
-      expect(find.text('Start screen'), findsNothing);
+      expect(find.text('Automatic · opens on Counter'), findsOneWidget);
+
+      await tester.tap(find.text('Start screen'));
+      await tester.pumpAndSettle();
+      expect(find.text('Automatic'), findsOneWidget);
+      expect(find.text('Counter'), findsOneWidget);
+      expect(find.text('Tables'), findsOneWidget);
+      expect(find.text('Gate'), findsNothing, reason: 'no gate rights');
+      expect(tester.getCenter(find.text('Counter')).dy,
+          lessThan(tester.getCenter(find.text('Tables')).dy),
+          reason: 'the QSR home screen comes first');
     });
 
     testWidgets('with gate rights it offers Automatic, Tables and Gate',
@@ -120,14 +134,26 @@ void main() {
           reason: 'only screens this user can open right now');
     });
 
-    testWidgets('on a QSR desk it offers the Counter instead of Tables',
+    testWidgets('on a QSR desk with gate rights: Counter, Tables and Gate',
         (tester) async {
       await pumpSettings(tester, flags: gateUser, qsrConfig: qsr);
       await tester.tap(find.text('Start screen'));
       await tester.pumpAndSettle();
       expect(find.text('Counter'), findsOneWidget);
-      expect(find.text('Tables'), findsNothing);
+      expect(find.text('Tables'), findsOneWidget);
       expect(find.text('Gate'), findsOneWidget);
+    });
+
+    testWidgets('a QSR user can pin Tables', (tester) async {
+      await pumpSettings(tester, qsrConfig: qsr);
+      expect(container.read(homeRouteProvider), '/counter');
+      await tester.tap(find.text('Start screen'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tables'));
+      await tester.pumpAndSettle();
+      expect(container.read(homeRouteProvider), '/tables');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('start_screen_v1'), 'tables');
     });
 
     testWidgets('picking Gate saves it and makes Gate the home, no navigation',

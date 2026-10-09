@@ -169,6 +169,11 @@ class OfflineSnapshotStore {
   /// save. (Two writers on one tmp file would have the second rename fail.)
   Future<void> _saves = Future<void>.value();
 
+  /// Completes once every save queued so far is written. The app fires saves
+  /// and forgets them; tests await this before deleting the snapshot folder.
+  @visibleForTesting
+  Future<void> get idle => _saves;
+
   /// Writes [snapshot]. Never throws: a snapshot that can't be written costs
   /// nothing but the offline cold start it was for.
   Future<void> save(OfflineSnapshot snapshot) {

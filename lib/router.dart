@@ -45,8 +45,9 @@ class _RouterRefreshNotifier extends ChangeNotifier {
       connectionBootstrapProvider.select((o) => o is BootstrapPairingRejected),
       (_, __) => notifyListeners(),
     );
-    // QSR mode on/off opens and closes Tables and the Counter; gate rights
-    // open and close the Gate. Re-run the guard on those edges only.
+    // QSR mode on/off opens and closes the Counter (Tables stay open: QSR
+    // is hybrid); gate rights open and close the Gate. Re-run the guard on
+    // those edges only.
     ref.listen<bool>(
         qsrConfigProvider.select((q) => q.isQsr), (_, __) => notifyListeners());
     ref.listen<bool>(

@@ -5,9 +5,11 @@ import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../models/token.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/page_content_clamp.dart';
+import '../widgets/token_badge.dart';
 import 'order_detail_screen.dart';
 import '../widgets/app_card.dart';
 
@@ -422,13 +424,26 @@ class _OrderTile extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Flexible(
-                      child: Text(order.tableId,
-                          style: AppTypography.tableName.copyWith(
-                              fontSize: 20, fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1),
-                    ),
+                    // A counter order is known by its token, and how it
+                    // leaves; a table order by its table.
+                    if (order.tokenLabel case final token?) ...[
+                      TokenBadge(
+                        label: token,
+                        status: order.tokenStatus ?? TokenStatus.unknown,
+                        showStatus: true,
+                      ),
+                      if (order.fulfillmentType case final leaves?) ...[
+                        const SizedBox(width: 6),
+                        Text(leaves.label, style: context.palette.caption),
+                      ],
+                    ] else
+                      Flexible(
+                        child: Text(order.tableId,
+                            style: AppTypography.tableName.copyWith(
+                                fontSize: 20, fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1),
+                      ),
                     const SizedBox(width: 8),
                     _StatusBadge(status: order.status),
                   ],

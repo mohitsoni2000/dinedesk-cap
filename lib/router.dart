@@ -11,6 +11,7 @@ import 'screens/connecting_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/tables_screen.dart';
 import 'screens/rooms_screen.dart';
+import 'screens/counter_checkout_screen.dart';
 import 'screens/counter_screen.dart';
 import 'screens/gate_screen.dart';
 import 'screens/order_builder_screen.dart';
@@ -20,6 +21,7 @@ import 'screens/order_detail_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/token_result_screen.dart';
 import 'screens/change_pin_screen.dart';
 import 'screens/disconnected_screen.dart';
 import 'screens/recovery_login_screen.dart';
@@ -175,6 +177,25 @@ final routerProvider = Provider<GoRouter>((ref) {
           ]),
         ],
       ),
+      // The counter's order flow, outside the shell like a table's. The
+      // guard keeps '/counter…' to QSR mode.
+      GoRoute(
+          path: '/counter/order',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              child:
+                  const ConnectionBanner(child: OrderBuilderScreen.counter()))),
+      GoRoute(
+          path: '/counter/order/checkout',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              child: const ConnectionBanner(child: CounterCheckoutScreen()))),
+      GoRoute(
+          path: '/counter/order/token',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              fromBottom: true,
+              child: const ConnectionBanner(child: TokenResultScreen()))),
       GoRoute(
           path: '/order/:tableId',
           pageBuilder: (_, s) => liquidPage(

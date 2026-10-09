@@ -63,5 +63,17 @@ void main() {
       expect(menuAreaWhere(isRoom: true, slotId: 'r1', orderId: ''),
           {'room_id': 'r1'});
     });
+
+    test('the counter asks for itself (the desk answers for Takeaway)', () {
+      expect(menuAreaWhere(isRoom: false, slotId: '', isCounter: true),
+          {'counter': true});
+    });
+
+    test('an older desk that refuses {counter: true} hides nothing', () {
+      final ctx = MenuAreaContext.fromAck(
+          <String, dynamic>{'kind': 'error', 'message': 'Invalid payload'});
+      expect(ctx.hiddenItemIds, isEmpty);
+      expect(ctx.canToggle, isFalse);
+    });
   });
 }

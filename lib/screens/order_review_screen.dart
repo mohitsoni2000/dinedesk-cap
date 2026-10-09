@@ -8,6 +8,7 @@ import '../data/home_route.dart';
 import '../data/money.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../models/token.dart';
 import '../motion/motion.dart';
 import '../services/kot_queue_service.dart';
 import '../services/offline_kot_coordinator.dart';
@@ -19,11 +20,11 @@ import '../services/platform_surfaces.dart';
 import '../theme/tokens.dart';
 import '../utils/request_id.dart';
 import '../widgets/app_card.dart';
+import '../widgets/cart_row.dart';
 import '../widgets/quick_action_tile.dart';
 import '../widgets/dynamic_toast.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/order_submitting_overlay.dart';
-import '../widgets/stepper_button.dart';
 
 class OrderReviewScreen extends ConsumerStatefulWidget {
   final String tableId;
@@ -292,6 +293,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         : null;
 
     ref.read(lastKotIdProvider.notifier).state = label;
+    // A takeaway sent from here on a desk with tokens comes back with one;
+    // the success screen shows it above the KOT number.
+    ref.read(lastTokenProvider.notifier).state = TokenInfo.fromAck(response);
   }
 
   Future<Map<String, dynamic>> _createOrUpdateOrder({
@@ -366,6 +370,11 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final socketService = ref.read(socketServiceProvider);
     String? orderId;
     _offlinePrint = null;
+    // A new KOT is about to go: whatever token the last order had is not
+    // this one's. (A retry whose KOT already went keeps its token.)
+    if (_kotSentOrderId == null) {
+      ref.read(lastTokenProvider.notifier).state = null;
+    }
 
     if (_kotSentOrderId != null) {
       orderId = _kotSentOrderId;
@@ -812,7 +821,9 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       ref.read(orderNotesProvider.notifier).state = '';
       DynamicToast.show(context,
           message: 'Order held — table reserved', kind: ToastKind.success);
-      goHome(context, ref);
+      // Back to the tab the order began from (Tables), not blindly home: on
+      // a QSR desk home is the Counter.
+      context.go(HomeRoutes.tables);
     } finally {
       if (mounted) setState(() => _running = false);
     }
@@ -1495,8 +1506,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                           cart[i],
                                           i,
                                         ),
-                                        child:
-                                            _CartRow(line: cart[i], index: i),
+                                        child: CartRow(line: cart[i], index: i),
                                       ),
                                     ),
                                     if (i < cart.length - 1)
@@ -1717,135 +1727,6 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   }
 }
 
-class _CartRow extends ConsumerWidget {
-  final CartLine line;
-  final int index;
-  const _CartRow({required this.line, required this.index});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: _VegMark(isVeg: line.item.isVeg),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(line.item.name, style: AppTypography.bodyMd),
-                if (line.mods.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    line.mods.join(' · '),
-                    style: AppTypography.caption.copyWith(
-                      color: context.palette.ink70,
-                    ),
-                  ),
-                ],
-                if (line.itemNote.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    '"${line.itemNote}"',
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.terra600,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 2),
-                Text(
-                  formatRupeesCompact(line.item.price + line.modsExtra),
-                  style: AppTypography.caption,
-                ),
-              ],
-            ),
-          ),
-          if (line.item.isWeighed) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: context.palette.ink05,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '${line.weight ?? 0} ${line.item.measureUnit ?? ''}',
-                style:
-                    AppTypography.bodyMd.copyWith(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ] else ...[
-            StepperButton(
-              icon: Icons.remove,
-              glass: true,
-              repeatOnHold: true,
-              haptics: false,
-              onTap: () {
-                ref
-                    .read(feedbackServiceProvider)
-                    .fire(const FeedbackSelection());
-                ref.read(cartProvider.notifier).setQtyAt(index, line.qty - 1);
-              },
-            ),
-            SizedBox(
-              width: 32,
-              child: Center(
-                child: Text(
-                  '${line.qty}',
-                  style: AppTypography.title.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-            StepperButton(
-              icon: Icons.add,
-              glass: true,
-              repeatOnHold: true,
-              haptics: false,
-              onTap: () {
-                ref
-                    .read(feedbackServiceProvider)
-                    .fire(const FeedbackSelection());
-                ref.read(cartProvider.notifier).setQtyAt(index, line.qty + 1);
-              },
-            ),
-          ],
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 70,
-            child: Text(
-              formatRupeesCompact(line.lineTotal),
-              style: AppTypography.title,
-              textAlign: TextAlign.right,
-            ),
-          ),
-          if (line.syncStatus == SyncStatus.pending) ...[
-            const SizedBox(width: 8),
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ] else if (line.syncStatus == SyncStatus.failed) ...[
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.warning_amber_rounded,
-              size: 16,
-              color: AppColors.warn,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _KotRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -2059,30 +1940,6 @@ class _DashedDivider extends StatelessWidget {
           ),
         );
       }),
-    );
-  }
-}
-
-class _VegMark extends StatelessWidget {
-  final bool isVeg;
-  const _VegMark({required this.isVeg});
-  @override
-  Widget build(BuildContext context) {
-    final color = isVeg ? AppColors.success : AppColors.danger;
-    return Container(
-      width: 14,
-      height: 14,
-      decoration: BoxDecoration(
-        border: Border.all(color: color, width: 1.5),
-        borderRadius: BorderRadius.circular(2),
-      ),
-      child: Center(
-        child: Container(
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-      ),
     );
   }
 }

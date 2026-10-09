@@ -8,11 +8,15 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../data/home_route.dart';
+import '../data/counter_providers.dart';
 import '../data/menu_selectors.dart';
 import '../data/money.dart';
+import '../data/order_target.dart';
+import '../data/parked_providers.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
+import '../models/parked_draft.dart';
+import '../models/token.dart';
 import '../services/menu_area.dart';
 import '../services/socket_service.dart';
 import '../services/offline_guard.dart';
@@ -22,6 +26,7 @@ import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/area_hidden_sheet.dart';
 import '../widgets/app_surface.dart';
+import '../widgets/counter_park_actions.dart';
 import '../widgets/dynamic_toast.dart';
 import '../widgets/item_detail_sheet.dart';
 import '../widgets/kot_history_sheet.dart';
@@ -31,16 +36,31 @@ import '../widgets/table_link_sheet.dart';
 import '../widgets/table_shift_sheet.dart';
 
 class OrderBuilderScreen extends ConsumerStatefulWidget {
-  final String tableId;
+  /// The table or room the order is for, or the counter.
+  final OrderTarget target;
 
-  final bool isRoom;
-  const OrderBuilderScreen(
-      {super.key, required this.tableId, this.isRoom = false});
+  OrderBuilderScreen({super.key, required String tableId, bool isRoom = false})
+      : target =
+            isRoom ? OrderTarget.room(tableId) : OrderTarget.table(tableId);
+
+  /// A table-less counter order: takeaway or standing, with a daily token.
+  /// No table presence, no desk-side Hold: the bookmark parks the cart on
+  /// this phone, and checkout charges or fires by the desk's payment flow.
+  const OrderBuilderScreen.counter({super.key})
+      : target = const OrderTarget.counter();
+
+  /// The table's or room's server id; empty for the counter.
+  String get tableId => target.slotId;
+  bool get isRoom => target.isRoom;
+
   @override
   ConsumerState<OrderBuilderScreen> createState() => _OrderBuilderScreenState();
 }
 
 class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
+  OrderTarget get _target => widget.target;
+  bool get _isCounter => _target.isCounter;
+
   String _query = '';
   Timer? _searchDebounce;
   bool _searchOpen = false;
@@ -85,6 +105,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
       if (mounted) {
         _joinPresence();
         _loadMenuArea();
+        // A queued counter order landing says "Q-3 → Token #42".
+        if (_isCounter) ref.read(counterReplayWatcherProvider);
       }
     });
   }
@@ -93,6 +115,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
         isRoom: widget.isRoom,
         slotId: widget.tableId,
         orderId: _runningOrder()?.id,
+        isCounter: _isCounter,
       );
 
   /// Asks the desk what is hidden here. Re-run on every menu update, so a
@@ -149,7 +172,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   }
 
   Future<void> _joinPresence() async {
-    if (widget.isRoom) return;
+    // Presence is a table's: rooms and the counter have none.
+    if (!_target.isTable) return;
     final socketService = ref.read(socketServiceProvider);
     try {
       final ack = await socketService.emitAck(
@@ -195,6 +219,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   }
 
   String? _activeOrderIdForSlot() {
+    if (_isCounter) return null;
     if (widget.isRoom) {
       final room = ref
           .read(roomsProvider)
@@ -210,6 +235,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
   }
 
   ServerOrder? _runningOrder() {
+    // Every counter order is a new one; an empty slot id would match them
+    // all.
+    if (_isCounter) return null;
     final activeOrderId = _activeOrderIdForSlot();
 
     return ref.read(activeOrdersProvider).where((order) {
@@ -282,13 +310,74 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     if (context.canPop()) {
       context.pop();
     } else {
-      goHome(context, ref);
+      // The tab the order began from, not blindly home: a waiter on a QSR
+      // desk goes back to Tables, the cashier to the Counter.
+      context.go(_target.originRoute);
     }
   }
 
-  String get _reviewRoute => widget.isRoom
-      ? '/order/room/${widget.tableId}/review'
-      : '/order/${widget.tableId}/review';
+  String get _reviewRoute => _isCounter
+      ? '/counter/order/checkout'
+      : widget.isRoom
+          ? '/order/room/${widget.tableId}/review'
+          : '/order/${widget.tableId}/review';
+
+  /// The counter cart bar's action, by the desk's payment flow: Charge
+  /// (pay first), Fire (pay at pickup), or Checkout when both are open.
+  String _counterAction() {
+    final qsr = ref.read(qsrConfigProvider);
+    final canCharge = qsr.canPayNow && ref.read(flagsProvider).collectPayment;
+    final canFire = qsr.canPayLater;
+    if (canCharge && !canFire) return 'Charge';
+    if (canFire && !canCharge) return 'Fire';
+    return 'Checkout';
+  }
+
+  /// Back from the counter: an empty cart just goes; otherwise park it,
+  /// discard it, or keep editing.
+  Future<void> _leaveCounter() async {
+    final cart = ref.read(cartProvider);
+    if (cart.isEmpty) {
+      _leaveOrder();
+      return;
+    }
+    final count = cart.fold<int>(0, (sum, line) => sum + line.qty);
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        backgroundColor: dialog.palette.surface,
+        title: const Text('Leave this order?', style: AppTypography.title),
+        content: Text(
+            '${count == 1 ? '1 item is' : '$count items are'} in the cart. '
+            'Park it to finish later, or discard it.',
+            style: AppTypography.bodyMd),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop(),
+            child: const Text('Keep editing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop('discard'),
+            child: const Text('Discard',
+                style: TextStyle(color: AppColors.danger)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop('park'),
+            child: const Text('Park'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'park') {
+      final label = await parkCounterCart(context, ref);
+      if (label != null && mounted) _leaveOrder();
+      return;
+    }
+    ref.read(cartProvider.notifier).clear();
+    ref.read(orderNotesProvider.notifier).state = '';
+    _leaveOrder();
+  }
 
   Future<bool> _confirmDiscard() async {
     final cart = ref.read(cartProvider);
@@ -561,6 +650,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        if (_isCounter) {
+          await _leaveCounter();
+          return;
+        }
         final ok = await _confirmDiscard();
         if (!context.mounted) return;
         if (ok) {
@@ -607,8 +700,14 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Pressable(
-                          semanticLabel: 'Back, discarding this order',
+                          semanticLabel: _isCounter
+                              ? 'Back'
+                              : 'Back, discarding this order',
                           onTap: () async {
+                            if (_isCounter) {
+                              await _leaveCounter();
+                              return;
+                            }
                             final ok = await _confirmDiscard();
                             if (!context.mounted) return;
                             if (ok) {
@@ -643,20 +742,28 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                widget.isRoom
-                                    ? 'Room $tableDisplay'
-                                    : 'Table $tableDisplay',
+                                _isCounter
+                                    ? 'Counter'
+                                    : widget.isRoom
+                                        ? 'Room $tableDisplay'
+                                        : 'Table $tableDisplay',
                                 style: AppTypography.tableName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              Text(
-                                subLine,
-                                style: AppTypography.caption
-                                    .copyWith(color: context.palette.ink50),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                              if (_isCounter)
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 4),
+                                  child: _FulfillmentToggle(),
+                                )
+                              else
+                                Text(
+                                  subLine,
+                                  style: AppTypography.caption
+                                      .copyWith(color: context.palette.ink50),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               if (table != null &&
                                   table.state == TableState.other &&
                                   !widget.isRoom)
@@ -731,30 +838,43 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             _resetMenuScroll();
                           },
                         ),
-                        IconButton(
-                          icon: _isSaving
-                              ? SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: context.palette.ink70,
-                                  ),
-                                )
-                              : Icon(Icons.bookmark_border,
-                                  color: context.palette.ink70),
-                          tooltip: 'Save & exit',
-                          onPressed: _isSaving
-                              ? null
-                              : () async {
-                                  final cart = ref.read(cartProvider);
-                                  if (cart.isEmpty) {
-                                    _leaveOrder();
-                                    return;
-                                  }
-                                  await _saveAndExitDraft();
-                                },
-                        ),
+                        if (_isCounter) const _ParkedPill(),
+                        if (_isCounter)
+                          IconButton(
+                            icon: Icon(Icons.bookmark_add_outlined,
+                                color: cartIsEmpty
+                                    ? context.palette.ink30
+                                    : context.palette.ink70),
+                            tooltip: 'Park',
+                            onPressed: cartIsEmpty
+                                ? null
+                                : () => parkCounterCart(context, ref),
+                          )
+                        else
+                          IconButton(
+                            icon: _isSaving
+                                ? SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: context.palette.ink70,
+                                    ),
+                                  )
+                                : Icon(Icons.bookmark_border,
+                                    color: context.palette.ink70),
+                            tooltip: 'Save & exit',
+                            onPressed: _isSaving
+                                ? null
+                                : () async {
+                                    final cart = ref.read(cartProvider);
+                                    if (cart.isEmpty) {
+                                      _leaveOrder();
+                                      return;
+                                    }
+                                    await _saveAndExitDraft();
+                                  },
+                          ),
                         Builder(builder: (_) {
                           final isTableAction = table != null &&
                               (table.state == TableState.mine ||
@@ -894,57 +1014,61 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             ],
                           );
                         }),
-                        const SizedBox(width: 4),
-                        Pressable(
-                          onTap: () =>
-                              KotHistorySheet.show(context, widget.tableId),
-                          child: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: context.palette.surface,
-                              borderRadius: const BorderRadius.all(AppRadii.sm),
-                              border:
-                                  Border.all(color: context.palette.hairline),
-                            ),
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Center(
-                                  child: Icon(Icons.receipt_long,
-                                      size: 18, color: context.palette.ink70),
-                                ),
-                                if (kotCount > 0)
-                                  Positioned(
-                                    top: -4,
-                                    right: -4,
-                                    child: BoingOnChange(
-                                      trigger: kotCount,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 5, vertical: 1),
-                                        decoration: const BoxDecoration(
-                                          color: AppColors.terra,
-                                          borderRadius:
-                                              BorderRadius.all(AppRadii.pill),
-                                        ),
-                                        child: Text(
-                                          '$kotCount',
-                                          style: AppTypography.pill.copyWith(
-                                            color: Colors.white,
-                                            fontSize: 9,
+                        if (!_isCounter) ...[
+                          const SizedBox(width: 4),
+                          Pressable(
+                            onTap: () =>
+                                KotHistorySheet.show(context, widget.tableId),
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: context.palette.surface,
+                                borderRadius:
+                                    const BorderRadius.all(AppRadii.sm),
+                                border:
+                                    Border.all(color: context.palette.hairline),
+                              ),
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Center(
+                                    child: Icon(Icons.receipt_long,
+                                        size: 18, color: context.palette.ink70),
+                                  ),
+                                  if (kotCount > 0)
+                                    Positioned(
+                                      top: -4,
+                                      right: -4,
+                                      child: BoingOnChange(
+                                        trigger: kotCount,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 5, vertical: 1),
+                                          decoration: const BoxDecoration(
+                                            color: AppColors.terra,
+                                            borderRadius:
+                                                BorderRadius.all(AppRadii.pill),
+                                          ),
+                                          child: Text(
+                                            '$kotCount',
+                                            style: AppTypography.pill.copyWith(
+                                              color: Colors.white,
+                                              fontSize: 9,
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
+                  if (_isCounter) const _PendingCheckoutBanner(),
                   if (_searchOpen)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -1279,7 +1403,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                         (c) => (c.fold<int>(0, (s, l) => s + l.qty), c.isEmpty),
                       ),
                     );
-                    if (!flags.autoKot ||
+                    if (_isCounter ||
+                        !flags.autoKot ||
                         itemCount < flags.autoKotThreshold ||
                         isEmpty) {
                       return const SizedBox.shrink();
@@ -1358,7 +1483,13 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     final VoidCallback? onBarTap;
 
                     final VoidCallback? onSendKotTap;
-                    if (count > 0) {
+                    if (count > 0 && _isCounter) {
+                      label = '$count ${count == 1 ? "item" : "items"}';
+                      actionLabel = _counterAction();
+                      barTotal = total;
+                      onBarTap = () => context.push(_reviewRoute);
+                      onSendKotTap = null;
+                    } else if (count > 0) {
                       label = _readOnly
                           ? 'View-only — cannot review'
                           : '$count ${count == 1 ? "item" : "items"}';
@@ -1518,7 +1649,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       runningOrder: runningOrder,
                       readOnly: _readOnly,
                       reviewRoute: _reviewRoute,
-                      onSendKot: (_readOnly || cartIsEmpty)
+                      primaryLabel: _isCounter ? _counterAction() : null,
+                      onSendKot: (_readOnly || cartIsEmpty || _isCounter)
                           ? null
                           : () => context.push(_reviewRoute, extra: true),
                       onViewBill: runningOrder != null
@@ -1551,7 +1683,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     _menuScroll.removeListener(_onMenuScroll);
     _menuScroll.dispose();
     _scrollCollapse.dispose();
-    if (!widget.isRoom) {
+    // Only a table has presence to leave.
+    if (_target.isTable) {
       _socketSvc?.emit('table:presence:leave', {'table_id': widget.tableId});
     }
     super.dispose();
@@ -2325,6 +2458,10 @@ class _OrderSideRail extends ConsumerWidget {
   final bool readOnly;
   final String reviewRoute;
 
+  /// The main button's label in place of "Review & send" (the counter's
+  /// Charge / Fire / Checkout).
+  final String? primaryLabel;
+
   final VoidCallback? onSendKot;
   final VoidCallback? onViewBill;
   final VoidCallback? onPrintSummary;
@@ -2332,6 +2469,7 @@ class _OrderSideRail extends ConsumerWidget {
     required this.runningOrder,
     required this.readOnly,
     required this.reviewRoute,
+    this.primaryLabel,
     required this.onSendKot,
     required this.onViewBill,
     required this.onPrintSummary,
@@ -2540,7 +2678,8 @@ class _OrderSideRail extends ConsumerWidget {
               child: Opacity(
                 opacity: (readOnly || (cart.isEmpty && !hasRunning)) ? 0.45 : 1,
                 child: _ReviewAndSendButton(
-                  label: cart.isEmpty ? 'View bill' : 'Review & send',
+                  label: primaryLabel ??
+                      (cart.isEmpty ? 'View bill' : 'Review & send'),
                 ),
               ),
             ),
@@ -2575,6 +2714,139 @@ class _ReviewAndSendButton extends StatelessWidget {
           const SizedBox(width: 6),
           const Icon(Icons.arrow_forward, color: Colors.white, size: 18),
         ],
+      ),
+    );
+  }
+}
+
+/// Takeaway | Standing for the counter order, remembered on the phone.
+class _FulfillmentToggle extends ConsumerWidget {
+  const _FulfillmentToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final value = ref.watch(counterFulfillmentProvider);
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: const BorderRadius.all(AppRadii.pill),
+        border: Border.all(color: palette.hairline),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final type in FulfillmentType.values)
+            Semantics(
+              button: true,
+              selected: value == type,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () =>
+                    ref.read(counterFulfillmentProvider.notifier).set(type),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: value == type ? palette.ink : Colors.transparent,
+                    borderRadius: const BorderRadius.all(AppRadii.pill),
+                  ),
+                  child: Text(
+                    type.label,
+                    style: AppTypography.caption.copyWith(
+                      color: value == type ? palette.paper : palette.ink70,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Parked N": the carts parked on this phone; tap to resume one.
+class _ParkedPill extends ConsumerWidget {
+  const _ParkedPill();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(parkedCountProvider(ParkedKind.counterCart));
+    if (count == 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Semantics(
+        button: true,
+        label: 'Parked carts, $count',
+        excludeSemantics: true,
+        child: GestureDetector(
+          onTap: () => resumeCounterCart(context, ref),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: context.palette.terraSoft,
+              borderRadius: const BorderRadius.all(AppRadii.pill),
+              border: Border.all(color: AppColors.terra200),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.bookmark,
+                    size: 14, color: AppColors.terraDeep),
+                const SizedBox(width: 4),
+                Text('Parked $count',
+                    style: AppTypography.caption.copyWith(
+                        color: AppColors.terraDeep,
+                        fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A Pay & Fire the desk never answered: it may have gone through, so the
+/// counter says so until it is retried or dropped at checkout.
+class _PendingCheckoutBanner extends ConsumerWidget {
+  const _PendingCheckoutBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(pendingCheckoutProvider) == null) {
+      return const SizedBox.shrink();
+    }
+    return GestureDetector(
+      onTap: () => context.push('/counter/order/checkout'),
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.amber.withValues(alpha: 0.12),
+          borderRadius: const BorderRadius.all(AppRadii.sm),
+          border: Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.sync_problem_outlined,
+                size: 16, color: AppColors.warn),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'The last Pay & Fire was not confirmed — tap to check it',
+                style: AppTypography.caption.copyWith(
+                    color: context.palette.ink, fontWeight: FontWeight.w600),
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: context.palette.ink50),
+          ],
+        ),
       ),
     );
   }

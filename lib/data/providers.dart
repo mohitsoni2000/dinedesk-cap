@@ -767,6 +767,11 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
 
   void clear() => state = const <CartLine>[];
 
+  /// Puts [lines] in the cart in place of what was there, in one change: a
+  /// resumed parked cart. The lines are taken as they are (the resolver has
+  /// already merged them).
+  void replaceAll(List<CartLine> lines) => state = <CartLine>[...lines];
+
   void setSyncStatusAll(SyncStatus status) {
     state = <CartLine>[for (final l in state) l.copyWith(syncStatus: status)];
   }

@@ -1,6 +1,23 @@
 import '../data/ist_time.dart';
 import 'wire.dart';
 
+final RegExp _digitsOnly = RegExp(r'^\d+$');
+final RegExp _digits = RegExp(r'\d+');
+
+/// How a token is shown to staff and guests: a unified token is a number
+/// (`42` → `#42`), a prefixed one is shown as the desk made it (`T-07`).
+String tokenDisplay(String label) {
+  final trimmed = label.trim();
+  return _digitsOnly.hasMatch(trimmed) ? '#$trimmed' : trimmed;
+}
+
+/// The number in a token label (`42` → 42, `T-07` → 7), for sorting; null
+/// when it has none.
+int? tokenNumberOf(String label) {
+  final match = _digits.allMatches(label).lastOrNull;
+  return match == null ? null : int.tryParse(match.group(0)!);
+}
+
 /// How a table-less order leaves the counter.
 enum FulfillmentType {
   takeaway('takeaway', 'Takeaway'),
@@ -79,6 +96,26 @@ class TokenInfo {
       status: TokenStatus.fromWire(m['token_status']),
       readyAt: parseDbTimestamp(optionalString(m, 'token_ready_at')),
       collectedAt: parseDbTimestamp(optionalString(m, 'token_collected_at')),
+    );
+  }
+
+  /// The token an order ack carries: the `qsr:checkout` ack's `token`, else
+  /// the order's `token_*` fields (`kot:send` / `order:create` acks), else
+  /// the KOT's `token_label` / `token_number` / `token_date`. Null when none
+  /// has one (no KOT yet, tokens off, a dine-in order, an older desk).
+  static TokenInfo? fromAck(Map<String, dynamic> ack) {
+    final direct = tryParse(ack['token']);
+    if (direct != null) return direct;
+    final order = optionalMap(ack, 'order');
+    final fromOrder = order == null ? null : fromOrderMap(order);
+    if (fromOrder != null) return fromOrder;
+    final kot = optionalMap(ack, 'kot');
+    final label = kot == null ? null : optionalString(kot, 'token_label');
+    if (kot == null || label == null) return null;
+    return TokenInfo(
+      number: optionalInt(kot, 'token_number'),
+      label: label,
+      date: optionalString(kot, 'token_date'),
     );
   }
 

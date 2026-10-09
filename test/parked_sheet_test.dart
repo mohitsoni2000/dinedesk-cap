@@ -411,6 +411,39 @@ void main() {
       expect(parkedCarts(), 1);
     });
 
+    testWidgets(
+        'a write that fails resumes nothing and says so; the same draft '
+        'then resumes once', (tester) async {
+      await openSheet(tester);
+      final onDisk = (await SharedPreferences.getInstance()).getString(key)!;
+      SharedPreferencesStorePlatform.instance =
+          _RefusingStore(<String, Object>{'flutter.$key': onDisk});
+
+      await tester.tap(find.byKey(resume(p1)));
+      await tester.pumpAndSettle();
+
+      expect(
+          find.text("Couldn't update the parked drafts on this phone. "
+              'Try again.'),
+          findsOneWidget);
+      expect(closed, isFalse, reason: 'nothing was handed back');
+      expect(result, isNull);
+      expect(find.byKey(resume(p1)), findsOneWidget, reason: 'still parked');
+      expect(parkedCarts(), 2);
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+
+      // The phone takes writes again: P1 resumes, and is gone after.
+      SharedPreferencesStorePlatform.instance =
+          InMemorySharedPreferencesStore.withData(
+              <String, Object>{'flutter.$key': onDisk});
+      await tester.tap(find.byKey(resume(p1)));
+      await tester.pumpAndSettle();
+      expect(closed, isTrue);
+      expect(result!.draft.label, 'P1');
+      expect(parkedCarts(), 1);
+      expect(await storedIds(), isNot(contains(p1)));
+    });
+
     testWidgets('a host that throws leaves the draft where it was',
         (tester) async {
       await openSheet(tester, beforeResume: (_) async {

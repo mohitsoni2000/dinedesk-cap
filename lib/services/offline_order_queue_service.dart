@@ -5,7 +5,11 @@ import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/ist_time.dart';
+import '../data/money.dart';
 import '../data/providers.dart';
+import '../models/token.dart';
+import '../models/wire.dart';
 import 'kot_queue_service.dart';
 import 'log.dart';
 import 'socket_service.dart';
@@ -51,6 +55,62 @@ class RejectedOrderSubmission {
 
 enum OrderSubmitOutcome { sent, queued, rejected }
 
+/// A queued order that reached the desk on a later replay. For a counter
+/// order, [localRef] is what the cashier told the guest ("Q-3") and [token]
+/// what it became; [token] is null while its KOT is still on its way.
+class ReplayedOrder {
+  const ReplayedOrder({
+    required this.localRef,
+    required this.orderId,
+    this.token,
+  });
+
+  final String? localRef;
+  final String orderId;
+  final TokenInfo? token;
+}
+
+/// A counter order waiting in the outbox, as the Counter's "Queued" card
+/// lists it. Read from the entry's `meta`, which says only how many items,
+/// what total and how it leaves (nothing about the guest).
+class QueuedCounterOrder {
+  const QueuedCounterOrder({
+    required this.localRef,
+    required this.itemCount,
+    required this.total,
+    required this.fulfillment,
+  });
+
+  final String localRef;
+  final int itemCount;
+  final Money? total;
+  final FulfillmentType? fulfillment;
+
+  /// The `meta` a counter order is queued with.
+  static Map<String, dynamic> meta({
+    required int itemCount,
+    required Money total,
+    required FulfillmentType fulfillment,
+  }) =>
+      <String, dynamic>{
+        'item_count': itemCount,
+        'total': total.toWire(),
+        'fulfillment': fulfillment.wire,
+      };
+
+  static QueuedCounterOrder? fromEntry(Map<String, dynamic> entry) {
+    final ref = optionalString(entry, 'local_ref');
+    if (ref == null) return null;
+    final meta = optionalMap(entry, 'meta') ?? const <String, dynamic>{};
+    return QueuedCounterOrder(
+      localRef: ref,
+      itemCount: intOr(meta, 'item_count', 0),
+      total: optionalMoney(meta, 'total'),
+      fulfillment: FulfillmentType.fromWire(meta['fulfillment']),
+    );
+  }
+}
+
 /// Result of [OfflineOrderQueueService.submitOrder]. When [outcome] is
 /// [OrderSubmitOutcome.queued], neither the order nor its KOT have actually
 /// reached the desk yet — [orderAck]/[kotAck] are empty placeholders, not
@@ -61,7 +121,11 @@ class OrderSubmitResult {
   final Map<String, dynamic> orderAck;
   final Map<String, dynamic> kotAck;
 
-  const OrderSubmitResult(this.outcome, this.orderAck, this.kotAck);
+  /// The local ref a queued counter order was given ("Q-3"); null otherwise.
+  final String? localRef;
+
+  const OrderSubmitResult(this.outcome, this.orderAck, this.kotAck,
+      {this.localRef});
 
   bool get isSent => outcome == OrderSubmitOutcome.sent;
   bool get isQueued => outcome == OrderSubmitOutcome.queued;
@@ -94,8 +158,14 @@ class OfflineOrderQueueService {
   static const int maxQueued = 100;
   static const Duration _sendTimeout = Duration(seconds: 8);
 
+  /// `<IST day>#<n>`: the last local ref handed out, so "Q-<n>" runs on
+  /// through an app restart and starts again at Q-1 each IST day.
+  static const String _refKey = 'offline_order_ref_v1';
+
   final KotQueueService _kotQueue;
-  OfflineOrderQueueService(this._kotQueue);
+  final DateTime Function() _now;
+  OfflineOrderQueueService(this._kotQueue, {DateTime Function()? now})
+      : _now = now ?? DateTime.now;
 
   final ReauthGate _gate = ReauthGate();
 
@@ -129,6 +199,12 @@ class OfflineOrderQueueService {
       StreamController<RejectedOrderSubmission>.broadcast();
 
   Stream<RejectedOrderSubmission> get rejections => _rejections.stream;
+
+  final StreamController<ReplayedOrder> _replayed =
+      StreamController<ReplayedOrder>.broadcast();
+
+  /// Every queued order the flush got onto the desk, as it lands.
+  Stream<ReplayedOrder> get replayed => _replayed.stream;
 
   void _reportDropped(String reason) {
     logE(_tag, reason);
@@ -178,6 +254,13 @@ class OfflineOrderQueueService {
   Future<int> pendingCount() =>
       _synchronized(() async => (await _readRaw()).length);
 
+  /// The counter orders waiting here (queued with a local ref), oldest first.
+  Future<List<QueuedCounterOrder>> queuedCounterOrders() =>
+      _synchronized(() async => <QueuedCounterOrder>[
+            for (final entry in await _readRaw())
+              if (QueuedCounterOrder.fromEntry(entry) case final order?) order,
+          ]);
+
   /// Table/room ids that have an order waiting in the outbox, for the "queued"
   /// badge on their cards.
   Future<Set<String>> pendingTableIds() => _synchronized(() async {
@@ -197,6 +280,11 @@ class OfflineOrderQueueService {
   /// reconnect — that's what makes this different from
   /// [SocketService.emitAckWhenConnected], which is still correct for the
   /// money-handling paths that must not proceed without a live desk.
+  ///
+  /// A counter order passes [meta] ([QueuedCounterOrder.meta]). If it has to
+  /// queue it is then given a local ref, "Q-<n>" for the day, unless the
+  /// caller brought its own [localRef]; [OrderSubmitResult.localRef] says
+  /// which, and [replayed] reports it again when it reaches the desk.
   Future<OrderSubmitResult> submitOrder(
     SocketService socket, {
     required String orderEvent,
@@ -205,6 +293,8 @@ class OfflineOrderQueueService {
     required String kotRequestId,
     String? tableId,
     BeforeQueueHook? beforeQueue,
+    String? localRef,
+    Map<String, dynamic>? meta,
   }) async {
     final stampedOrder = <String, dynamic>{
       ...orderPayload,
@@ -214,16 +304,18 @@ class OfflineOrderQueueService {
         (orderPayload['table_id'] ?? orderPayload['room_id'])?.toString();
 
     if (socket.state != SocketState.verified) {
-      await _enqueue(orderEvent, stampedOrder, kotRequestId, slot,
-          beforeQueue: beforeQueue);
-      return const OrderSubmitResult(OrderSubmitOutcome.queued, {}, {});
+      final ref = await _enqueue(orderEvent, stampedOrder, kotRequestId, slot,
+          beforeQueue: beforeQueue, localRef: localRef, meta: meta);
+      return OrderSubmitResult(OrderSubmitOutcome.queued, const {}, const {},
+          localRef: ref);
     }
 
     final drained = await flush(socket);
     if (!drained) {
-      await _enqueue(orderEvent, stampedOrder, kotRequestId, slot,
-          beforeQueue: beforeQueue);
-      return const OrderSubmitResult(OrderSubmitOutcome.queued, {}, {});
+      final ref = await _enqueue(orderEvent, stampedOrder, kotRequestId, slot,
+          beforeQueue: beforeQueue, localRef: localRef, meta: meta);
+      return OrderSubmitResult(OrderSubmitOutcome.queued, const {}, const {},
+          localRef: ref);
     }
 
     return _attempt(
@@ -234,6 +326,8 @@ class OfflineOrderQueueService {
       slot,
       enqueueOnTransportFailure: true,
       beforeQueue: beforeQueue,
+      localRef: localRef,
+      meta: meta,
     );
   }
 
@@ -253,6 +347,8 @@ class OfflineOrderQueueService {
     required bool enqueueOnTransportFailure,
     Map<String, dynamic> kotExtra = const <String, dynamic>{},
     BeforeQueueHook? beforeQueue,
+    String? localRef,
+    Map<String, dynamic>? meta,
   }) async {
     final orderAck =
         await socket.emitAck(orderEvent, stampedOrder, timeout: _sendTimeout);
@@ -261,11 +357,13 @@ class OfflineOrderQueueService {
       final reauth = isReauthRequired(orderAck);
       if (isTransportFailure(orderAck) || reauth) {
         if (reauth) _gate.trip();
+        String? ref = localRef;
         if (enqueueOnTransportFailure) {
-          await _enqueue(orderEvent, stampedOrder, kotRequestId, slot,
-              beforeQueue: beforeQueue);
+          ref = await _enqueue(orderEvent, stampedOrder, kotRequestId, slot,
+              beforeQueue: beforeQueue, localRef: localRef, meta: meta);
         }
-        return const OrderSubmitResult(OrderSubmitOutcome.queued, {}, {});
+        return OrderSubmitResult(OrderSubmitOutcome.queued, const {}, const {},
+            localRef: ref);
       }
       return OrderSubmitResult(OrderSubmitOutcome.rejected, orderAck, const {});
     }
@@ -308,17 +406,20 @@ class OfflineOrderQueueService {
     return id is String && id.isNotEmpty ? id : null;
   }
 
-  Future<void> _enqueue(
+  /// Parks a submission; returns the local ref it was queued under, if any.
+  Future<String?> _enqueue(
     String orderEvent,
     Map<String, dynamic> stampedOrder,
     String kotRequestId,
     String? slot, {
     BeforeQueueHook? beforeQueue,
+    String? localRef,
+    Map<String, dynamic>? meta,
   }) async {
     // Outside the lock: printing to a LAN printer can take seconds and every
     // other queue operation (the UI's pending count) waits on the lock.
     final kotExtra = await runBeforeQueueHook(beforeQueue);
-    await _synchronized(() async {
+    return _synchronized(() async {
       final items = await _readRaw();
       if (items.length >= maxQueued) {
         const reason = 'Order queue full ($maxQueued pending) — oldest dropped';
@@ -334,6 +435,7 @@ class OfflineOrderQueueService {
           reason,
         );
       }
+      final ref = localRef ?? (meta == null ? null : await _nextLocalRef());
       items.add(<String, dynamic>{
         'order_event': orderEvent,
         'order_payload': stampedOrder,
@@ -343,10 +445,25 @@ class OfflineOrderQueueService {
         if (slot != null && slot.isNotEmpty) 'table_id': slot,
         // Rides to the replay's kot:send (see _attempt).
         if (kotExtra.isNotEmpty) 'kot_extra': kotExtra,
+        if (ref != null) 'local_ref': ref,
+        if (meta != null) 'meta': meta,
       });
       await _writeRaw(items);
       logD(_tag, 'queued order submission (${items.length} pending)');
+      return ref;
     });
+  }
+
+  /// "Q-<n>", the next counter order queued on this phone today (IST).
+  Future<String> _nextLocalRef() async {
+    final prefs = await SharedPreferences.getInstance();
+    final today = istDateOf(_now());
+    final parts = (prefs.getString(_refKey) ?? '').split('#');
+    final last =
+        parts.length == 2 && parts[0] == today ? int.tryParse(parts[1]) : null;
+    final next = (last ?? 0) + 1;
+    await prefs.setString(_refKey, '$today#$next');
+    return 'Q-$next';
   }
 
   /// Replays queued order submissions in order. Returns true once the queue
@@ -457,6 +574,16 @@ class OfflineOrderQueueService {
         continue;
       }
       await _dropHead();
+      final orderId = _orderIdFrom(result.orderAck);
+      if (orderId != null && !_replayed.isClosed) {
+        final ref = next['local_ref'];
+        _replayed.add(ReplayedOrder(
+          localRef: ref is String ? ref : null,
+          orderId: orderId,
+          token: TokenInfo.fromAck(result.kotAck) ??
+              TokenInfo.fromAck(result.orderAck),
+        ));
+      }
     }
   }
 
@@ -491,6 +618,7 @@ class OfflineOrderQueueService {
 
   void dispose() {
     unawaited(_rejections.close());
+    unawaited(_replayed.close());
   }
 }
 

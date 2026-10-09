@@ -23,23 +23,34 @@ const String _tag = '[Parked]';
 final parkedDraftsStoreProvider =
     Provider<ParkedDraftsStore>((ref) => ParkedDraftsStore());
 
-/// Whose drafts are in play: the signed-in operator and the paired desk's
-/// instance id (from the bootstrap's current pairing). Null with nobody
-/// signed in, or when the pairing carries no desk id (a phone paired before
-/// desks had ids); then nothing can be parked or shown.
+/// Whose drafts are in play: the signed-in operator and the paired desk (from
+/// the bootstrap's current pairing). Null with nobody signed in or no
+/// pairing; then nothing can be parked or shown.
+///
+/// The desk is its instance id. A phone paired before desks had ids has none,
+/// and parking must still work there, so it falls back to a key made from the
+/// pairing's address ([legacyDeskKey]). That key changes if the desk moves to
+/// another address; the drafts then stay on disk, unseen, until they are
+/// pruned. The operator id, which is the desk's own, keeps another
+/// restaurant's drafts out either way.
 final parkedScopeProvider = Provider<ParkedScope?>((ref) {
   final operatorId = ref.watch(operatorProvider.select((op) => op?.id));
   // The pairing is not state of its own; the bootstrap announces a new one
   // with a new outcome, which is what re-runs this.
   ref.watch(connectionBootstrapProvider);
-  final deskId = ref
-      .read(connectionBootstrapProvider.notifier)
-      .currentPairing
-      ?.deskInstanceId;
-  if (operatorId == null || operatorId.isEmpty) return null;
-  if (deskId == null || deskId.isEmpty) return null;
-  return ParkedScope(operatorId: operatorId, deskInstanceId: deskId);
+  final pairing = ref.read(connectionBootstrapProvider.notifier).currentPairing;
+  if (operatorId == null || operatorId.isEmpty || pairing == null) return null;
+  final deskId = pairing.deskInstanceId;
+  return ParkedScope(
+    operatorId: operatorId,
+    deskInstanceId: deskId != null && deskId.isNotEmpty
+        ? deskId
+        : legacyDeskKey(pairing.host, pairing.port),
+  );
 });
+
+/// The stand-in desk key for a pairing without a desk instance id.
+String legacyDeskKey(String host, int port) => 'pairing:$host:$port';
 
 /// The current scope's drafts, all kinds, in the order they were parked.
 /// Park, resume and discard go through here so the lists and counts follow.
@@ -99,17 +110,25 @@ class ParkedDraftsNotifier extends StateNotifier<List<ParkedDraft>> {
     return draft;
   }
 
-  /// Takes a draft out of the store and returns it; null if it is no longer
-  /// there. For the screen that has just put the resolved draft back (the
-  /// parked sheet does this itself).
+  /// Takes a draft out of the store for a resume and returns it. The parked
+  /// sheet calls this BEFORE it hands the draft back, so a draft that could
+  /// not be taken is never resumed, and none is ever resumed twice.
+  ///
+  /// Null when it is no longer there (discarded, or pruned, meanwhile).
+  /// Throws [ParkedDraftsException] when the phone could not be written: the
+  /// draft is still parked, nothing was resumed, and the message says so.
   Future<ParkedDraft?> resume(String id) async {
     final scope = _scope;
     if (scope == null) return null;
     try {
       return await _store.take(scope, id);
+    } on ParkedDraftsException catch (error) {
+      logE(_tag, 'could not take a parked draft', error.runtimeType);
+      rethrow;
     } catch (error) {
       logE(_tag, 'could not take a parked draft', error.runtimeType);
-      return null;
+      throw const ParkedDraftsException(
+          "Couldn't update the parked drafts on this phone. Try again.");
     } finally {
       await refresh();
     }

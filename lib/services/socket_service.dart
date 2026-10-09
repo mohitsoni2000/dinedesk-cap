@@ -95,6 +95,8 @@ class SocketService {
     'bill:payment',
     'bill:generate',
     'discount:apply',
+    // Counter "Pay & Fire": order, KOT, bills and payment in one ack.
+    'qsr:checkout',
   };
 
   static String namespaceUrl(String host, int port, {bool useTls = false}) =>

@@ -55,6 +55,9 @@ final class ParkedCapReached extends ParkedDraftsException {
   final int limit;
 }
 
+/// The app reaches it through `parkedDraftsStoreProvider`; nothing else
+/// should construct one. The lock is shared by every instance all the same,
+/// so a second store could not race the first.
 class ParkedDraftsStore {
   ParkedDraftsStore({DateTime Function()? now}) : _now = now ?? DateTime.now;
 
@@ -72,9 +75,21 @@ class ParkedDraftsStore {
   final DateTime Function() _now;
   final Random _random = Random();
 
-  Future<void> _lock = Future<void>.value();
+  /// One lock for the one key, whatever the instance: two stores each with
+  /// their own lock would bring back the lost update it exists to prevent.
+  ///
+  /// It is a chain of futures, kept for one zone. A call from another zone
+  /// starts the chain afresh: a future made in a zone that is gone (in tests,
+  /// a finished test's fake clock) would never run its callbacks here. The
+  /// app runs in a single zone, so every store shares one chain.
+  static Future<void> _lock = Future<void>.value();
+  static Zone? _lockZone;
 
   Future<T> _synchronized<T>(Future<T> Function() action) {
+    if (!identical(_lockZone, Zone.current)) {
+      _lockZone = Zone.current;
+      _lock = Future<void>.value();
+    }
     final completer = Completer<T>();
     _lock = _lock.then((_) async {
       try {

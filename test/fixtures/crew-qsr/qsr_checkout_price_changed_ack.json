@@ -1,0 +1,6 @@
+{
+  "kind": "error",
+  "code": "price_changed",
+  "message": "Total is now ₹1,102.50",
+  "total": 1102.5
+}

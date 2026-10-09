@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:restro/data/money.dart';
+import 'package:restro/models/token.dart';
 import 'package:restro/services/kot_queue_service.dart';
 import 'package:restro/services/offline_order_queue_service.dart';
 import 'package:restro/services/socket_service.dart';
@@ -370,6 +372,131 @@ void main() {
       expect(await orders.flush(socket), isTrue);
       expect(sent, contains('order:create'));
       expect(await kots.rejectedKots(), isEmpty);
+    });
+  });
+
+  group('counter orders: local ref, meta and replay', () {
+    Future<OrderSubmitResult> counterOrder({String? localRef}) =>
+        orders.submitOrder(
+          socket,
+          orderEvent: 'order:create',
+          orderPayload: <String, dynamic>{
+            'items': <Object>[],
+            'order_type': 'takeaway',
+            'fulfillment_type': 'standing',
+          },
+          orderRequestId: 'req-order-${localRef ?? 'x'}',
+          kotRequestId: 'req-kot',
+          localRef: localRef,
+          meta: QueuedCounterOrder.meta(
+            itemCount: 3,
+            total: const Money.rupees(420),
+            fulfillment: FulfillmentType.standing,
+          ),
+        );
+
+    test('a queued counter order is Q-1, Q-2… and lists with its meta',
+        () async {
+      final first = await counterOrder();
+      final second = await counterOrder();
+
+      expect(first.isQueued, isTrue);
+      expect((first.localRef, second.localRef), ('Q-1', 'Q-2'));
+      final queued = await orders.queuedCounterOrders();
+      expect(queued.map((q) => q.localRef), <String>['Q-1', 'Q-2']);
+      expect(queued.first.itemCount, 3);
+      expect(queued.first.total, const Money.rupees(420));
+      expect(queued.first.fulfillment, FulfillmentType.standing);
+    });
+
+    test('the refs restart each IST day and survive a restart', () async {
+      var now = DateTime.utc(2026, 10, 9, 17, 0); // 22:30 IST
+      orders.dispose();
+      orders = OfflineOrderQueueService(kots, now: () => now);
+      expect((await counterOrder()).localRef, 'Q-1');
+      expect((await counterOrder()).localRef, 'Q-2');
+
+      // A new instance (an app restart) carries on from Q-2.
+      orders.dispose();
+      orders = OfflineOrderQueueService(kots, now: () => now);
+      expect((await counterOrder()).localRef, 'Q-3');
+
+      now = DateTime.utc(2026, 10, 9, 18, 31); // 00:01 IST, the next day
+      expect((await counterOrder()).localRef, 'Q-1');
+    });
+
+    test('a ref the caller brings is kept; a table order gets none', () async {
+      expect((await counterOrder(localRef: 'Q-9')).localRef, 'Q-9');
+      expect((await submit()).localRef, isNull);
+      expect(await orders.queuedCounterOrders(), hasLength(1),
+          reason: 'only counter orders are listed');
+    });
+
+    test('a live send gives no ref and burns none', () async {
+      socket.debugSetState(SocketState.verified);
+      expect((await counterOrder()).localRef, isNull);
+      socket.debugSetState(SocketState.disconnected);
+      expect((await counterOrder()).localRef, 'Q-1');
+    });
+
+    test('a send that times out queues with a ref', () async {
+      socket.debugSetState(SocketState.verified);
+      script['order:create'] = <Object>[timeout()];
+      final result = await counterOrder();
+      expect(result.isQueued, isTrue);
+      expect(result.localRef, 'Q-1');
+    });
+
+    test('replaying it says which order and token Q-1 became', () async {
+      await counterOrder();
+      await submit(table: 't4');
+      final replayed = <ReplayedOrder>[];
+      final sub = orders.replayed.listen(replayed.add);
+      addTearDown(sub.cancel);
+      script['kot:send'] = <Object>[
+        ok(<String, dynamic>{
+          'kot': <String, dynamic>{
+            'kot_number': 'KOT-0129',
+            'token_label': 'T-07',
+            'token_number': 7,
+          },
+          'order': <String, dynamic>{
+            'id': 'o1',
+            'token_label': 'T-07',
+            'token_number': 7,
+            'token_status': 'preparing',
+          },
+        }),
+        ok(<String, dynamic>{}),
+      ];
+
+      socket.debugSetState(SocketState.verified);
+      expect(await orders.flush(socket), isTrue);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(replayed, hasLength(2));
+      expect(replayed.first.localRef, 'Q-1');
+      expect(replayed.first.orderId, 'o1');
+      expect(replayed.first.token!.label, 'T-07');
+      expect(replayed.first.token!.status, TokenStatus.preparing);
+      expect(replayed.last.localRef, isNull, reason: 'the table order');
+      expect(replayed.last.token, isNull);
+      expect(await orders.queuedCounterOrders(), isEmpty);
+    });
+
+    test('a refused replay is not reported as landed', () async {
+      await counterOrder();
+      final replayed = <ReplayedOrder>[];
+      final sub = orders.replayed.listen(replayed.add);
+      addTearDown(sub.cancel);
+      script['order:create'] = <Object>[
+        <String, dynamic>{'kind': 'error', 'message': 'Item hidden'}
+      ];
+      socket.debugSetState(SocketState.verified);
+      await orders.flush(socket);
+      await Future<void>.delayed(Duration.zero);
+      expect(replayed, isEmpty);
+      expect(await kots.rejectedKots(), hasLength(1));
     });
   });
 

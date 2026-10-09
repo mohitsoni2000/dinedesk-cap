@@ -1,3 +1,4 @@
+// ignore_for_file: depend_on_referenced_packages
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,8 +15,18 @@ import 'package:restro/theme/app_theme.dart';
 import 'package:restro/widgets/liquid_chrome.dart';
 import 'package:restro/widgets/root_shell.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 import 'support/parked_fixtures.dart';
+
+/// Storage that holds what it was given but refuses every write.
+class _RefusingStore extends InMemorySharedPreferencesStore {
+  _RefusingStore(super.data) : super.withData();
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async =>
+      false;
+}
 
 /// A bootstrap whose pairing the test can swap, the way a re-pair does:
 /// the new pairing first, then a new outcome.
@@ -79,9 +90,28 @@ void main() {
       expect(app(operatorId: null).read(parkedScopeProvider), isNull);
     });
 
-    test('is nobody without a paired desk that has an id', () {
+    test('is nobody without a pairing', () {
       expect(app(deskId: null).read(parkedScopeProvider), isNull);
-      expect(app(deskId: '').read(parkedScopeProvider), isNull);
+    });
+
+    test(
+        'a phone paired before desks had ids parks under the pairing\'s '
+        'address instead', () async {
+      const legacy = ParkedScope(
+          operatorId: 'op-asha', deskInstanceId: 'pairing:192.168.1.20:4100');
+      expect(app(deskId: '').read(parkedScopeProvider), legacy);
+
+      final c = app(deskId: null);
+      bootstrapOf(c).repair(
+          const PairingInfo(host: '192.168.1.20', port: 4100, token: 'tok'));
+      await pumpEventQueue();
+      expect(c.read(parkedScopeProvider), legacy);
+
+      final draft =
+          await c.read(parkedDraftsProvider.notifier).park(cartDraft());
+      expect(draft.label, 'P1', reason: 'parking is never refused for it');
+      expect(draft.scope, legacy);
+      expect(carts(c), 1);
     });
 
     test('follows the operator and the pairing as they change', () async {
@@ -147,6 +177,30 @@ void main() {
       expect(carts(c), 1);
       expect(await parked.discard(b.id), isTrue);
       expect(await parked.discard(b.id), isFalse);
+      expect(carts(c), 0);
+    });
+
+    test(
+        'resume tells a draft that is gone from a write that failed, and a '
+        'failed write keeps the draft', () async {
+      final c = app();
+      final parked = c.read(parkedDraftsProvider.notifier);
+      final a = await parked.park(cartDraft());
+      final onDisk = (await SharedPreferences.getInstance()).getString(key)!;
+
+      SharedPreferencesStorePlatform.instance =
+          _RefusingStore(<String, Object>{'flutter.$key': onDisk});
+      await expectLater(
+          parked.resume(a.id), throwsA(isA<ParkedDraftsException>()),
+          reason: 'not a quiet null: the cashier must hear of it');
+      expect(carts(c), 1, reason: 'still parked, so nothing was resumed');
+
+      SharedPreferencesStorePlatform.instance =
+          InMemorySharedPreferencesStore.withData(
+              <String, Object>{'flutter.$key': onDisk});
+      expect((await parked.resume(a.id))?.id, a.id);
+      expect(await parked.resume('pk-nowhere'), isNull,
+          reason: 'not there is not an error');
       expect(carts(c), 0);
     });
 

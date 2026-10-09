@@ -2,13 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../data/home_route.dart';
+import '../data/order_target.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/animated_check_draw.dart';
 import '../widgets/confetti_burst.dart';
+import '../widgets/token_badge.dart';
 
 class OrderSuccessScreen extends ConsumerStatefulWidget {
   final String tableId;
@@ -26,6 +29,16 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
 
   static const int _autoNavSeconds = 45;
   int _countdown = _autoNavSeconds;
+
+  /// Back to the tab the order began from (Tables), never blindly home: on a
+  /// QSR desk home is the Counter, and a waiter serving tables must not be
+  /// bounced there.
+  String get _origin => (widget.isRoom
+          ? OrderTarget.room(widget.tableId)
+          : OrderTarget.table(widget.tableId))
+      .originRoute;
+
+  void _back() => context.go(_origin);
 
   @override
   void initState() {
@@ -64,7 +77,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
           _countdown--;
         } else {
           timer.cancel();
-          goHome(context, ref);
+          _back();
         }
       });
     });
@@ -80,7 +93,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
   Widget build(BuildContext context) {
     return DragToDismiss.gesture(
       onDismiss: () {
-        if (mounted) goHome(context, ref);
+        if (mounted) _back();
       },
       child: ColoredBox(
         color: context.palette.paper,
@@ -119,6 +132,33 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                             style: AppTypography.displayMd
                                 .copyWith(color: context.palette.ink)),
                         const SizedBox(height: 24),
+                        // A takeaway with a token (desk with tokens on): the
+                        // guest is called by it, so it comes first.
+                        if (ref.watch(lastTokenProvider) case final token?) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 32, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: context.palette.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                  color: AppColors.terra200, width: 1.5),
+                            ),
+                            child: Column(children: [
+                              const Text('TOKEN',
+                                  style: TextStyle(
+                                    fontFamily: AppTypography.inter,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 2.5,
+                                    color: AppColors.terraDeep,
+                                  )),
+                              const SizedBox(height: 4),
+                              TokenNumber(label: token.label, fontSize: 72),
+                            ]),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 32, vertical: 16),
@@ -189,7 +229,7 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                               child: OutlinedButton(
                                 onPressed: () {
                                   _autoNav?.cancel();
-                                  goHome(context, ref);
+                                  _back();
                                 },
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: AppColors.gold,
@@ -211,13 +251,12 @@ class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
                             ),
                             const SizedBox(height: 10),
                             LiquidPrimaryButton(
-                              label: 'Back to '
-                                  '${homeLabelFor(ref.watch(homeRouteProvider))} '
+                              label: 'Back to ${homeLabelFor(_origin)} '
                                   '($_countdown)',
                               fullWidth: true,
                               onPressed: () {
                                 _autoNav?.cancel();
-                                goHome(context, ref);
+                                _back();
                               },
                             ),
                           ],

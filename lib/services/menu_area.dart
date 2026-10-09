@@ -111,16 +111,23 @@ class MenuAreaContext {
   }
 }
 
-/// Where the order screen is: its running order, else the table or room.
+/// Where the order screen is: its running order, else the table or room, or
+/// the counter (`{counter: true}`: the desk answers for its Takeaway area).
 /// The desk derives the area (floor, Room Service, …) from this itself.
+///
+/// A desk older than counter mode refuses `{counter: true}`; that answer
+/// hides nothing (see [MenuAreaContext.fromAck]) and the desk still refuses
+/// a hidden item on the order itself.
 Map<String, dynamic> menuAreaWhere({
   required bool isRoom,
   required String slotId,
   String? orderId,
+  bool isCounter = false,
 }) {
   if (orderId != null && orderId.isNotEmpty) {
     return <String, dynamic>{'order_id': orderId};
   }
+  if (isCounter) return <String, dynamic>{'counter': true};
   return isRoom
       ? <String, dynamic>{'room_id': slotId}
       : <String, dynamic>{'table_id': slotId};

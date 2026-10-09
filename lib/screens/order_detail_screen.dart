@@ -8,6 +8,7 @@ import '../data/currency.dart';
 import '../data/money.dart';
 import '../data/providers.dart';
 import '../models/server_models.dart';
+import '../models/token.dart';
 import '../models/wire.dart';
 import '../motion/motion.dart';
 import '../services/log.dart';
@@ -19,6 +20,7 @@ import '../widgets/app_card.dart';
 import '../widgets/dynamic_toast.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/payment_sheet.dart';
+import '../widgets/token_badge.dart';
 import '../widgets/discount_sheet.dart';
 import '../widgets/coupon_sheet.dart';
 import '../widgets/offers_sheet.dart';
@@ -235,56 +237,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 response['message']?.toString() ?? 'Bill generation failed',
             kind: ToastKind.error);
       } else {
-        final billsRaw = response['bills'];
-        final parsedBills = <ServerBill>[];
-        if (billsRaw is List) {
-          for (final b in billsRaw) {
-            if (b is Map) {
-              try {
-                parsedBills
-                    .add(ServerBill.fromMap(Map<String, dynamic>.from(b)));
-              } on WireFormatException catch (e) {
-                logE('[OrderDetail]', 'dropped a malformed bill', e);
-              }
-            }
-          }
-        }
-        final bill =
-            (billsRaw is List && billsRaw.isNotEmpty && billsRaw[0] is Map)
-                ? Map<String, dynamic>.from(billsRaw[0] as Map)
-                : null;
-
-        final grandTotal = parsedBills.map((b) => b.totalAmount).sumMoney();
-
-        setState(() {
-          _generatingBill = false;
-          _billGenerated = true;
-          _bills = parsedBills;
-          _billId = bill?['id']?.toString() ?? response['bill_id']?.toString();
-          _billNumber = bill?['bill_number']?.toString() ??
-              response['bill_number']?.toString();
-
-          _billTotal = parsedBills.isNotEmpty ? grandTotal : order.total;
-          _billGst = Money.fromWire(bill?['total_gst']) ??
-              Money.fromWire(response['gst']);
-          _billServiceCharge = Money.fromWire(bill?['service_charge']) ??
-              Money.fromWire(response['service_charge']);
-          _discountAmount = Money.fromWire(bill?['discount_amount']) ??
-              Money.fromWire(response['discount']);
-          _discountLabel = response['discount_label']?.toString();
-        });
-        if (ref.read(flagsProvider).autoPrintBillOnGenerate) {
-          final billIds = _bills.isNotEmpty
-              ? _bills.map((b) => b.id).toList()
-              : (_billId != null ? [_billId!] : const <String>[]);
-          for (final id in billIds) {
-            socketService.emit('print:bill', <String, dynamic>{'bill_id': id});
-          }
-        }
-        DynamicToast.show(context,
-            message:
-                'Bill generated${_billNumber != null ? ' · $_billNumber' : ''}',
-            kind: ToastKind.success);
+        _applyGeneratedBills(response, order);
       }
     }));
 
@@ -299,6 +252,88 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             kind: ToastKind.error);
       },
     );
+  }
+
+  /// Takes the bills a `bill:generate` ack carries onto the screen.
+  void _applyGeneratedBills(Map<String, dynamic> response, HistoryOrder order) {
+    final billsRaw = response['bills'];
+    final parsedBills = <ServerBill>[];
+    if (billsRaw is List) {
+      for (final b in billsRaw) {
+        if (b is Map) {
+          try {
+            parsedBills.add(ServerBill.fromMap(Map<String, dynamic>.from(b)));
+          } on WireFormatException catch (e) {
+            logE('[OrderDetail]', 'dropped a malformed bill', e);
+          }
+        }
+      }
+    }
+    final bill = (billsRaw is List && billsRaw.isNotEmpty && billsRaw[0] is Map)
+        ? Map<String, dynamic>.from(billsRaw[0] as Map)
+        : null;
+
+    final grandTotal = parsedBills.map((b) => b.totalAmount).sumMoney();
+
+    setState(() {
+      _generatingBill = false;
+      _billGenerated = true;
+      _bills = parsedBills;
+      _billId = bill?['id']?.toString() ?? response['bill_id']?.toString();
+      _billNumber = bill?['bill_number']?.toString() ??
+          response['bill_number']?.toString();
+
+      _billTotal = parsedBills.isNotEmpty ? grandTotal : order.total;
+      _billGst =
+          Money.fromWire(bill?['total_gst']) ?? Money.fromWire(response['gst']);
+      _billServiceCharge = Money.fromWire(bill?['service_charge']) ??
+          Money.fromWire(response['service_charge']);
+      _discountAmount = Money.fromWire(bill?['discount_amount']) ??
+          Money.fromWire(response['discount']);
+      _discountLabel = response['discount_label']?.toString();
+    });
+    if (ref.read(flagsProvider).autoPrintBillOnGenerate) {
+      final socketService = ref.read(socketServiceProvider);
+      final billIds = _bills.isNotEmpty
+          ? _bills.map((b) => b.id).toList()
+          : (_billId != null ? [_billId!] : const <String>[]);
+      for (final id in billIds) {
+        socketService.emit('print:bill', <String, dynamic>{'bill_id': id});
+      }
+    }
+    DynamicToast.show(context,
+        message:
+            'Bill generated${_billNumber != null ? ' · $_billNumber' : ''}',
+        kind: ToastKind.success);
+  }
+
+  /// A counter order (takeaway or standing) is not a table to bill at the
+  /// end of a meal: its payment is one tap. It bills the order if this
+  /// screen has no bills for it yet (the desk hands back the bills it
+  /// already has), then opens the payment sheet, cover tickets included.
+  Future<void> _collect(HistoryOrder order) async {
+    if (_generatingBill) return;
+    if (_bills.isNotEmpty) {
+      await _openPayment();
+      return;
+    }
+    if (!requireDesk(context, ref)) return;
+    final pinOk = await requirePinIfNeeded(context, ref, 'generate_bill');
+    if (!pinOk || !mounted) return;
+    setState(() => _generatingBill = true);
+    final response = await ref.read(socketServiceProvider).emitAckIdempotent(
+        'bill:generate', <String, dynamic>{'order_id': order.orderId},
+        timeout: const Duration(seconds: 15));
+    if (!mounted) return;
+    if (response['kind'] == 'error') {
+      setState(() => _generatingBill = false);
+      DynamicToast.show(context,
+          message: response['message']?.toString() ?? 'Bill generation failed',
+          kind: ToastKind.error);
+      return;
+    }
+    _applyGeneratedBills(response, order);
+    await _openPayment();
   }
 
   Future<void> _openPayment() async {
@@ -466,6 +501,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final isCancelled = order.status == OrderStatus.cancelled;
     final isSent = order.status == OrderStatus.sent ||
         order.status == OrderStatus.modified;
+    // Takeaway / standing from the counter: billed and paid in one tap.
+    final isCounterOrder =
+        order.tokenLabel != null || order.fulfillmentType != null;
 
     return DragToDismiss.overscroll(
       onDismiss: _close,
@@ -488,21 +526,29 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                       AppCard(
                         child: Row(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: context.palette.tableMineBg,
-                                borderRadius:
-                                    const BorderRadius.all(AppRadii.xs),
-                                border: Border.all(
-                                    color: AppColors.terra400
-                                        .withValues(alpha: 0.4)),
+                            if (order.tokenLabel case final token?)
+                              TokenBadge(
+                                label: token,
+                                status:
+                                    order.tokenStatus ?? TokenStatus.unknown,
+                                showStatus: true,
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: context.palette.tableMineBg,
+                                  borderRadius:
+                                      const BorderRadius.all(AppRadii.xs),
+                                  border: Border.all(
+                                      color: AppColors.terra400
+                                          .withValues(alpha: 0.4)),
+                                ),
+                                child: Text(order.tableId,
+                                    style: AppTypography.caption
+                                        .copyWith(fontWeight: FontWeight.w700)),
                               ),
-                              child: Text(order.tableId,
-                                  style: AppTypography.caption
-                                      .copyWith(fontWeight: FontWeight.w700)),
-                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
@@ -891,7 +937,24 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                             ],
                           ),
                         ],
-                        if (_billGenerated) ...[
+                        if (isCounterOrder) ...[
+                          if (flags.collectPayment &&
+                              (flags.generateBill || _bills.isNotEmpty)) ...[
+                            const SizedBox(height: 8),
+                            LiquidPrimaryButton(
+                              label: _generatingBill
+                                  ? 'Billing...'
+                                  : 'Collect payment',
+                              fullWidth: true,
+                              leadingIcon: _generatingBill
+                                  ? Icons.hourglass_top
+                                  : Icons.payments_outlined,
+                              onPressed: _generatingBill
+                                  ? null
+                                  : () => _collect(order),
+                            ),
+                          ],
+                        ] else if (_billGenerated) ...[
                           if (flags.collectPayment) ...[
                             const SizedBox(height: 8),
                             Row(

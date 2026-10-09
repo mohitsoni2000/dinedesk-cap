@@ -26,6 +26,7 @@ import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/area_hidden_sheet.dart';
 import '../widgets/app_surface.dart';
+import '../widgets/counter_notices.dart';
 import '../widgets/counter_park_actions.dart';
 import '../widgets/dynamic_toast.dart';
 import '../widgets/item_detail_sheet.dart';
@@ -1069,6 +1070,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     ),
                   ),
                   if (_isCounter) const _PendingCheckoutBanner(),
+                  if (_isCounter) const CounterNotices(),
                   if (_searchOpen)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),

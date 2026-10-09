@@ -11,6 +11,7 @@ import '../models/token.dart';
 import '../services/offline_order_queue_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/app_card.dart';
+import '../widgets/counter_notices.dart';
 import '../widgets/counter_park_actions.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/page_content_clamp.dart';
@@ -44,6 +45,7 @@ class CounterScreen extends ConsumerWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
+                const CounterNotices(),
                 const Text('Counter', style: AppTypography.displayLg),
                 const SizedBox(height: 16),
                 if (pending != null) ...[

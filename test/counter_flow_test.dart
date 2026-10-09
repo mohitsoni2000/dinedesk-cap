@@ -21,6 +21,7 @@ import 'package:restro/screens/order_success_screen.dart';
 import 'package:restro/screens/token_result_screen.dart';
 import 'package:restro/services/connection_bootstrap.dart';
 import 'package:restro/services/offline_order_queue_service.dart';
+import 'package:restro/services/qsr_checkout_service.dart';
 import 'package:restro/services/session_service.dart';
 import 'package:restro/services/socket_service.dart';
 import 'package:restro/theme/app_theme.dart';
@@ -113,6 +114,7 @@ void main() {
     List<CartLine> cart = const <CartLine>[],
     bool online = true,
     Map<String, Object> prefs = const <String, Object>{},
+    List<Override> overrides = const <Override>[],
   }) async {
     tester.view.physicalSize = const Size(1024, 1366);
     tester.view.devicePixelRatio = 1.0;
@@ -131,6 +133,7 @@ void main() {
             port: 4100,
             token: 'tok',
             deskInstanceId: 'desk-1'))),
+      ...overrides,
     ]);
     addTearDown(container.dispose);
     container.read(operatorProvider.notifier).state = const Operator(
@@ -493,6 +496,195 @@ void main() {
     });
   });
 
+  group('hardening', () {
+    /// A prepaid checkout whose first Pay & Fire got no answer: the token
+    /// screen is showing NOT CONFIRMED and the attempt is kept.
+    Future<_Counter> unconfirmed(WidgetTester tester,
+        {List<Override> overrides = const <Override>[]}) async {
+      final h = await pumpCounter(tester,
+          initial: '/counter/order/checkout',
+          qsr: _prepaid,
+          cart: <CartLine>[dosaLine(qty: 2)],
+          overrides: overrides);
+      h.answer = (event, data) => event == 'qsr:checkout'
+          ? TimeoutException('ack timed out')
+          : desk(event, data);
+      await tester.tap(find.text('Cash'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pay & Fire ₹1,050'));
+      await tester.pumpAndSettle();
+      expect(find.text('NOT CONFIRMED'), findsOneWidget);
+      return h;
+    }
+
+    testWidgets(
+        'a retry refused for a business reason drops the attempt: nothing '
+        'was charged', (tester) async {
+      final h = await unconfirmed(tester);
+      h.answer = (event, data) => event == 'qsr:checkout'
+          ? <String, dynamic>{
+              'kind': 'error',
+              'code': 'cover_empty',
+              'message': 'No cover left on ET-041',
+            }
+          : desk(event, data);
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+
+      expect(find.text("This ticket's cover is used up. Nothing was charged."),
+          findsOneWidget);
+      expect(h.container.read(pendingCheckoutProvider), isNull);
+      expect(h.path, '/counter/order', reason: 'back to the kept cart');
+      expect(h.cart.single.qty, 2);
+      await drain(tester);
+    });
+
+    testWidgets(
+        'a retry refused without a business code keeps the attempt as '
+        'unconfirmed, and the next retry is the same request', (tester) async {
+      final h = await unconfirmed(tester);
+      h.answer = (event, data) => event == 'qsr:checkout'
+          ? <String, dynamic>{'kind': 'error', 'message': 'Internal error'}
+          : desk(event, data);
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(kCheckoutNoAnswer), findsNWidgets(2),
+          reason: 'the card, and the toast');
+      expect(find.textContaining('Nothing was charged'), findsNothing);
+      expect(find.text('NOT CONFIRMED'), findsOneWidget);
+      expect(h.container.read(pendingCheckoutProvider), isNotNull);
+      await drain(tester);
+
+      h.answer = desk;
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      final calls = h.payloads('qsr:checkout');
+      expect(calls, hasLength(3));
+      for (final call in calls.skip(1)) {
+        expect(call, calls.first,
+            reason: 'one attempt: the same request every time');
+      }
+      expect(find.text('S-03'), findsOneWidget);
+    });
+
+    testWidgets('a first attempt refused without a business code is kept too',
+        (tester) async {
+      final h = await pumpCounter(tester,
+          initial: '/counter/order/checkout',
+          qsr: _prepaid,
+          cart: <CartLine>[dosaLine(qty: 2)]);
+      h.answer = (event, data) => event == 'qsr:checkout'
+          ? <String, dynamic>{'kind': 'error', 'message': 'Internal error'}
+          : desk(event, data);
+      await tester.tap(find.text('Cash'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pay & Fire ₹1,050'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('NOT CONFIRMED'), findsOneWidget);
+      expect(h.container.read(pendingCheckoutProvider), isNotNull);
+    });
+
+    testWidgets(
+        'a retry the phone cannot take in never leaves the screen stuck',
+        (tester) async {
+      final h = await unconfirmed(tester, overrides: <Override>[
+        syncServiceProvider.overrideWith((ref) => throw StateError('down')),
+      ]);
+      h.answer = desk;
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Retry'), findsOneWidget, reason: 'not "Checking…"');
+      final retry = tester.widget<LiquidPrimaryButton>(
+          find.widgetWithText(LiquidPrimaryButton, 'Retry'));
+      expect(retry.onPressed, isNotNull);
+      expect(find.text(kCheckoutNoAnswer), findsNWidgets(2),
+          reason: 'the card, and the toast');
+      expect(h.container.read(pendingCheckoutProvider), isNotNull,
+          reason: 'kept: the next Retry replays the desk\'s answer');
+      await drain(tester);
+    });
+
+    testWidgets(
+        'while a changed total is being worked out, Pay & Fire stays busy',
+        (tester) async {
+      final h = await pumpCounter(tester,
+          initial: '/counter/order/checkout',
+          qsr: _prepaid,
+          cart: <CartLine>[dosaLine(qty: 2)]);
+      // The refusal carries no total, so the screen asks the desk again;
+      // that answer is held back until the test lets it go.
+      final fresh = Completer<Object>();
+      h.answer = (event, data) {
+        if (event == 'qsr:checkout') {
+          return <String, dynamic>{
+            'kind': 'error',
+            'code': 'price_changed',
+            'message': 'Prices changed',
+          };
+        }
+        if (event == 'order:preview-totals') return fresh.future;
+        return desk(event, data);
+      };
+      await tester.tap(find.text('Cash'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pay & Fire ₹1,050'));
+      await tester.pumpAndSettle();
+
+      final pay = tester.widget<LiquidPrimaryButton>(
+          find.widgetWithText(LiquidPrimaryButton, 'Pay & Fire ₹1,050'));
+      expect(pay.onPressed, isNull, reason: 'busy while the total is fetched');
+
+      fresh.complete(<String, dynamic>{
+        'kind': 'success',
+        'totals': <String, dynamic>{'totalAmount': 1102.5},
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('The total changed'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(h.payloads('qsr:checkout'), hasLength(1));
+      final again = tester.widget<LiquidPrimaryButton>(
+          find.widgetWithText(LiquidPrimaryButton, 'Pay & Fire ₹1,102.50'));
+      expect(again.onPressed, isNotNull);
+    });
+
+    testWidgets('Fire KOT says so when the kitchen printer refuses the KOT',
+        (tester) async {
+      final h = await pumpCounter(tester,
+          initial: '/counter/order/checkout',
+          qsr: _postpaid,
+          cart: <CartLine>[dosaLine(qty: 2)]);
+      h.answer = (event, data) => event == 'print:kot'
+          ? <String, dynamic>{'kind': 'error'}
+          : desk(event, data);
+      await tester.tap(find.text('Fire KOT · pay at pickup'));
+      await tester.pumpAndSettle();
+
+      expect(h.payloads('print:kot').single['order_id'], 'ord_9c21');
+      expect(h.path, '/counter/order/token');
+      expect(find.text('KOT print failed — check the kitchen printer'),
+          findsOneWidget);
+      await drain(tester);
+    });
+
+    testWidgets('a queued order\'s total is said to be before tax',
+        (tester) async {
+      await pumpCounter(tester,
+          initial: '/counter/order/checkout',
+          qsr: _postpaid,
+          online: false,
+          cart: <CartLine>[dosaLine(qty: 2)]);
+      await tester.tap(find.text('Fire KOT · pay at pickup'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('QUEUED'), findsOneWidget);
+      expect(find.text('2 items · ₹200.00 before tax'), findsOneWidget);
+    });
+  });
+
   group('the token screen', () {
     Future<_Counter> showResult(WidgetTester tester, CounterOrderResult result,
         {FeatureFlags? flags}) async {
@@ -638,6 +830,8 @@ void main() {
       final shown = h.container.read(counterResultProvider)!;
       expect(shown.outcome, CounterOutcome.fired);
       expect(shown.orderId, 'ord_9c21');
+      expect(find.text('Q-1 → Token T-07'), findsOneWidget);
+      await drain(tester);
     });
   });
 

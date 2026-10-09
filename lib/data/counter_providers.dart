@@ -10,7 +10,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/server_models.dart';
 import '../models/token.dart';
-import '../services/app_messenger.dart';
 import '../services/log.dart';
 import '../services/offline_order_queue_service.dart';
 import '../services/qsr_checkout_service.dart';
@@ -54,6 +53,20 @@ class CounterFulfillmentNotifier extends StateNotifier<FulfillmentType> {
   }
 }
 
+/// A word for the cashier from something that ended after its screen did:
+/// a queued order reaching the desk, a KOT the kitchen printer refused.
+/// The counter screens show it (CounterNotices), once.
+class CounterNotice {
+  CounterNotice(this.message, {this.kind = ToastKind.error, DateTime? at})
+      : at = at ?? DateTime.now();
+
+  final String message;
+  final ToastKind kind;
+  final DateTime at;
+}
+
+final counterNoticeProvider = StateProvider<CounterNotice?>((_) => null);
+
 /// The payment mode the counter last charged with, picked again for the next
 /// order.
 final lastCounterPayModeProvider = StateProvider<String?>((_) => null);
@@ -79,6 +92,7 @@ class CounterOrderResult {
     required this.paid,
     required this.itemCount,
     required this.total,
+    this.totalBeforeTax = false,
     this.token,
     this.orderId,
     this.localRef,
@@ -95,6 +109,10 @@ class CounterOrderResult {
 
   /// The bills' total for a paid order; the cart's estimate otherwise.
   final Money total;
+
+  /// [total] is only the items' sum: the desk's total (with tax and
+  /// charges) never came, as when the order queued without the desk.
+  final bool totalBeforeTax;
   final TokenInfo? token;
 
   /// Known once the order is on the desk.
@@ -117,6 +135,7 @@ class CounterOrderResult {
         paid: paid,
         itemCount: itemCount,
         total: total,
+        totalBeforeTax: totalBeforeTax,
         token: token ?? this.token,
         orderId: orderId,
         localRef: localRef,
@@ -245,7 +264,7 @@ final counterReplayWatcherProvider = Provider<void>((ref) {
     if (localRef == null) return;
     final token = replayed.token;
     logD(_tag, 'a queued counter order reached the desk');
-    showAppToast(
+    ref.read(counterNoticeProvider.notifier).state = CounterNotice(
       token == null
           ? '$localRef reached the desk — its token comes with the KOT'
           : '$localRef → Token ${tokenDisplay(token.label)}',

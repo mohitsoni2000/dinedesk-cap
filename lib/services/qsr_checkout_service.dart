@@ -162,7 +162,31 @@ final class QsrCheckoutRejected extends QsrCheckoutResult {
   final Money? newTotal;
 
   bool get priceChanged => code == 'price_changed';
+
+  /// A business refusal: the desk priced the order, or checked a tender, a
+  /// ticket, the menu or its counter mode, and said no before writing
+  /// anything. Only these prove an attempt never went through. Anything
+  /// else (`reauth_required`, an error with no code) might follow a write
+  /// that did happen, so an attempt it answers is kept, not dropped.
+  bool get isBusinessRefusal {
+    final c = code;
+    if (c == null) return false;
+    return _businessRefusals.contains(c) ||
+        c.startsWith('payment_') ||
+        c.startsWith('cover_') ||
+        c.startsWith('ticket_');
+  }
+
+  bool get needsPin => code == 'reauth_required';
 }
+
+const Set<String> _businessRefusals = <String>{
+  'price_changed',
+  'item_unavailable',
+  'menu_blocked',
+  'flow_blocked',
+  'qsr_disabled',
+};
 
 /// No answer: it may have gone through. Retry the SAME request; never edit
 /// it, never start a new one, until the desk has answered.

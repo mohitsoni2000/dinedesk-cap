@@ -9,12 +9,13 @@ import '../data/currency.dart';
 import '../data/providers.dart';
 import '../models/token.dart';
 import '../motion/motion.dart';
+import '../services/log.dart';
 import '../services/offline_guard.dart';
 import '../services/qsr_checkout_service.dart';
 import '../theme/tokens.dart';
+import '../widgets/counter_notices.dart';
 import '../widgets/dynamic_toast.dart';
 import '../widgets/liquid_chrome.dart';
-import '../widgets/order_submitting_overlay.dart';
 import '../widgets/token_badge.dart';
 import 'counter_checkout_screen.dart';
 
@@ -99,28 +100,33 @@ class _TokenResultScreenState extends ConsumerState<TokenResultScreen> {
     if (!requireDesk(context, ref)) return;
     final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _retrying = true);
-    final done = Completer<bool>();
-    final run = retryPendingCheckout(container, pending);
-    unawaited(run.then((_) {
-      if (!done.isCompleted) done.complete(true);
-    }));
-    await OrderSubmittingOverlay.show(context,
-        completer: done,
-        timeout: OrderSubmittingOverlay.moneyTimeout,
+    QsrCheckoutResult? result;
+    try {
+      result = await runBehindMoneyOverlay(
+        context,
+        retryPendingCheckout(container, pending),
         title: 'Checking with the desk…',
-        subtitle: 'Sending the same order again');
-    final result = await run;
+        subtitle: 'Sending the same order again',
+      );
+    } catch (error) {
+      // The desk answered but this phone could not take it in. Never stuck:
+      // the attempt stays kept unless it was settled, so Retry asks again.
+      logE('[Counter]', 'a retried pay & fire could not be applied',
+          error.runtimeType);
+    } finally {
+      if (mounted) setState(() => _retrying = false);
+    }
     if (!mounted) return;
-    setState(() => _retrying = false);
     switch (result) {
       case QsrCheckoutOk():
         // The result turned to fired; the listener starts the countdown.
         break;
-      case QsrCheckoutRejected(:final message):
-        DynamicToast.error(context, '$message. Nothing was charged.');
+      case QsrCheckoutRejected(isBusinessRefusal: true):
+        DynamicToast.error(context, retryRefusalCopy(result));
         // Back to the cart, which was kept, to put it right.
         context.go('/counter/order');
-      case QsrCheckoutUnconfirmed():
+      case QsrCheckoutRejected() || QsrCheckoutUnconfirmed() || null:
+        // Still unconfirmed: it may have gone through.
         DynamicToast.warning(context, kCheckoutNoAnswer);
       case QsrCheckoutOffline():
         DynamicToast.warning(context, kNeedsDeskMessage);
@@ -208,7 +214,8 @@ class _TokenResultScreenState extends ConsumerState<TokenResultScreen> {
                   const SizedBox(height: 12),
                   Text(
                     '${result.itemCount} ${result.itemCount == 1 ? 'item' : 'items'}'
-                    ' · ${formatRupees(result.total)}',
+                    ' · ${formatRupees(result.total)}'
+                    '${result.totalBeforeTax ? ' before tax' : ''}',
                     textAlign: TextAlign.center,
                     style: AppTypography.title.copyWith(color: palette.ink70),
                   ),
@@ -235,6 +242,7 @@ class _TokenResultScreenState extends ConsumerState<TokenResultScreen> {
                     const SizedBox(height: 8),
                     LiquidSecondaryButton(label: 'Done', onPressed: _done),
                   ],
+                  const CounterNotices(),
                 ],
               ),
             ),

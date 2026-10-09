@@ -203,6 +203,38 @@ void main() {
     });
   });
 
+  test('only a business refusal proves an attempt never went through', () {
+    QsrCheckoutRejected refused(String? code) =>
+        QsrCheckoutRejected(code: code, message: 'desk text');
+    for (final code in <String>[
+      'price_changed',
+      'payment_short',
+      'payment_over',
+      'payment_invalid',
+      'cover_empty',
+      'cover_expired',
+      'cover_not_applicable',
+      'ticket_not_found',
+      'ticket_cancelled',
+      'item_unavailable',
+      'menu_blocked',
+      'flow_blocked',
+      'qsr_disabled',
+    ]) {
+      expect(refused(code).isBusinessRefusal, isTrue, reason: code);
+    }
+    for (final code in <String?>[
+      null,
+      'reauth_required',
+      'permission_denied',
+      'something_new',
+    ]) {
+      expect(refused(code).isBusinessRefusal, isFalse, reason: '$code');
+    }
+    expect(refused('reauth_required').needsPin, isTrue);
+    expect(refused('payment_short').needsPin, isFalse);
+  });
+
   test('it is a money event: no default timeout allowed', () {
     expect(() => socket.emitAck('qsr:checkout', <String, dynamic>{}),
         throwsArgumentError);

@@ -23,6 +23,7 @@ import '../utils/request_id.dart';
 import '../utils/tender_allocation.dart';
 import '../widgets/app_card.dart';
 import '../widgets/cart_row.dart';
+import '../widgets/counter_notices.dart';
 import '../widgets/counter_park_actions.dart';
 import '../widgets/cover_redeem_section.dart';
 import '../widgets/dynamic_toast.dart';
@@ -80,7 +81,11 @@ void applyPayAndFire(
 
 /// Sends the kept Pay & Fire again, exactly as it went (same request, same
 /// id): if the first one landed, the desk replays it instead of charging
-/// twice. A refusal means it never went through, so the attempt is dropped.
+/// twice.
+///
+/// Only a business refusal proves it never went through, so only that drops
+/// the attempt. Any other refusal keeps it, as unanswered; one that wants
+/// the PIN raises the PIN prompt, so the next Retry can go.
 Future<QsrCheckoutResult> retryPendingCheckout(
     ProviderContainer container, PendingCheckout pending) async {
   final result = await container.read(qsrCheckoutServiceProvider).payAndFire(
@@ -92,12 +97,43 @@ Future<QsrCheckoutResult> retryPendingCheckout(
           request: pending.request,
           sentCart: pending.cart,
           estimate: pending.estimate);
-    case QsrCheckoutRejected():
+    case QsrCheckoutRejected(isBusinessRefusal: true):
       container.read(pendingCheckoutProvider.notifier).state = null;
-    case QsrCheckoutUnconfirmed() || QsrCheckoutOffline():
+    case QsrCheckoutRejected(needsPin: true):
+      unawaited(container.read(syncServiceProvider).handleReauthRequired());
+    case QsrCheckoutRejected() ||
+          QsrCheckoutUnconfirmed() ||
+          QsrCheckoutOffline():
       break;
   }
   return result;
+}
+
+/// What the cashier is told when a retried Pay & Fire is refused: nothing
+/// was charged only when the refusal proves it.
+String retryRefusalCopy(QsrCheckoutRejected refused) =>
+    refused.isBusinessRefusal
+        ? '${refused.message}. Nothing was charged.'
+        : kCheckoutNoAnswer;
+
+/// Runs [work] behind the money overlay. The overlay closes when [work]
+/// ends, however it ends, and its result or error comes back to the caller.
+Future<T> runBehindMoneyOverlay<T>(
+  BuildContext context,
+  Future<T> work, {
+  required String title,
+  required String subtitle,
+  Duration timeout = OrderSubmittingOverlay.moneyTimeout,
+}) async {
+  final done = Completer<bool>();
+  unawaited(work.then((_) {
+    if (!done.isCompleted) done.complete(true);
+  }, onError: (Object _) {
+    if (!done.isCompleted) done.complete(false);
+  }));
+  await OrderSubmittingOverlay.show(context,
+      completer: done, timeout: timeout, title: title, subtitle: subtitle);
+  return work;
 }
 
 /// `order:preview-totals` items for [cart], amounts in rupees.
@@ -301,49 +337,45 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
     if (!pinOk || !mounted) return;
     final request = _buildRequest();
     if (request == null) return;
-    await _send(request);
+    // Busy until the whole attempt is over, a changed total's question and
+    // its resend included: no second attempt, no stacked dialogs.
+    setState(() => _busy = true);
+    try {
+      await _send(request);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
-  /// Runs [work] behind the money overlay.
-  Future<T> _behindOverlay<T>(
-    Future<T> work, {
-    required String title,
-    required String subtitle,
-    Duration timeout = OrderSubmittingOverlay.moneyTimeout,
-  }) async {
-    final done = Completer<bool>();
-    unawaited(work.then((_) {
-      if (!done.isCompleted) done.complete(true);
-    }, onError: (Object _) {
-      if (!done.isCompleted) done.complete(false);
-    }));
-    await OrderSubmittingOverlay.show(context,
-        completer: done, timeout: timeout, title: title, subtitle: subtitle);
-    return work;
-  }
-
+  /// One attempt; the caller holds [_busy].
   Future<void> _send(QsrCheckoutRequest request) async {
     final container = ProviderScope.containerOf(context, listen: false);
     final cart = ref.read(cartProvider);
     final estimate = request.expectedTotal ?? _subtotal;
-    setState(() => _busy = true);
-    final QsrCheckoutResult result;
-    try {
-      result = await _behindOverlay(
-        container.read(qsrCheckoutServiceProvider).payAndFire(request),
-        title: 'Taking payment…',
-        subtitle: 'The kitchen gets the KOT once it is paid',
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    final result = await runBehindMoneyOverlay(
+      context,
+      container.read(qsrCheckoutServiceProvider).payAndFire(request),
+      title: 'Taking payment…',
+      subtitle: 'The kitchen gets the KOT once it is paid',
+    );
     switch (result) {
       case QsrCheckoutOk(:final ack):
         applyPayAndFire(container, ack,
             request: request, sentCart: cart, estimate: estimate);
         if (mounted) context.go('/counter/order/token');
-      case QsrCheckoutUnconfirmed():
-        // It may have gone through: keep it, exactly, for the retry.
+      case QsrCheckoutRejected(isBusinessRefusal: true):
+        if (!mounted) return;
+        if (result.priceChanged) {
+          await _onPriceChanged(request, result);
+        } else {
+          DynamicToast.error(context, result.message);
+        }
+      case QsrCheckoutUnconfirmed() || QsrCheckoutRejected():
+        // No answer, or a refusal that does not prove nothing happened: it
+        // may have gone through. Keep it, exactly, for the retry.
+        if (result case QsrCheckoutRejected(needsPin: true)) {
+          unawaited(container.read(syncServiceProvider).handleReauthRequired());
+        }
         container.read(pendingCheckoutProvider.notifier).state =
             PendingCheckout(request: request, cart: cart, estimate: estimate);
         container.read(counterResultProvider.notifier).state =
@@ -355,13 +387,6 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
           total: estimate,
         );
         if (mounted) context.go('/counter/order/token');
-      case QsrCheckoutRejected():
-        if (!mounted) return;
-        if (result.priceChanged) {
-          await _onPriceChanged(request, result);
-        } else {
-          DynamicToast.error(context, result.message);
-        }
       case QsrCheckoutOffline():
         if (mounted) await _offerParkOffline();
     }
@@ -414,13 +439,19 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
     }
     final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _busy = true);
-    final QsrCheckoutResult result;
+    QsrCheckoutResult? result;
     try {
-      result = await _behindOverlay(
+      result = await runBehindMoneyOverlay(
+        context,
         retryPendingCheckout(container, pending),
         title: 'Checking with the desk…',
         subtitle: 'Sending the same order again',
       );
+    } catch (error) {
+      // The desk answered but this phone could not take it in; the attempt
+      // stays kept unless it was settled, so Retry asks again.
+      logE(
+          _tag, 'a retried pay & fire could not be applied', error.runtimeType);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -428,9 +459,9 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
     switch (result) {
       case QsrCheckoutOk():
         context.go('/counter/order/token');
-      case QsrCheckoutRejected(:final message):
-        DynamicToast.error(context, '$message. Nothing was charged.');
-      case QsrCheckoutUnconfirmed():
+      case QsrCheckoutRejected():
+        DynamicToast.error(context, retryRefusalCopy(result));
+      case QsrCheckoutUnconfirmed() || null:
         DynamicToast.warning(context, kCheckoutNoAnswer);
       case QsrCheckoutOffline():
         DynamicToast.warning(context, kNeedsDeskMessage);
@@ -536,6 +567,9 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
     final fulfillment = ref.read(counterFulfillmentProvider);
     final notes = _notes.text.trim();
     final itemCount = cart.fold<int>(0, (sum, line) => sum + line.qty);
+    // Without the desk's estimate (the usual case when it is away) the total
+    // is only the items' sum, and says so.
+    final beforeTax = _estimate == null;
     final total = _estimate ?? _subtotal;
     final socket = ref.read(socketServiceProvider);
     _offlinePrint = null;
@@ -544,7 +578,8 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
     setState(() => _busy = true);
     OrderSubmitResult? result;
     try {
-      result = await _behindOverlay(
+      result = await runBehindMoneyOverlay(
+        context,
         container.read(offlineOrderQueueProvider).submitOrder(
               socket,
               orderEvent: 'order:create',
@@ -593,6 +628,7 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
         paid: false,
         itemCount: itemCount,
         total: total,
+        totalBeforeTax: beforeTax,
         localRef: result.localRef,
         offlineRef: offlineRef,
       );
@@ -613,7 +649,16 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
       if (kotWent && !(_offlinePrint?.printedAnything ?? false)) {
         final orderId = orderMap is Map ? orderMap['id']?.toString() : null;
         if (orderId != null) {
-          socket.emit('print:kot', <String, dynamic>{'order_id': orderId});
+          // As the table flow: a refused print is the only sign the kitchen
+          // has no slip. This screen is gone by then, so the counter screen
+          // that is up says it (CounterNotices).
+          socket.emit('print:kot', <String, dynamic>{'order_id': orderId},
+              onAck: (response) {
+            if (response['kind'] != 'error') return;
+            container.read(counterNoticeProvider.notifier).state =
+                CounterNotice(response['message']?.toString() ??
+                    'KOT print failed — check the kitchen printer');
+          });
         }
       }
       shown = CounterOrderResult(
@@ -622,6 +667,7 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
         paid: false,
         itemCount: itemCount,
         total: total,
+        totalBeforeTax: beforeTax,
         token: token,
         orderId: orderMap is Map ? orderMap['id']?.toString() : null,
         kotNumber: kotNumber,
@@ -901,6 +947,7 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
                 ),
               ),
               actions,
+              const CounterNotices(),
             ],
           ),
         ),

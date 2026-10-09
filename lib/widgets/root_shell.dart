@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/home_route.dart';
+import '../data/parked_providers.dart';
 import '../data/providers.dart';
+import '../models/parked_draft.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
 import 'liquid_chrome.dart';
@@ -61,15 +63,26 @@ List<int> shellTabsFor({
   return tabs;
 }
 
-LiquidNavItem _navItemFor(int branch) => switch (branch) {
+/// The tab for [branch]. [counterParked] and [gateParked] are the parked carts
+/// and parked ticket sales the signed-in operator has, pinned on those tabs.
+LiquidNavItem _navItemFor(
+  int branch, {
+  int counterParked = 0,
+  int gateParked = 0,
+}) =>
+    switch (branch) {
       ShellBranch.tables =>
         const LiquidNavItem(icon: Icons.grid_view_rounded, label: 'TABLES'),
       ShellBranch.rooms =>
         const LiquidNavItem(icon: Icons.hotel_outlined, label: 'ROOMS'),
-      ShellBranch.counter =>
-        const LiquidNavItem(icon: Icons.storefront_outlined, label: 'COUNTER'),
-      ShellBranch.gate => const LiquidNavItem(
-          icon: Icons.confirmation_number_outlined, label: 'GATE'),
+      ShellBranch.counter => LiquidNavItem(
+          icon: Icons.storefront_outlined,
+          label: 'COUNTER',
+          badge: counterParked),
+      ShellBranch.gate => LiquidNavItem(
+          icon: Icons.confirmation_number_outlined,
+          label: 'GATE',
+          badge: gateParked),
       ShellBranch.history =>
         const LiquidNavItem(icon: Icons.receipt_long, label: 'HISTORY'),
       ShellBranch.profile =>
@@ -88,6 +101,9 @@ class RootShell extends ConsumerWidget {
     final gateEnabled = ref.watch(flagsProvider.select((f) => f.hasGate));
     final isQsr = ref.watch(qsrConfigProvider.select((q) => q.isQsr));
     final home = ref.watch(homeRouteProvider);
+    final counterParked =
+        ref.watch(parkedCountProvider(ParkedKind.counterCart));
+    final gateParked = ref.watch(parkedCountProvider(ParkedKind.ticketIssue));
 
     final entries = <(int, LiquidNavItem)>[
       for (final branch in shellTabsFor(
@@ -96,7 +112,11 @@ class RootShell extends ConsumerWidget {
         rooms: roomsEnabled,
         gate: gateEnabled,
       ))
-        (branch, _navItemFor(branch)),
+        (
+          branch,
+          _navItemFor(branch,
+              counterParked: counterParked, gateParked: gateParked)
+        ),
     ];
 
     // The open tab went away (rooms switched off, QSR mode turned off, gate

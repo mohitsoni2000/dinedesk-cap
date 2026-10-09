@@ -6,56 +6,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/currency.dart';
 import '../data/money.dart';
 import '../data/providers.dart';
+import '../models/bill_payment.dart';
+import '../models/entry_ticket.dart';
+import '../models/feature_flags.dart';
+import '../models/pay_mode.dart';
 import '../models/server_models.dart';
+import '../services/entry_ticket_service.dart';
+import '../services/log.dart';
 import '../services/offline_guard.dart';
 import '../services/pin_guard.dart';
+import '../services/socket_service.dart';
 import '../theme/tokens.dart';
+import '../utils/tender_allocation.dart';
 import 'app_surface.dart';
+import 'cover_redeem_section.dart';
 import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
-
-enum PaymentMode { cash, upi, card, complimentary, credit, company }
-
-class _PaymentEntry {
-  final PaymentMode mode;
-  final Money amount;
-  final String? reference;
-  final String? notes;
-
-  const _PaymentEntry({
-    required this.mode,
-    required this.amount,
-    this.reference,
-    this.notes,
-  });
-
-  Map<String, dynamic> toMap() => <String, dynamic>{
-        'payment_mode': mode.name,
-        'amount': amount.toWire(),
-        if (reference != null && reference!.isNotEmpty)
-          'reference_number': reference,
-        if (notes != null && notes!.isNotEmpty) 'notes': notes,
-      };
-}
-
-String _modeLabel(PaymentMode m) => switch (m) {
-      PaymentMode.cash => 'Cash',
-      PaymentMode.upi => 'UPI',
-      PaymentMode.card => 'Card',
-      PaymentMode.complimentary => 'Comp',
-      PaymentMode.credit => 'Credit',
-      PaymentMode.company => 'Company',
-    };
-
-IconData _modeIcon(PaymentMode m) => switch (m) {
-      PaymentMode.cash => Icons.payments_outlined,
-      PaymentMode.upi => Icons.phone_android_outlined,
-      PaymentMode.card => Icons.credit_card_outlined,
-      PaymentMode.complimentary => Icons.card_giftcard_outlined,
-      PaymentMode.credit => Icons.account_balance_outlined,
-      PaymentMode.company => Icons.business_outlined,
-    };
+import 'tender_form.dart';
 
 class PaymentSheet {
   static Future<bool?> show(
@@ -91,125 +59,147 @@ class _PaymentSheetBody extends ConsumerStatefulWidget {
   ConsumerState<_PaymentSheetBody> createState() => _PaymentSheetBodyState();
 }
 
+/// The `bill:payment` calls one Pay planned, and the bills they already
+/// went through for.
+class _PaymentRun {
+  _PaymentRun(this.calls);
+
+  final List<BillPaymentCall> calls;
+  final Set<String> done = <String>{};
+}
+
+/// Why money is still due after a Pay went through in part.
+enum _StillDue { coverCapped, partly }
+
 class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
-  PaymentMode? _selectedMode;
-  final _refController = TextEditingController();
-  final _tenderedController = TextEditingController();
-  final _reasonController = TextEditingController();
-  final _authorizedByController = TextEditingController();
-  bool _submitting = false;
+  final TenderFormController _tender = TenderFormController();
+  final List<AppliedCover> _covers = <AppliedCover>[];
 
-  final List<_PaymentEntry> _splits = [];
-  final _splitAmountController = TextEditingController();
-
-  Money get _paidSoFar => _splits.map((e) => e.amount).sumMoney();
-  Money get _remaining => widget.grandTotal - _paidSoFar;
-
-  Money get _tendered =>
-      Money.fromWire(_tenderedController.text.trim()) ?? Money.zero;
-
-  Money get _change {
-    final difference = _tendered - widget.grandTotal;
-    return difference.isPositive ? difference : Money.zero;
-  }
-
-  bool get _needsRef =>
-      _selectedMode == PaymentMode.upi || _selectedMode == PaymentMode.card;
-  bool get _needsReason =>
-      _selectedMode == PaymentMode.complimentary ||
-      _selectedMode == PaymentMode.company;
-  bool get _isCreditBlocked =>
-      _selectedMode == PaymentMode.credit && !widget.hasCustomer;
-
-  List<PaymentMode> _availableModes() {
-    final flags = ref.read(flagsProvider);
-    return <PaymentMode>[
-      PaymentMode.cash,
-      PaymentMode.upi,
-      PaymentMode.card,
-      if (flags.complimentary) PaymentMode.complimentary,
-      if (flags.customers) PaymentMode.credit,
-      if (flags.complimentary) PaymentMode.company,
-    ];
-  }
-
+  /// What each bill still owes, as far as this sheet knows: its total until
+  /// the desk records a payment on it.
+  late final Map<String, Money> _dues = <String, Money>{
+    for (final bill in widget.bills) bill.id: bill.totalAmount,
+  };
   final Set<String> _settledBillIds = <String>{};
+
+  /// Kept after some bills went through and the next one's answer was lost:
+  /// a retry then resends exactly these calls (same payloads, so the same
+  /// `client_request_id`s), and the fields stay locked until it lands. When
+  /// nothing has gone through, Pay plans again from what is on screen;
+  /// unchanged fields plan the same calls, so a retry is still identical.
+  _PaymentRun? _pending;
+  bool _submitting = false;
+  _StillDue? _stillDue;
+
+  @override
+  void initState() {
+    super.initState();
+    _tender.addListener(_onTenderChanged);
+  }
+
+  void _onTenderChanged() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _coverOn =>
+      canRedeemCover(ref.read(flagsProvider), ref.read(ticketConfigProvider));
+
+  List<AppliedCover> get _activeCovers =>
+      _coverOn ? _covers : const <AppliedCover>[];
+
+  Iterable<ServerBill> get _openBills =>
+      widget.bills.where((b) => !_settledBillIds.contains(b.id));
+
+  /// What the open bills still owe.
+  Money get _due => _openBills.map((b) => _dues[b.id]!).sumMoney();
+
+  /// What the tenders must cover: the due less the cover applied.
+  Money get _tenderDue => _due - _activeCovers.map((c) => c.amount).sumMoney();
+
+  /// What another ticket's cover may still pay: the open food and drink
+  /// bills' due less cover applied, within what is still to collect.
+  Money _coverable(bool splitMode) {
+    final eligible =
+        _openBills.where(isCoverEligible).map((b) => _dues[b.id]!).sumMoney() -
+            _activeCovers.map((c) => c.amount).sumMoney();
+    final left = splitMode && _tender.splits.isNotEmpty
+        ? _tenderDue - _tender.splitTotal
+        : _tenderDue;
+    final cap = eligible < left ? eligible : left;
+    return cap.isPositive ? cap : Money.zero;
+  }
+
+  List<BillPaymentCall> _plan(FeatureFlags flags) => planBillPayments(
+        bills: <PlanBill>[
+          for (final bill in _openBills)
+            PlanBill(
+              id: bill.id,
+              billType: bill.billType,
+              due: _dues[bill.id]!,
+              coverEligible: isCoverEligible(bill),
+            ),
+        ],
+        covers: _activeCovers,
+        coverMode: ref.read(ticketConfigProvider).coverPaymentMode,
+        tenders:
+            _tender.lines(due: _tenderDue, splitMode: flags.splitPayment) ??
+                const <TenderLine>[],
+      );
+
+  /// Reads back what the desk recorded on [billId]. Cover may have been
+  /// taken for less than was sent (the desk caps it at the ticket's balance),
+  /// so the bill only counts as settled when the desk says so.
+  void _record(String billId, Map<String, dynamic> response) {
+    final ack = BillPaymentAck.fromAck(response);
+    final left = ack.bill?.id == billId ? ack.remaining : null;
+    if (left == null || !left.isPositive) {
+      _settledBillIds.add(billId);
+      _dues[billId] = Money.zero;
+    } else {
+      _dues[billId] = left;
+    }
+  }
 
   Future<void> _pay() async {
     if (_submitting) return;
-    if (_isCreditBlocked) {
-      DynamicToast.show(context,
-          message: 'Link a customer before using Credit payment',
-          kind: ToastKind.error);
-      return;
-    }
-
     final flags = ref.read(flagsProvider);
-    final useSplits = flags.splitPayment && _splits.isNotEmpty;
-
-    final selectedMode = _selectedMode;
-    if (!useSplits && selectedMode == null) {
-      DynamicToast.show(context,
-          message: 'Pick a payment mode first', kind: ToastKind.error);
-      return;
+    final retrying = _pending != null;
+    final coverPaysAll = _activeCovers.isNotEmpty && _tenderDue.isZero;
+    if (!retrying && !coverPaysAll) {
+      if (_tender.creditBlocked(hasCustomer: widget.hasCustomer)) {
+        DynamicToast.show(context,
+            message: 'Link a customer before using Credit payment',
+            kind: ToastKind.error);
+        return;
+      }
+      final useSplits = flags.splitPayment && _tender.splits.isNotEmpty;
+      if (!useSplits && _tender.selected == null) {
+        DynamicToast.show(context,
+            message: 'Pick a payment mode first', kind: ToastKind.error);
+        return;
+      }
     }
 
     if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'payment');
     if (!pinOk || !mounted) return;
 
+    final run = _pending ?? _PaymentRun(_plan(flags));
     setState(() => _submitting = true);
+    final modes = <String>{
+      for (final call in run.calls)
+        for (final line in call.lines) line.mode,
+    };
+    logD(
+        '[Payment]',
+        '${retrying ? 'retrying' : 'paying'} '
+            '${run.calls.length - run.done.length} bill(s); '
+            'cover x${_activeCovers.length}, modes ${modes.join('/')}');
 
     final socketService = ref.read(socketServiceProvider);
-
-    final List<_PaymentEntry> entries;
-    if (useSplits) {
-      entries = _splits;
-    } else {
-      final notes = _needsReason
-          ? '${_reasonController.text.trim()} | Auth: ${_authorizedByController.text.trim()}'
-          : null;
-      entries = <_PaymentEntry>[
-        _PaymentEntry(
-          mode: selectedMode!,
-          amount: widget.grandTotal,
-          reference: _refController.text.trim().isNotEmpty
-              ? _refController.text.trim()
-              : null,
-          notes: notes,
-        ),
-      ];
-    }
-
-    final outstanding = widget.bills
-        .where((b) => !_settledBillIds.contains(b.id))
-        .toList(growable: false);
-    final billWeights =
-        outstanding.map((b) => b.totalAmount).toList(growable: false);
-
-    final perBillPayments = <String, List<Map<String, dynamic>>>{
-      for (final bill in outstanding) bill.id: <Map<String, dynamic>>[],
-    };
-    for (final entry in entries) {
-      final shares = allocateProportionally(entry.amount, billWeights);
-      for (var i = 0; i < outstanding.length; i++) {
-        final share = shares[i];
-        if (share.isZero) continue;
-        perBillPayments[outstanding[i].id]!.add(
-          _PaymentEntry(
-            mode: entry.mode,
-            amount: share,
-            reference: entry.reference,
-            notes: entry.notes,
-          ).toMap(),
-        );
-      }
-    }
-
-    var failures = 0;
-    for (final bill in outstanding) {
-      final payments = perBillPayments[bill.id]!;
-      if (payments.isEmpty) continue;
+    ({BillPaymentCall call, Map<String, dynamic> ack})? failed;
+    for (final call in run.calls) {
+      if (run.done.contains(call.billId)) continue;
 
       // emitAckIdempotent owns the `client_request_id`: one per intent (bill +
       // payments), the same on a retry after a lost ack so the desk replays the
@@ -218,88 +208,117 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
       // the retirement or the expiry.
       final response = await socketService.emitAckIdempotent(
         'bill:payment',
-        <String, dynamic>{
-          'bill_id': bill.id,
-          'payments': payments,
-        },
+        call.toPayload(),
         timeout: const Duration(seconds: 15),
       );
 
       if (response['kind'] == 'success') {
-        _settledBillIds.add(bill.id);
+        run.done.add(call.billId);
+        _record(call.billId, response);
       } else {
-        failures++;
-
+        failed = (call: call, ack: response);
         break;
       }
     }
 
     if (!mounted) return;
-    if (failures == 0 && _settledBillIds.length == widget.bills.length) {
-      Navigator.of(context).pop(true);
+    final total = widget.bills.length;
+    final done = _settledBillIds.length;
+    if (failed == null) {
+      _pending = null;
+      if (done == total) {
+        Navigator.of(context).pop(true);
+        return;
+      }
+      final short = run.done.any((id) => !_settledBillIds.contains(id));
+      if (short) {
+        // Everything went through, but the desk took less cover than was
+        // sent: what was entered is spent, and the rest is still due.
+        _covers.clear();
+        _tender.reset();
+        setState(() {
+          _submitting = false;
+          _stillDue = _StillDue.coverCapped;
+        });
+        logD('[Payment]', 'went through short; money still due');
+        DynamicToast.show(context,
+            message: '${formatRupeesCompact(_due)} still due',
+            kind: ToastKind.warning);
+        return;
+      }
+      // A bill nothing landed on was not sent (as before).
+      setState(() => _submitting = false);
+      DynamicToast.show(context,
+          message: _retryMessage(done, total), kind: ToastKind.error);
       return;
     }
 
+    final error = AckError.fromAck(failed.ack);
+    final outcomeUnknown =
+        isTransportFailure(failed.ack) || error.code == AckCode.badResponse;
+    final partly = run.done.isNotEmpty;
+    final coverRefused =
+        !outcomeUnknown && failed.call.lines.any((l) => l.isCover);
+    logD('[Payment]',
+        'bill:payment failed: ${error.code ?? 'no code'}, $done of $total settled');
+    if (outcomeUnknown) {
+      // It may have landed: resend exactly this, so the desk can replay it.
+      _pending = partly ? run : null;
+    } else {
+      // The desk refused that bill, so nothing on it was recorded.
+      _pending = null;
+      if (partly) {
+        _covers.clear();
+        _tender.reset();
+        _stillDue = _StillDue.partly;
+      }
+    }
     setState(() => _submitting = false);
-    final done = _settledBillIds.length;
-    DynamicToast.show(
-      context,
-      message: done == 0
-          ? 'Payment failed — nothing was charged. Retry.'
-          : 'Settled $done of ${widget.bills.length}. '
-              'Retry sends only the remaining ${widget.bills.length - done}.',
-      kind: ToastKind.error,
-    );
+    final String message;
+    if (coverRefused) {
+      message = coverErrorCopy(error.code) ?? error.message;
+    } else if (!outcomeUnknown && partly) {
+      message = 'Settled $done of $total. Take payment for the remaining '
+          '${formatRupeesCompact(_due)}.';
+    } else {
+      message = _retryMessage(done, total);
+    }
+    DynamicToast.show(context, message: message, kind: ToastKind.error);
   }
 
-  void _addSplit() {
-    final mode = _selectedMode;
-    if (mode == null) return;
-    final amount = Money.fromWire(_splitAmountController.text.trim());
-    if (amount == null || !amount.isPositive) return;
-    final capped = amount > _remaining ? _remaining : amount;
-    if (!capped.isPositive) return;
-
-    setState(() {
-      _splits.add(_PaymentEntry(
-        mode: mode,
-        amount: capped,
-        reference: _refController.text.trim().isNotEmpty
-            ? _refController.text.trim()
-            : null,
-        notes: _needsReason
-            ? '${_reasonController.text.trim()} | Auth: ${_authorizedByController.text.trim()}'
-            : null,
-      ));
-      _splitAmountController.clear();
-      _refController.clear();
-      _reasonController.clear();
-      _authorizedByController.clear();
-      _selectedMode = null;
-    });
-  }
+  static String _retryMessage(int done, int total) => done == 0
+      ? 'Payment failed — nothing was charged. Retry.'
+      : 'Settled $done of $total. '
+          'Retry sends only the remaining ${total - done}.';
 
   @override
   void dispose() {
-    _refController.dispose();
-    _tenderedController.dispose();
-    _reasonController.dispose();
-    _authorizedByController.dispose();
-    _splitAmountController.dispose();
+    _tender.removeListener(_onTenderChanged);
+    _tender.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final flags = ref.watch(flagsProvider);
+    final coverOn = canRedeemCover(flags, ref.watch(ticketConfigProvider));
     final isSplitMode = flags.splitPayment;
-    final modes = _availableModes();
+    final modes =
+        payModeCatalog(flags: flags, listed: ref.watch(payModesProvider));
+    final locked = _pending != null;
+    final tenderDue = _tenderDue;
+    final coverPaysAll = _activeCovers.isNotEmpty && tenderDue.isZero;
 
     final bool canPay;
-    if (isSplitMode && _splits.isNotEmpty) {
-      canPay = _remaining.isZero && !_submitting;
+    if (_submitting) {
+      canPay = false;
+    } else if (locked || coverPaysAll) {
+      canPay = true;
+    } else if (isSplitMode && _tender.splits.isNotEmpty) {
+      canPay = (tenderDue - _tender.splitTotal).isZero;
     } else {
-      canPay = _selectedMode != null && !_submitting && !_isCreditBlocked;
+      canPay = _tender.selectedComplete &&
+          !_tender.creditBlocked(hasCustomer: widget.hasCustomer);
     }
 
     return DraggableScrollableSheet(
@@ -357,243 +376,63 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
                   ),
                 ),
             ],
-            const SizedBox(height: 16),
-            Text('PAYMENT MODE',
-                style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final mode in modes)
-                  _ModeChip(
-                    label: _modeLabel(mode),
-                    icon: _modeIcon(mode),
-                    selected: _selectedMode == mode,
-                    onTap: () => setState(() => _selectedMode = mode),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_isCreditBlocked)
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.danger.withValues(alpha: 0.08),
-                  borderRadius: const BorderRadius.all(AppRadii.sm),
-                  border: Border.all(
-                      color: AppColors.danger.withValues(alpha: 0.3)),
-                ),
-                child: const Row(children: [
-                  Icon(Icons.warning_amber, color: AppColors.danger, size: 16),
-                  SizedBox(width: 8),
-                  Expanded(
-                      child: Text('Link a customer to use Credit',
-                          style: AppTypography.caption)),
-                ]),
-              ),
-            if (_needsRef) ...[
+            if (_stillDue != null) ...[
               const SizedBox(height: 12),
-              Text('REFERENCE NUMBER',
-                  style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
-              const SizedBox(height: 8),
-              _InputField(
-                controller: _refController,
-                hint: _selectedMode == PaymentMode.upi
-                    ? 'UPI transaction ID'
-                    : 'Card approval code',
+              _Notice(
+                color: AppColors.amber,
+                icon: Icons.info_outline,
+                text: '${formatRupeesCompact(_due)} still due — '
+                    '${switch (_stillDue!) {
+                  _StillDue.coverCapped =>
+                    'a ticket had less cover left than shown. Take another payment for it.',
+                  _StillDue.partly =>
+                    'part of the payment went through. Take another payment for the rest.',
+                }}',
               ),
             ],
-            if (_needsReason) ...[
+            if (locked) ...[
               const SizedBox(height: 12),
-              Text('REASON',
-                  style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
-              const SizedBox(height: 8),
-              _InputField(
-                  controller: _reasonController,
-                  hint: 'Reason for comp / company bill'),
-              const SizedBox(height: 8),
-              _InputField(
-                  controller: _authorizedByController,
-                  hint: 'Authorized by (name)'),
-            ],
-            if (_selectedMode == PaymentMode.cash &&
-                !(isSplitMode && _splits.isNotEmpty)) ...[
-              const SizedBox(height: 12),
-              Text('CASH TENDERED',
-                  style: AppTypography.micro.copyWith(letterSpacing: 1.2)),
-              const SizedBox(height: 8),
-              _InputField(
-                controller: _tenderedController,
-                hint: formatRupeesCompact(widget.grandTotal),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                prefix: '₹ ',
-                onChanged: (_) => setState(() {}),
-              ),
-              if (_tendered.isPositive && _change.isPositive) ...[
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withValues(alpha: 0.08),
-                    borderRadius: const BorderRadius.all(AppRadii.sm),
-                    border: Border.all(
-                        color: AppColors.success.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(children: [
-                    const Icon(Icons.change_circle_outlined,
-                        color: AppColors.success, size: 18),
-                    const SizedBox(width: 8),
-                    const Text('Change:', style: AppTypography.bodyMd),
-                    const Spacer(),
-                    Text(formatRupeesCompact(_change),
-                        style: AppTypography.title.copyWith(
-                            color: AppColors.success,
-                            fontWeight: FontWeight.w700)),
-                  ]),
-                ),
-              ],
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final d in [100, 200, 500, 1000, 2000])
-                    if (Money.rupees(d) >= widget.grandTotal)
-                      GestureDetector(
-                        onTap: () {
-                          _tenderedController.text = d.toString();
-                          setState(() {});
-                        },
-                        child: AppSurface(
-                          borderRadius: const BorderRadius.all(AppRadii.pill),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                          shadow: const [],
-                          child: Text('₹$d',
-                              style: AppTypography.caption
-                                  .copyWith(fontWeight: FontWeight.w600)),
-                        ),
-                      ),
-                ],
+              const _Notice(
+                color: AppColors.amber,
+                icon: Icons.sync_problem_outlined,
+                text: 'Part of this payment went through. Pay retries the '
+                    'rest exactly as entered.',
               ),
             ],
-            if (isSplitMode) ...[
-              const SizedBox(height: 12),
-              Divider(color: context.palette.ink10),
-              const SizedBox(height: 8),
+            if (coverOn)
+              CoverRedeemSection(
+                covers: _covers,
+                coverable: _coverable(isSplitMode),
+                enabled: !locked && !_submitting,
+                onAdd: (cover) => setState(() => _covers.add(cover)),
+                onRemove: (cover) => setState(() => _covers.remove(cover)),
+              ),
+            if (_activeCovers.isNotEmpty) ...[
+              const SizedBox(height: 10),
               Row(children: [
-                Icon(Icons.call_split_outlined,
-                    color: context.palette.ink70, size: 18),
-                const SizedBox(width: 8),
-                const Text('Split Payment', style: AppTypography.bodyMd),
-                const Spacer(),
-                Text('Remaining: ${formatRupeesCompact(_remaining)}',
-                    style: AppTypography.caption.copyWith(
-                        color: _remaining.isPositive
-                            ? AppColors.terra500
-                            : AppColors.success,
-                        fontWeight: FontWeight.w600)),
-              ]),
-              const SizedBox(height: 8),
-              for (int i = 0; i < _splits.length; i++)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: AppSurface(
-                    borderRadius: const BorderRadius.all(AppRadii.sm),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    shadow: const [],
-                    child: Row(children: [
-                      Icon(_modeIcon(_splits[i].mode),
-                          size: 16, color: context.palette.ink70),
-                      const SizedBox(width: 8),
-                      Text(_modeLabel(_splits[i].mode),
-                          style: AppTypography.bodyMd),
-                      const Spacer(),
-                      Text(formatRupeesCompact(_splits[i].amount),
-                          style: AppTypography.bodyMd
-                              .copyWith(fontWeight: FontWeight.w600)),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () => setState(() => _splits.removeAt(i)),
-                        child: const Icon(Icons.close,
-                            size: 16, color: AppColors.danger),
-                      ),
-                    ]),
-                  ),
-                ),
-              if (_remaining.isPositive &&
-                  _remaining < const Money.rupees(1) &&
-                  _splits.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _splits.add(_PaymentEntry(
-                          mode: PaymentMode.cash,
-                          amount: _remaining,
-                          notes: 'Round-off',
-                        ));
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: AppColors.amber.withValues(alpha: 0.1),
-                        borderRadius: const BorderRadius.all(AppRadii.sm),
-                        border: Border.all(
-                            color: AppColors.amber.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(children: [
-                        const Icon(Icons.monetization_on_outlined,
-                            color: AppColors.amber, size: 16),
-                        const SizedBox(width: 8),
-                        Expanded(
-                            child: Text(
-                                'Settle ${formatRupeesCompact(_remaining)} shortfall (round-off)',
-                                style: AppTypography.caption
-                                    .copyWith(fontWeight: FontWeight.w600))),
-                        const Icon(Icons.add_circle_outline,
-                            color: AppColors.amber, size: 16),
-                      ]),
-                    ),
-                  ),
-                ),
-              if (_remaining.isPositive) ...[
-                Row(children: [
-                  Expanded(
-                      child: _InputField(
-                    controller: _splitAmountController,
-                    hint: formatRupeesCompact(_remaining),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    prefix: '₹ ',
-                  )),
+                if (coverPaysAll) ...[
+                  const Icon(Icons.check_circle_outline,
+                      color: AppColors.success, size: 18),
                   const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: _selectedMode != null ? _addSplit : null,
-                    child: Container(
-                      width: AppTouchTargets.control,
-                      height: AppTouchTargets.control,
-                      decoration: BoxDecoration(
-                        color: _selectedMode != null
-                            ? AppColors.terra500
-                            : context.palette.ink05,
-                        borderRadius: const BorderRadius.all(AppRadii.sm),
-                      ),
-                      child: Icon(Icons.add,
-                          color: _selectedMode != null
-                              ? Colors.white
-                              : context.palette.ink30),
-                    ),
-                  ),
-                ]),
-              ],
+                  const Text('Cover pays it all', style: AppTypography.bodyMd),
+                ] else ...[
+                  const Text('To collect', style: AppTypography.bodyMd),
+                  const Spacer(),
+                  Text(formatRupeesCompact(tenderDue),
+                      style: AppTypography.title
+                          .copyWith(fontWeight: FontWeight.w700)),
+                ],
+              ]),
             ],
+            if (!coverPaysAll)
+              TenderForm(
+                controller: _tender,
+                modes: modes,
+                due: tenderDue,
+                allowSplit: isSplitMode,
+                hasCustomer: widget.hasCustomer,
+                enabled: !locked,
+              ),
             const SizedBox(height: 16),
             Row(children: [
               Expanded(
@@ -619,89 +458,27 @@ class _PaymentSheetBodyState extends ConsumerState<_PaymentSheetBody> {
   }
 }
 
-class _InputField extends StatelessWidget {
-  final TextEditingController controller;
-  final String hint;
-  final TextInputType? keyboardType;
-  final String? prefix;
-  final ValueChanged<String>? onChanged;
-  const _InputField({
-    required this.controller,
-    required this.hint,
-    this.keyboardType,
-    this.prefix,
-    this.onChanged,
-  });
+class _Notice extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+  final String text;
+
+  const _Notice({required this.color, required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: context.palette.surface,
+        color: color.withValues(alpha: 0.08),
         borderRadius: const BorderRadius.all(AppRadii.sm),
-        border: Border.all(color: context.palette.hairline, width: 1.5),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        style: AppTypography.bodyMd,
-        onChanged: onChanged,
-        cursorColor: AppColors.terra,
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          hintText: hint,
-          hintStyle: AppTypography.caption,
-          isDense: true,
-          prefixText: prefix,
-          prefixStyle: AppTypography.bodyMd,
-        ),
-      ),
-    );
-  }
-}
-
-class _ModeChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-  const _ModeChip({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? context.palette.terraSoft : palette.surface,
-          borderRadius: const BorderRadius.all(AppRadii.sm),
-          border: Border.all(
-              color: selected ? AppColors.terra : context.palette.hairline,
-              width: selected ? 1.5 : 1),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                size: 16,
-                color: selected ? AppColors.terraDeep : palette.ink70),
-            const SizedBox(width: 6),
-            Text(label,
-                style: AppTypography.bodyMd.copyWith(
-                    color: selected ? AppColors.terraDeep : palette.ink,
-                    fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ),
+      child: Row(children: [
+        Icon(icon, color: color, size: 16),
+        const SizedBox(width: 8),
+        Expanded(child: Text(text, style: AppTypography.caption)),
+      ]),
     );
   }
 }

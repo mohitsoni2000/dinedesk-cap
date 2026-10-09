@@ -1,0 +1,206 @@
+{
+  "kind": "success",
+  "payments": [
+    {
+      "payment_id": "pay_b7e2_1",
+      "bill_status": {
+        "payment_status": "partial"
+      },
+      "cover": {
+        "ticket_code": "CDT:P3VJ5LDY2GQA7FEC",
+        "ticket_number": "ET-042",
+        "cover_balance_after": 0
+      }
+    },
+    {
+      "payment_id": "pay_b7e2_2",
+      "bill_status": {
+        "payment_status": "paid"
+      }
+    }
+  ],
+  "bill": {
+    "id": "bill_b7e2_food",
+    "bill_number": "INV/26-27/001236",
+    "bill_series_id": "bs_food",
+    "order_id": "ord_b7e2",
+    "bill_type": "food",
+    "subtotal": 905,
+    "gst_breakdown": "[{\"rate\":5,\"taxable_amount\":905,\"cgst\":22.63,\"sgst\":22.62}]",
+    "total_gst": 45.25,
+    "service_charge": 0,
+    "discount_amount": 0,
+    "total_amount": 950,
+    "payment_status": "paid",
+    "show_gstin": 1,
+    "status": "active",
+    "void_reason": null,
+    "voided_by": null,
+    "voided_at": null,
+    "generated_by": "op_asha",
+    "printed_by": null,
+    "printed_at": null,
+    "is_offline_generated": 0,
+    "created_at": "2026-10-09 15:18:40",
+    "paid_at": "2026-10-09 15:20:05",
+    "comp_reason": null,
+    "comp_authorized_by": null,
+    "discount_label": null,
+    "coupon_code": null,
+    "bill_source": "pos",
+    "split_label": null,
+    "invoice_number": null,
+    "gst_inclusive_total": 0,
+    "total_amount_override": null,
+    "round_off": -0.25,
+    "offer_savings_total": 0,
+    "adjust_payment_to_total": 0,
+    "version": 3,
+    "order_number": "ORD-0047",
+    "customer_id": null,
+    "customer_name": null,
+    "assigned_waiter_id": null,
+    "table_id": "tbl_t4",
+    "customer_phone": null,
+    "table_name": "T4",
+    "waiter_name": null,
+    "credit_settled_at": null,
+    "credit_settled_mode": null,
+    "credit_settle_note": null,
+    "credit_settled_by_name": null,
+    "items": [
+      {
+        "id": "bi_b7e2_1",
+        "bill_id": "bill_b7e2_food",
+        "order_item_id": "oi_b7e2_1",
+        "item_id": "itm_pbm",
+        "item_name": "Paneer Butter Masala",
+        "quantity": 2,
+        "unit_price": 340,
+        "options_price": 0,
+        "total_price": 680,
+        "gst_rate": 5,
+        "hsn_code": "996331",
+        "gst_amount": 34,
+        "vat_amount": 0,
+        "notes": null,
+        "package_id": null,
+        "gst_inclusive": 0,
+        "item_type": "food",
+        "offer_discount_amount": 0
+      },
+      {
+        "id": "bi_b7e2_2",
+        "bill_id": "bill_b7e2_food",
+        "order_item_id": "oi_b7e2_2",
+        "item_id": "itm_naan",
+        "item_name": "Butter Naan",
+        "quantity": 3,
+        "unit_price": 75,
+        "options_price": 0,
+        "total_price": 225,
+        "gst_rate": 5,
+        "hsn_code": "996331",
+        "gst_amount": 11.25,
+        "vat_amount": 0,
+        "notes": null,
+        "package_id": null,
+        "gst_inclusive": 0,
+        "item_type": "food",
+        "offer_discount_amount": 0
+      }
+    ],
+    "payments": [
+      {
+        "id": "pay_b7e2_1",
+        "bill_id": "bill_b7e2_food",
+        "payment_mode": "cover_ticket",
+        "amount": 800,
+        "reference_number": "ET-042",
+        "notes": "Cover ticket ET-042",
+        "collected_by": "op_asha",
+        "paid_at": "2026-10-09 15:20:05",
+        "mode_print_name": "Cover Ticket",
+        "collected_by_name": "Asha"
+      },
+      {
+        "id": "pay_b7e2_2",
+        "bill_id": "bill_b7e2_food",
+        "payment_mode": "cash",
+        "amount": 150,
+        "reference_number": null,
+        "notes": null,
+        "collected_by": "op_asha",
+        "paid_at": "2026-10-09 15:20:05",
+        "mode_print_name": null,
+        "collected_by_name": "Asha"
+      }
+    ],
+    "parsed_gst_breakdown": [
+      {
+        "rate": 5,
+        "taxable_amount": 905,
+        "cgst": 22.63,
+        "sgst": 22.62
+      }
+    ]
+  },
+  "order": {
+    "id": "ord_b7e2",
+    "order_number": "ORD-0047",
+    "table_id": "tbl_t4",
+    "room_id": null,
+    "order_type": "dine_in",
+    "fulfillment_type": null,
+    "status": "paid",
+    "customer_id": null,
+    "customer_name": null,
+    "notes": null,
+    "created_by": "op_asha",
+    "created_at": "2026-10-09 14:52:10",
+    "business_date": "2026-10-09",
+    "kot_number": "KOT-0131",
+    "token_number": null,
+    "token_label": null,
+    "token_date": null,
+    "token_status": null,
+    "token_ready_at": null,
+    "token_collected_at": null,
+    "food_subtotal": 905,
+    "liquor_subtotal": 0,
+    "beverages_subtotal": 0,
+    "total": 905,
+    "applied_offers": [],
+    "items": [
+      {
+        "id": "oi_b7e2_1",
+        "item_id": "itm_pbm",
+        "item_name": "Paneer Butter Masala",
+        "quantity": 2,
+        "unit_price": 340,
+        "total_price": 680,
+        "options_price": 0,
+        "item_type": "food",
+        "selected_options": "[]",
+        "notes": null,
+        "kot_status": "sent",
+        "kot_number": "KOT-0131"
+      },
+      {
+        "id": "oi_b7e2_2",
+        "item_id": "itm_naan",
+        "item_name": "Butter Naan",
+        "quantity": 3,
+        "unit_price": 75,
+        "total_price": 225,
+        "options_price": 0,
+        "item_type": "food",
+        "selected_options": "[]",
+        "notes": null,
+        "kot_status": "sent",
+        "kot_number": "KOT-0131"
+      }
+    ]
+  },
+  "order_settled": true
+}

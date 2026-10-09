@@ -45,6 +45,8 @@ void main() {
             'order_with_token.json',
             'order_ready_token.json',
             'qsr_checkout_ack.json',
+            'bill_payment_cover_ack.json',
+            'bill_payment_cover_error_ack.json',
           ]));
     });
 

@@ -262,7 +262,16 @@ class ServerBill {
   final String billNumber;
   final Money totalAmount;
   final String billType;
+
+  /// Settled: fully paid, or put on a customer's credit. Nothing more can be
+  /// taken on it.
   final bool isPaid;
+
+  /// Voided on the desk (`status: 'voided'`).
+  final bool isVoided;
+
+  /// Given away (`comp_reason` set).
+  final bool isComp;
 
   const ServerBill({
     required this.id,
@@ -270,18 +279,27 @@ class ServerBill {
     required this.totalAmount,
     required this.billType,
     required this.isPaid,
+    this.isVoided = false,
+    this.isComp = false,
   });
 
   factory ServerBill.fromMap(Map<String, dynamic> m) {
     const entity = 'ServerBill';
+    // A desk bill sends `status` (active / voided) and `payment_status`
+    // (unpaid / partial / paid / credit); `is_paid` and a settled `status`
+    // are older shapes, still read.
+    final status = stringOr(m, 'status', '').toLowerCase();
+    final paymentStatus = stringOr(m, 'payment_status', '').toLowerCase();
     return ServerBill(
       id: requireString(m, 'id', entity),
       billNumber: optionalString(m, 'bill_number') ?? '',
       totalAmount: requireMoney(m, 'total_amount', entity),
       billType: stringOr(m, 'bill_type', 'food'),
       isPaid: boolOr(m, 'is_paid', false) ||
-          <String>['paid', 'credit', 'settled']
-              .contains(stringOr(m, 'status', '').toLowerCase()),
+          <String>['paid', 'credit', 'settled'].contains(status) ||
+          <String>['paid', 'credit'].contains(paymentStatus),
+      isVoided: status == 'voided',
+      isComp: optionalString(m, 'comp_reason') != null,
     );
   }
 }

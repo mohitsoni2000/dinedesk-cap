@@ -97,6 +97,10 @@ class SocketService {
     'discount:apply',
     // Counter "Pay & Fire": order, KOT, bills and payment in one ack.
     'qsr:checkout',
+    // Gate: a ticket sale takes money; a check-in spends a ticket for good
+    // (anti-passback), so a lost ack must be retried, never guessed.
+    'ticket:issue',
+    'ticket:check_in',
   };
 
   static String namespaceUrl(String host, int port, {bool useTls = false}) =>

@@ -20,8 +20,11 @@ dependencies:
 
   # Liquid Glass rendering (iOS 26 style)
 
-  # QR scanning for device pairing
+  # QR scanning for device pairing and gate check-in
   mobile_scanner: ^7.2.0
+  # Entry-ticket QR drawn on screen (and, later, rastered for slip printers).
+  # Pinned: a slip's QR must stay the same bytes across builds.
+  qr: 3.0.2
 
   # Currency formatting (₹), date filters
   intl: ^0.19.0

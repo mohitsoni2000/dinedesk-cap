@@ -48,7 +48,7 @@
 		</dict>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Restro needs camera access to scan the QR code on the admin desktop for device pairing.</string>
+	<string>Restro needs camera access to scan QR codes: the one on the admin desktop to pair this device, and guests' entry-ticket QR codes to check them in at the gate.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Command.Crew connects to your restaurant's desk computer over your local Wi-Fi to send orders and receive live updates. No data leaves your network.</string>
 	<!-- Reserved for future Bonjour discovery of the desk. Harmless today.

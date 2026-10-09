@@ -13,6 +13,7 @@ import 'screens/tables_screen.dart';
 import 'screens/rooms_screen.dart';
 import 'screens/counter_checkout_screen.dart';
 import 'screens/counter_screen.dart';
+import 'screens/gate_scan_screen.dart';
 import 'screens/gate_screen.dart';
 import 'screens/order_builder_screen.dart';
 import 'screens/order_review_screen.dart';
@@ -21,6 +22,9 @@ import 'screens/order_detail_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/ticket_issue_result_screen.dart';
+import 'screens/ticket_issue_screen.dart';
+import 'screens/ticket_recent_screen.dart';
 import 'screens/token_result_screen.dart';
 import 'screens/change_pin_screen.dart';
 import 'screens/disconnected_screen.dart';
@@ -196,6 +200,28 @@ final routerProvider = Provider<GoRouter>((ref) {
               key: s.pageKey,
               fromBottom: true,
               child: const ConnectionBanner(child: TokenResultScreen()))),
+      // The gate's flows, outside the shell like the counter's. The guard
+      // keeps '/gate…' to users with gate rights.
+      GoRoute(
+          path: '/gate/issue',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              child: const ConnectionBanner(child: TicketIssueScreen()))),
+      GoRoute(
+          path: '/gate/issue/result',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              fromBottom: true,
+              child: const ConnectionBanner(child: TicketIssueResultScreen()))),
+      GoRoute(
+          path: '/gate/scan',
+          pageBuilder: (_, s) =>
+              liquidPage(key: s.pageKey, child: const GateScanScreen())),
+      GoRoute(
+          path: '/gate/recent',
+          pageBuilder: (_, s) => liquidPage(
+              key: s.pageKey,
+              child: const ConnectionBanner(child: TicketRecentScreen()))),
       GoRoute(
           path: '/order/:tableId',
           pageBuilder: (_, s) => liquidPage(

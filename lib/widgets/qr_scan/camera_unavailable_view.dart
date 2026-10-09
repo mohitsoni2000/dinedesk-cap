@@ -8,9 +8,14 @@ import '../../theme/tokens.dart';
 class CameraUnavailableView extends ConsumerWidget {
   final VoidCallback? onOpenSettings;
 
+  /// Why the camera is needed; the pairing wording when not given.
+  final String message;
+
   const CameraUnavailableView({
     super.key,
     this.onOpenSettings,
+    this.message = 'Camera permission is required to scan the desktop pairing '
+        'QR code. Please enable it in device settings.',
   });
 
   @override
@@ -58,7 +63,7 @@ class CameraUnavailableView extends ConsumerWidget {
 
               // Subtitle
               Text(
-                'Camera permission is required to scan the desktop pairing QR code. Please enable it in device settings.',
+                message,
                 textAlign: TextAlign.center,
                 style: AppTypography.caption.copyWith(
                   color: Colors.white.withValues(alpha: 0.65),

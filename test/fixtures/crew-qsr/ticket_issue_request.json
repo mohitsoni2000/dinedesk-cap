@@ -1,0 +1,22 @@
+{
+  "lines": [
+    {
+      "ticket_type_id": "ett_couple",
+      "qty": 2
+    }
+  ],
+  "guest_name": "Ravi Sharma",
+  "guest_phone": "9876543210",
+  "payments": [
+    {
+      "payment_mode": "cash",
+      "amount": 1000
+    },
+    {
+      "payment_mode": "upi",
+      "reference_number": "628311904417"
+    }
+  ],
+  "expected_total": 4000,
+  "client_request_id": "req_1760020812000000_3fa9c2d1"
+}

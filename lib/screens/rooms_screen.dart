@@ -11,6 +11,7 @@ import '../services/offline_guard.dart';
 import '../data/currency.dart';
 import '../data/ist_time.dart';
 import '../data/room_card_view.dart';
+import '../data/slot_order.dart';
 import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
@@ -103,11 +104,7 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
 
     if (intent.action == TableOpenAction.openOrder) {
       final activeOrders = ref.read(activeOrdersProvider);
-      final activeOrderId = r.activeOrderId;
-      final active = activeOrders.where((o) {
-        return (activeOrderId != null && o.id == activeOrderId) ||
-            o.roomId == r.serverId;
-      }).firstOrNull;
+      final active = runningOrderForSlot(activeOrders, r.activeOrderId);
       if (active != null) {
         ref.read(syncServiceProvider).adoptOrder(active);
       }

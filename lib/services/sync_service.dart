@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/money.dart';
 import '../data/providers.dart';
 import '../data/rejected_kots.dart';
+import '../data/slot_order.dart';
 import '../models/entry_ticket.dart';
 import '../models/feature_flags.dart';
 import '../models/kot_print_config.dart';
@@ -1180,8 +1181,7 @@ class SyncService {
     final order = _parseOrder(optionalMap(response, 'order'));
     if (order == null) return;
 
-    _replaceActiveOrder(order);
-    _updateTableForOrder(order, markBilled: markTableBilled);
+    _adoptLive(order, markBilled: markTableBilled);
 
     if (includeHistory && order.itemCount > 0) {
       _upsertHistory(_serverOrderToHistory(order));
@@ -1189,9 +1189,21 @@ class SyncService {
   }
 
   void adoptOrder(ServerOrder order) {
-    _replaceActiveOrder(order);
-    _updateTableForOrder(order);
+    _adoptLive(order);
     if (order.itemCount > 0) _upsertHistory(_serverOrderToHistory(order));
+  }
+
+  /// A settled order leaves the active list and never re-marks its table;
+  /// the desk sends `order:updated` for a paid order right after the
+  /// `table:updated` that freed the table, and adopting it used to flip
+  /// the table back to "mine" with a paid order on it.
+  void _adoptLive(ServerOrder order, {bool markBilled = false}) {
+    if (isSettledOrderStatus(order.status)) {
+      _removeActiveOrder(order.id);
+      return;
+    }
+    _replaceActiveOrder(order);
+    _updateTableForOrder(order, markBilled: markBilled);
   }
 
   void applyTableAck(Map<String, dynamic> response) {

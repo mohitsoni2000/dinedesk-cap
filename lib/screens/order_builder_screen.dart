@@ -12,6 +12,7 @@ import '../data/counter_providers.dart';
 import '../data/menu_selectors.dart';
 import '../data/money.dart';
 import '../data/order_target.dart';
+import '../data/slot_order.dart';
 import '../data/parked_providers.dart';
 import '../data/providers.dart';
 import '../data/currency.dart';
@@ -239,13 +240,10 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     // Every counter order is a new one; an empty slot id would match them
     // all.
     if (_isCounter) return null;
-    final activeOrderId = _activeOrderIdForSlot();
-
-    return ref.read(activeOrdersProvider).where((order) {
-      final slotId = widget.isRoom ? order.roomId : order.tableId;
-      return (activeOrderId != null && order.id == activeOrderId) ||
-          slotId == widget.tableId;
-    }).firstOrNull;
+    return runningOrderForSlot(
+      ref.read(activeOrdersProvider),
+      _activeOrderIdForSlot(),
+    );
   }
 
   Future<void> _saveAndExitDraft() async {

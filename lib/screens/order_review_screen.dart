@@ -251,30 +251,19 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           .read(roomsProvider)
           .where((r) => r.serverId == widget.tableId)
           .firstOrNull;
-      if (room?.activeOrderId != null && room!.activeOrderId!.isNotEmpty) {
-        return room.activeOrderId;
-      }
-      final active = ref.read(activeOrdersProvider).where((order) {
-        return order.roomId == widget.tableId &&
-            order.status != 'paid' &&
-            order.status != 'cancelled';
-      }).firstOrNull;
-      return active?.id;
+      // The slot's own id or nothing — see runningOrderForSlot. Falling back
+      // to "any open order on this room/table" is how a freed table's next
+      // round ended up on a stale order the desk no longer showed.
+      final id = room?.activeOrderId;
+      return (id == null || id.isEmpty) ? null : id;
     }
     if (_orderType != _OrderType.dineIn) return null;
     final table = ref
         .read(tablesProvider)
         .where((t) => t.serverId == widget.tableId)
         .firstOrNull;
-    if (table?.activeOrderId != null && table!.activeOrderId!.isNotEmpty) {
-      return table.activeOrderId;
-    }
-    final active = ref.read(activeOrdersProvider).where((order) {
-      return order.tableId == widget.tableId &&
-          order.status != 'paid' &&
-          order.status != 'cancelled';
-    }).firstOrNull;
-    return active?.id;
+    final id = table?.activeOrderId;
+    return (id == null || id.isEmpty) ? null : id;
   }
 
   String? _orderIdFromResponse(
@@ -1044,32 +1033,21 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                 .firstOrNull ??
             widget.tableId);
 
-    final activeOrders = ref.watch(activeOrdersProvider);
+    // Same rule as _activeOrderIdForTable: the slot's own order id decides,
+    // never "some open order in the list on this table".
     final hasExistingOrder = widget.isRoom
         ? rooms.any(
-              (r) =>
-                  r.serverId == widget.tableId &&
-                  r.activeOrderId != null &&
-                  r.activeOrderId!.isNotEmpty,
-            ) ||
-            activeOrders.any(
-              (o) =>
-                  o.roomId == widget.tableId &&
-                  o.status != 'paid' &&
-                  o.status != 'cancelled',
-            )
+            (r) =>
+                r.serverId == widget.tableId &&
+                r.activeOrderId != null &&
+                r.activeOrderId!.isNotEmpty,
+          )
         : tables.any(
-              (t) =>
-                  t.serverId == widget.tableId &&
-                  t.activeOrderId != null &&
-                  t.activeOrderId!.isNotEmpty,
-            ) ||
-            activeOrders.any(
-              (o) =>
-                  o.tableId == widget.tableId &&
-                  o.status != 'paid' &&
-                  o.status != 'cancelled',
-            );
+            (t) =>
+                t.serverId == widget.tableId &&
+                t.activeOrderId != null &&
+                t.activeOrderId!.isNotEmpty,
+          );
 
     final activeBillCount = widget.isRoom
         ? (rooms

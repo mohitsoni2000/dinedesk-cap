@@ -11,6 +11,7 @@ import '../services/offline_guard.dart';
 import '../data/currency.dart';
 import '../data/table_selectors.dart';
 import '../data/recent_tables.dart';
+import '../data/slot_order.dart';
 import '../data/table_open_intent.dart';
 import '../motion/motion.dart';
 import '../services/socket_service.dart' show SocketState;
@@ -213,12 +214,8 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
           .read(tablesProvider)
           .where((tbl) => tbl.serverId == t.serverId)
           .firstOrNull;
-      final activeOrderId = tableData?.activeOrderId;
-
-      final active = activeOrders.where((o) {
-        return (activeOrderId != null && o.id == activeOrderId) ||
-            o.tableId == t.serverId;
-      }).firstOrNull;
+      final active =
+          runningOrderForSlot(activeOrders, tableData?.activeOrderId);
       if (active != null) {
         ref.read(syncServiceProvider).adoptOrder(active);
       }
@@ -997,7 +994,8 @@ String _tagLabel(_StatusTag tag) {
   }
 }
 
-String _pillLabel(TableState state, _StatusTag tag, List<String> operatorNames) {
+String _pillLabel(
+    TableState state, _StatusTag tag, List<String> operatorNames) {
   final label = _tagLabel(tag);
   if (state != TableState.other) return label;
   final first = operatorNames.isNotEmpty ? operatorNames.first.trim() : null;
@@ -1013,8 +1011,8 @@ String? _pillTooltip(TableState state, List<String> operatorNames) {
   return '${operatorNames.join(', ')} are working here';
 }
 
-Widget _applySpotlight(BuildContext context, Widget card, _StatusTag tag,
-    _StatusTag? spotlight) {
+Widget _applySpotlight(
+    BuildContext context, Widget card, _StatusTag tag, _StatusTag? spotlight) {
   if (spotlight == null) return card;
   if (tag == spotlight) {
     return Container(

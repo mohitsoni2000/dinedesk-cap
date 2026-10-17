@@ -1,0 +1,7 @@
+What's new in 1.3.1
+
+- A table that was just paid out no longer picks up an old, unsettled order: the next round always starts a new order. (Rounds sent that way never reached a bill.)
+- Opening a table shows only the order the desk has on it — never a stand-in from the list.
+- A table paid on the desk no longer flips back to "mine" on the phone a moment later.
+- Two phones tapping the same free table now share one order instead of making two.
+- If a table changed hands while you were building an order, the desk says so and asks you to open the table again.

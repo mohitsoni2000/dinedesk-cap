@@ -14,31 +14,44 @@ import 'stepper_button.dart';
 class ItemDetailSheet extends ConsumerStatefulWidget {
   final MenuItem item;
   final bool autoFocusNote;
-  const ItemDetailSheet(
-      {super.key, required this.item, this.autoFocusNote = false});
+
+  /// The cart line being changed. Null means the sheet adds a new line, which
+  /// is what every menu entry point wants: a second size, portion or add-on
+  /// combination of an item must sit next to the first, not replace it.
+  final CartLine? editing;
+
+  const ItemDetailSheet({
+    super.key,
+    required this.item,
+    this.autoFocusNote = false,
+    this.editing,
+  });
 
   @override
   ConsumerState<ItemDetailSheet> createState() => _ItemDetailSheetState();
 
   static Future<void> show(BuildContext context, MenuItem item,
-      {bool autoFocusNote = false}) {
+      {bool autoFocusNote = false, CartLine? editing}) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.32),
-      builder: (_) => ItemDetailSheet(item: item, autoFocusNote: autoFocusNote),
+      builder: (_) => ItemDetailSheet(
+          item: item, autoFocusNote: autoFocusNote, editing: editing),
     );
   }
 }
 
 class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
   int _qty = 1;
+  int? _existingLineUid;
   final Map<String, String> _singleSelections = {};
   final Set<String> _multiSelections = {};
 
   final Map<String, Set<String>> _addonSelections = {};
   String _note = '';
+  late final TextEditingController _noteController;
   String? _selectedVariationId;
   final FocusNode _noteFocusNode = FocusNode();
   final TextEditingController _weightController = TextEditingController();
@@ -69,6 +82,9 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
         _singleSelections[group.id] = group.options.first.id;
       }
     }
+    final editing = widget.editing;
+    if (editing != null) _loadLine(editing);
+    _noteController = TextEditingController(text: _note);
     if (widget.autoFocusNote) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _noteFocusNode.requestFocus();
@@ -76,9 +92,44 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
     }
   }
 
+  /// Starts from everything the line already carries, so "Update Item"
+  /// without changes leaves it exactly as it was. Options are matched by name
+  /// because that is all a cart line keeps of them.
+  void _loadLine(CartLine line) {
+    _existingLineUid = line.uid;
+    _qty = line.qty;
+    _note = line.itemNote;
+    if (line.variationId != null &&
+        widget.item.variations.any((v) => v.id == line.variationId)) {
+      _selectedVariationId = line.variationId;
+    }
+    if (line.weight != null) _weightController.text = '${line.weight}';
+    if (line.selectedOptions.isNotEmpty) {
+      for (final group in widget.item.optionGroups) {
+        _singleSelections.remove(group.id);
+        for (final option in group.options) {
+          final chosen = line.selectedOptions.any(
+              (o) => o.groupName == group.name && o.optionName == option.name);
+          if (!chosen) continue;
+          if (group.maxSelect > 1) {
+            _multiSelections.add(option.id);
+          } else {
+            _singleSelections[group.id] = option.id;
+          }
+        }
+      }
+    }
+    for (final group in line.selectedAddons) {
+      _addonSelections[group.groupId] = {
+        for (final choice in group.choices) choice.choiceId,
+      };
+    }
+  }
+
   @override
   void dispose() {
     _noteFocusNode.dispose();
+    _noteController.dispose();
     _weightController.dispose();
     super.dispose();
   }
@@ -398,6 +449,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     child: TextField(
+                      controller: _noteController,
                       focusNode: _noteFocusNode,
                       cursorColor: AppColors.terra,
                       decoration: const InputDecoration(
@@ -431,9 +483,12 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                     child: LiquidPrimaryButton(
                       label: _isWeighed && !canAdd
                           ? 'Enter Weight'
-                          : 'Add to Order',
+                          : (_existingLineUid != null
+                              ? 'Update Item'
+                              : 'Add to Order'),
                       fullWidth: true,
-                      leadingIcon: Icons.add,
+                      leadingIcon:
+                          _existingLineUid != null ? Icons.check : Icons.add,
                       onPressed: !canAdd
                           ? null
                           : () {
@@ -461,6 +516,11 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                                   _selectedVariation!.name,
                                 ...modLabels,
                               ];
+                              if (_existingLineUid != null) {
+                                ref
+                                    .read(cartProvider.notifier)
+                                    .removeByUid(_existingLineUid!);
+                              }
                               ref.read(cartProvider.notifier).addCustom(
                                     item: widget.item,
                                     qty: _qty,
@@ -469,7 +529,7 @@ class _ItemDetailSheetState extends ConsumerState<ItemDetailSheet> {
                                     selectedAddons: selectedAddonGroups,
                                     modsExtra:
                                         _serverOptionExtra + variationPriceDiff,
-                                    itemNote: _note,
+                                    itemNote: _noteController.text.trim(),
                                     variationId: _selectedVariationId,
                                     variationName: _selectedVariation?.name,
                                     weight: _isWeighed ? _weight : null,

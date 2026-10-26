@@ -24,6 +24,7 @@ import '../services/offline_guard.dart';
 import '../models/server_models.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
+import '../utils/ack_message.dart';
 import '../widgets/app_card.dart';
 import '../widgets/area_hidden_sheet.dart';
 import '../widgets/app_surface.dart';
@@ -254,7 +255,9 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     setState(() => _isSaving = true);
 
     final socketService = ref.read(socketServiceProvider);
-    final notes = ref.read(orderNotesProvider);
+    final notes = ref.read(flagsProvider).orderNotes
+        ? ref.read(orderNotesProvider)
+        : '';
     final items = ref
         .read(cartProvider)
         .map((l) => <String, dynamic>{
@@ -436,6 +439,30 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
     }
   }
 
+  /// Asks the desk for the order summary and says how it went: offline the
+  /// tap would otherwise do nothing, and a refusal would only surface as an
+  /// anonymous global toast.
+  void _printSummary(String orderId) {
+    if (!requireDesk(context, ref)) return;
+    ref.read(socketServiceProvider).emit(
+      'print:summary',
+      <String, dynamic>{'order_id': orderId},
+      onAck: (response) {
+        if (!mounted) return;
+        DynamicToast.show(context,
+            message: response['kind'] == 'error'
+                ? ackFailureText(response,
+                    fallback: 'Summary print failed',
+                    noAnswer: 'No answer from the desk — check the printer')
+                : 'Summary sent to the printer',
+            kind: response['kind'] == 'error'
+                ? ToastKind.error
+                : ToastKind.success,
+            duration: const Duration(seconds: 2));
+      },
+    );
+  }
+
   Future<void> _showNotesDialog() async {
     final current = ref.read(orderNotesProvider);
     final controller = TextEditingController(text: current);
@@ -541,7 +568,16 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     label: 'Add Note',
                     onTap: () {
                       Navigator.of(context).pop();
-                      ItemDetailSheet.show(context, item, autoFocusNote: true);
+                      // A note is for the item already in the cart; with
+                      // more than one line of it there is no telling which,
+                      // so it starts a new line.
+                      final lines = ref
+                          .read(cartProvider)
+                          .where((l) => l.item.id == item.id)
+                          .toList();
+                      ItemDetailSheet.show(context, item,
+                          autoFocusNote: true,
+                          editing: lines.length == 1 ? lines.single : null);
                     },
                   ),
                 ),
@@ -897,6 +933,16 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             onSelected: (action) {
                               switch (action) {
                                 case 'shift':
+                                  final refusal = tableShiftRefusal(
+                                      unsentItems: ref
+                                          .read(cartProvider)
+                                          .fold(0, (n, l) => n + l.qty));
+                                  if (refusal != null) {
+                                    DynamicToast.show(context,
+                                        message: refusal,
+                                        kind: ToastKind.warning);
+                                    break;
+                                  }
                                   if (table != null) {
                                     TableShiftSheet.show(context, table);
                                   }
@@ -1141,12 +1187,8 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                             tableId: widget.tableId,
                             cartIsEmpty: cartIsEmpty,
                             showPrintSummary: flags.printSummary,
-                            onPrintSummary: () {
-                              ref.read(socketServiceProvider).emit(
-                                'print:summary',
-                                {'order_id': runningOrder.id},
-                              );
-                            },
+                            onPrintSummary: () =>
+                                _printSummary(runningOrder.id),
                           )
                         : const SizedBox.shrink(),
                   ),
@@ -1512,7 +1554,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                     return Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (count > 0)
+                        if (count > 0 && ref.watch(flagsProvider).orderNotes)
                           _OrderNoteRow(
                             note: orderNotes,
                             onTap: _showNotesDialog,
@@ -1659,12 +1701,7 @@ class _OrderBuilderScreenState extends ConsumerState<OrderBuilderScreen> {
                       onPrintSummary: (flags.printSummary &&
                               runningOrder != null &&
                               runningOrder.itemCount > 0)
-                          ? () {
-                              ref.read(socketServiceProvider).emit(
-                                'print:summary',
-                                {'order_id': runningOrder.id},
-                              );
-                            }
+                          ? () => _printSummary(runningOrder.id)
                           : null,
                     ),
                   ),
@@ -2571,31 +2608,51 @@ class _OrderSideRail extends ConsumerWidget {
                           height: 1, thickness: 0.5, color: palette.ink05),
                       itemBuilder: (_, i) {
                         final l = cart[i];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 9),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('${l.qty}×',
-                                  style: AppTypography.caption.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.terraDeep)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  l.item.name,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: AppTypography.caption
-                                      .copyWith(fontWeight: FontWeight.w600),
+                        return InkWell(
+                          onTap: () => ItemDetailSheet.show(context, l.item,
+                              editing: l),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 9),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('${l.qty}×',
+                                    style: AppTypography.caption.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.terraDeep)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        l.item.name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTypography.caption
+                                            .copyWith(fontWeight: FontWeight.w600),
+                                      ),
+                                      if (l.itemNote.isNotEmpty || l.mods.isNotEmpty)
+                                        Text(
+                                          [
+                                            ...l.mods,
+                                            if (l.itemNote.isNotEmpty) l.itemNote,
+                                          ].join(' · '),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppTypography.micro
+                                              .copyWith(color: AppColors.terraDeep),
+                                        ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(formatRupees(l.lineTotal),
-                                  style: AppTypography.caption
-                                      .copyWith(fontWeight: FontWeight.w700)),
-                            ],
+                                const SizedBox(width: 8),
+                                Text(formatRupees(l.lineTotal),
+                                    style: AppTypography.caption
+                                        .copyWith(fontWeight: FontWeight.w700)),
+                              ],
+                            ),
                           ),
                         );
                       },

@@ -686,6 +686,7 @@ class CartNotifier extends StateNotifier<List<CartLine>> {
   }) {
     if (qty <= 0) return;
     if (item.isWeighed && (weight == null || weight <= 0)) return;
+
     _upsert(CartLine(
       item: item,
       qty: qty,

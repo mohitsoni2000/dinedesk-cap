@@ -8,6 +8,7 @@ import '../data/providers.dart';
 import '../services/offline_guard.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
+import '../utils/ack_message.dart';
 import '../utils/socket_helpers.dart';
 import 'app_surface.dart';
 import 'dynamic_toast.dart';
@@ -66,9 +67,11 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
     return flat > widget.orderTotal ? widget.orderTotal : flat;
   }
 
+  bool get _useCustom => _showCustom || ref.read(discountsProvider).isEmpty;
+
   bool get _canApply {
     if (_submitting) return false;
-    if (_showCustom) {
+    if (_useCustom) {
       final v = _customValue;
       if (v == null || v <= 0) return false;
       if (_customType == _DiscountType.percent && v > 100) return false;
@@ -91,7 +94,7 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
     final socketService = ref.read(socketServiceProvider);
     final Map<String, dynamic> payload;
 
-    if (_showCustom) {
+    if (_useCustom) {
       payload = {
         'order_id': widget.orderId,
         'custom': {
@@ -116,7 +119,10 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
       if (response['kind'] == 'error') {
         setState(() => _submitting = false);
         DynamicToast.show(context,
-            message: response['message']?.toString() ?? 'Discount failed',
+            message: ackFailureText(response,
+                fallback: 'Discount failed',
+                noAnswer: 'No answer from the desk — check the order before '
+                    'applying a discount again'),
             kind: ToastKind.error);
       } else {
         Navigator.of(context).pop(response);
@@ -124,7 +130,10 @@ class _DiscountSheetState extends ConsumerState<_DiscountSheet> {
     }));
 
     scheduleSocketTimeout(
-      duration: const Duration(seconds: 10),
+      // Longer than the ack itself (the adaptive timeout reaches 24s):
+      // emitAck always answers, so this is only a backstop, never a
+      // second, earlier verdict.
+      duration: const Duration(seconds: 30),
       isMounted: () => mounted,
       isStillWaiting: () => _submitting,
       onTimeout: () {

@@ -1144,8 +1144,10 @@ void main() {
         await h.pay(tester);
 
         expect(
-            find.text('Settled 1 of 2. Take payment for the remaining ₹400.'),
-            findsOneWidget);
+            find.text('Payment amount ₹400 exceeds remaining ₹0.00. '
+                'Settled 1 of 2. Take payment for the remaining ₹400.'),
+            findsOneWidget,
+            reason: 'the desk\'s reason comes first');
         expect(
             find.text('₹400 still due — part of the payment went through. '
                 'Take another payment for the rest.'),

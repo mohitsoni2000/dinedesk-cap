@@ -225,4 +225,44 @@ void main() {
     }
     expect(cart.total, const Money(3333 * 3 * 200));
   });
+
+  group('adding never takes units away from lines already in the cart', () {
+    int units(CartNotifier cart) => cart.state.fold(0, (n, l) => n + l.qty);
+
+    test('a plain add on top of plain units keeps every unit', () {
+      final cart = CartNotifier();
+      cart.addSimple(_item());
+      cart.addSimple(_item());
+
+      cart.addCustom(
+        item: _item(),
+        qty: 1,
+        mods: const <String>[],
+        modsExtra: Money.zero,
+        itemNote: '',
+      );
+
+      expect(units(cart), 3, reason: 'a package or an Undo adds one more');
+    });
+
+    test('a configured add leaves the plain units alone', () {
+      final cart = CartNotifier();
+      cart.addSimple(_item());
+      cart.addSimple(_item());
+
+      cart.addCustom(
+        item: _item(),
+        qty: 1,
+        mods: const <String>['Extra Cheese'],
+        modsExtra: Money.zero,
+        itemNote: '',
+        selectedAddons: <SelectedAddonGroup>[_cheese()],
+      );
+
+      expect(cart.state.length, 2);
+      expect(cart.state.firstWhere((l) => l.isPlain).qty, 2);
+      expect(cart.state.firstWhere((l) => !l.isPlain).qty, 1);
+      expect(units(cart), 3);
+    });
+  });
 }

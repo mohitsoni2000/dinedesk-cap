@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../data/providers.dart';
 import '../motion/motion.dart';
 import '../theme/tokens.dart';
+import '../utils/ack_message.dart';
 import '../widgets/app_surface.dart';
 import '../widgets/liquid_chrome.dart';
 import '../widgets/numeric_keyboard.dart';
@@ -63,7 +64,11 @@ class _ChangePinScreenState extends ConsumerState<ChangePinScreen> {
             });
           } else {
             setState(() {
-              _error = 'Incorrect PIN';
+              // The desk says "Incorrect PIN", or that the account is locked
+              // for a while, or nothing came back; each needs saying as is.
+              _error = ackFailureText(response,
+                  fallback: 'Incorrect PIN',
+                  noAnswer: 'No answer from the desk — try again');
               _input = '';
               _verifying = false;
             });

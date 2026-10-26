@@ -15,6 +15,9 @@ import '../services/log.dart';
 import '../services/offline_guard.dart';
 import '../services/pin_guard.dart';
 import '../theme/tokens.dart';
+import '../services/app_messenger.dart';
+import '../utils/ack_message.dart';
+import '../utils/print_bill_result.dart';
 import '../utils/socket_helpers.dart';
 import '../widgets/app_card.dart';
 import '../widgets/dynamic_toast.dart';
@@ -63,6 +66,58 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   bool _paymentCollected = false;
   bool _generatingBill = false;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadDeskBill());
+  }
+
+  /// The desk already billed this order (its table or room carries a bill):
+  /// load that bill now, as the desk's own Bill screen does on open, so
+  /// payment and printing are offered without a Generate Bill tap.
+  /// `bill:generate` hands back the bills an order already has, adding any
+  /// items sent since, which is exactly the desk's open-time resync.
+  Future<void> _loadDeskBill() async {
+    if (!mounted || _billGenerated || _generatingBill) return;
+    final order = ref
+        .read(historyProvider)
+        .where((o) => o.id == orderId || o.orderId == orderId)
+        .firstOrNull;
+    if (order == null || !_billedOnDesk(order.orderId)) return;
+    final flags = ref.read(flagsProvider);
+    if (!flags.generateBill && !flags.directBill) return;
+    if (isDeskOffline(ref)) return;
+
+    setState(() => _generatingBill = true);
+    final response = await ref.read(socketServiceProvider).emitAckIdempotent(
+        'bill:generate', <String, dynamic>{'order_id': order.orderId},
+        timeout: const Duration(seconds: 15));
+    if (!mounted) return;
+    if (response['kind'] == 'error') {
+      setState(() => _generatingBill = false);
+      DynamicToast.show(context,
+          message: response['message']?.toString() ?? 'Could not load the bill',
+          kind: ToastKind.error);
+      return;
+    }
+    _applyGeneratedBills(response, order, announce: false);
+  }
+
+  bool _billedOnDesk(String orderId) =>
+      ref
+          .read(tablesProvider)
+          .any((t) => t.activeOrderId == orderId && t.activeBillCount > 0) ||
+      ref
+          .read(roomsProvider)
+          .any((r) => r.activeOrderId == orderId && r.activeBillCount > 0) ||
+      ref
+          .read(activeOrdersProvider)
+          .any((o) => o.id == orderId && o.hasBills);
+
+  /// A bill always reports its discount, ₹0 included; only a real amount
+  /// means a discount is on the order.
+  bool get _hasDiscount => _discountAmount?.isPositive ?? false;
+
   bool _hasLinkedCustomer(HistoryOrder order) =>
       order.customerId != null && order.customerId!.isNotEmpty;
 
@@ -90,7 +145,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         _ => Icons.restaurant_menu,
       };
 
-  Future<void> _reprintKot(BuildContext context) async {
+  Future<void> _reprintKot(BuildContext context, {String? kotNumber}) async {
     if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'kot_reprint');
     if (!pinOk || !context.mounted) return;
@@ -105,24 +160,42 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     bool acked = false;
     socketService.emit(
       'print:kot',
-      {'order_id': order?.orderId ?? orderId},
+      <String, dynamic>{
+        'order_id': order?.orderId ?? orderId,
+        if (kotNumber != null && kotNumber.isNotEmpty) 'kot_number': kotNumber,
+      },
       onAck: (response) {
         acked = true;
         if (!mounted) return;
         if (response['kind'] == 'error') {
           DynamicToast.show(context,
-              message: response['message']?.toString() ?? 'Reprint failed',
+              message: ackFailureText(response,
+                  fallback: 'Reprint failed',
+                  noAnswer: 'No answer from the desk — check the kitchen '
+                      'printer before reprinting'),
               kind: ToastKind.error);
-        } else {
+        } else if (response['queued'] == false) {
+          // The desk drops a reprint of the same KOT asked for seconds ago;
+          // the slip is already on its way.
           DynamicToast.show(context,
-              message: 'Reprint queued · admin desktop',
+              message: 'This KOT was just sent to the printer',
+              kind: ToastKind.info,
+              duration: const Duration(seconds: 2));
+        } else {
+          // Desk KOT numbers already read "KOT-007".
+          final label = kotNumber ?? 'KOT';
+          DynamicToast.show(context,
+              message: 'Reprint queued ($label) · admin desktop',
               kind: ToastKind.success,
               duration: const Duration(seconds: 2));
         }
       },
     );
     scheduleSocketTimeout(
-      duration: const Duration(seconds: 10),
+      // Longer than the ack itself (the adaptive timeout reaches 24s):
+      // emitAck always answers, so this is only a backstop, never a
+      // second, earlier verdict.
+      duration: const Duration(seconds: 30),
       isMounted: () => mounted,
       isStillWaiting: () => !acked,
       onTimeout: () {
@@ -133,6 +206,49 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     );
   }
 
+  Future<void> _handleReprintKotPress(
+      BuildContext context, HistoryOrder order) async {
+    final kotNumbers = order.lines
+        .map((l) => l.kotNumber)
+        .where((k) => k != null && k.isNotEmpty)
+        .cast<String>()
+        .toSet()
+        .toList();
+
+    if (kotNumbers.length <= 1) {
+      await _reprintKot(context, kotNumber: kotNumbers.firstOrNull);
+      return;
+    }
+
+    // Multiple KOT rounds! Show dialog to let waiter pick which KOT to reprint or Latest
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Pick KOT to Reprint', style: AppTypography.title),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop('latest'),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('Latest KOT Round', style: AppTypography.bodyMd),
+            ),
+          ),
+          for (final kn in kotNumbers)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(kn),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(kn, style: AppTypography.bodyMd),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    if (picked == null || !context.mounted) return;
+    await _reprintKot(context, kotNumber: picked == 'latest' ? null : picked);
+  }
+
   Future<void> _printBill(BuildContext context) async {
     if (!requireDesk(context, ref)) return;
     final pinOk = await requirePinIfNeeded(context, ref, 'bill_reprint');
@@ -141,19 +257,24 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final socketService = ref.read(socketServiceProvider);
     final billIds =
         _bills.isNotEmpty ? _bills.map((b) => b.id).toList() : [_billId!];
-    int printed = 0;
+    final acks = <Map<String, dynamic>>[];
     for (final id in billIds) {
       socketService.emit('print:bill', <String, dynamic>{
         'bill_id': id,
       }, onAck: (response) {
         if (!mounted) return;
-        printed++;
-        if (printed == billIds.length) {
-          DynamicToast.show(context,
-              message:
-                  '${billIds.length} bill${billIds.length > 1 ? "s" : ""} queued · admin desktop',
-              kind: ToastKind.success);
+        acks.add(response);
+        if (acks.length != billIds.length) return;
+        final result = summarizePrintBillAcks(acks);
+        final refusal = result.refusal;
+        if (refusal != null) {
+          DynamicToast.show(context, message: refusal, kind: ToastKind.error);
+          return;
         }
+        DynamicToast.show(context,
+            message:
+                '${billIds.length} bill${billIds.length > 1 ? "s" : ""} queued · admin desktop',
+            kind: ToastKind.success);
       });
     }
   }
@@ -238,8 +359,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       if (response['kind'] == 'error') {
         setState(() => _generatingBill = false);
         DynamicToast.show(context,
-            message:
-                response['message']?.toString() ?? 'Bill generation failed',
+            message: ackFailureText(response,
+                fallback: 'Bill generation failed',
+                noAnswer: 'No answer from the desk — reopen the order to see '
+                    'whether the bill was made'),
             kind: ToastKind.error);
       } else {
         _applyGeneratedBills(response, order);
@@ -247,7 +370,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     }));
 
     scheduleSocketTimeout(
-      duration: const Duration(seconds: 10),
+      // Longer than the ack itself (the adaptive timeout reaches 24s):
+      // emitAck always answers, so this is only a backstop, never a
+      // second, earlier verdict.
+      duration: const Duration(seconds: 30),
       isMounted: () => mounted,
       isStillWaiting: () => _generatingBill,
       onTimeout: () {
@@ -260,7 +386,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   }
 
   /// Takes the bills a `bill:generate` ack carries onto the screen.
-  void _applyGeneratedBills(Map<String, dynamic> response, HistoryOrder order) {
+  void _applyGeneratedBills(Map<String, dynamic> response, HistoryOrder order,
+      {bool announce = true}) {
     final billsRaw = response['bills'];
     final parsedBills = <ServerBill>[];
     if (billsRaw is List) {
@@ -298,14 +425,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           Money.fromWire(response['discount']);
       _discountLabel = response['discount_label']?.toString();
     });
+    // A bill loaded on open is not a new bill: no auto-print, no toast.
+    if (!announce) return;
     if (ref.read(flagsProvider).autoPrintBillOnGenerate) {
       final socketService = ref.read(socketServiceProvider);
       final billIds = _bills.isNotEmpty
           ? _bills.map((b) => b.id).toList()
           : (_billId != null ? [_billId!] : const <String>[]);
-      for (final id in billIds) {
-        socketService.emit('print:bill', <String, dynamic>{'bill_id': id});
-      }
+      requestBillPrints(socketService, billIds, showAppToast);
     }
     DynamicToast.show(context,
         message:
@@ -465,6 +592,13 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final order = orders
         .where((o) => o.id == orderId || o.orderId == orderId)
         .firstOrNull;
+    // A room order is a guest's stay: the desk never offers Cancel on it,
+    // because cancelling releases the room and voids its bills.
+    final isRoomOrder = order != null &&
+        (ref.watch(roomsProvider
+                .select((rs) => rs.any((r) => r.activeOrderId == order.orderId))) ||
+            ref.watch(activeOrdersProvider.select((os) =>
+                os.any((o) => o.id == order.orderId && o.isRoom))));
 
     ref.listen<List<ServerOrder>>(activeOrdersProvider, (_, activeOrders) {
       if (_billGenerated || order == null) return;
@@ -587,7 +721,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      if (flags.customers) ...[
+                      // Changing the customer needs its own permission on the
+                      // desk (customer:link_order), not just the module.
+                      if (flags.customers && flags.customerLink) ...[
                         AppCard(
                           onTap: () => _linkCustomer(order),
                           child: Row(
@@ -879,10 +1015,13 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                   leadingIcon: Icons.print_outlined,
                                   onPressed: isCancelled
                                       ? null
-                                      : () => _reprintKot(context),
+                                      : () => _handleReprintKotPress(
+                                          context, order),
                                 ),
                               ),
-                            if (!_billGenerated && flags.voidBills) ...[
+                            if (!_billGenerated &&
+                                !isRoomOrder &&
+                                (flags.cancelOrder || flags.voidBills)) ...[
                               if (flags.kotReprint) const SizedBox(width: 8),
                               Expanded(
                                 child: LiquidSecondaryButton(
@@ -902,19 +1041,20 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                         ),
                       ],
                       if (isSent && !_paymentCollected) ...[
-                        if (!_billGenerated &&
-                            (flags.discounts || flags.offers)) ...[
+                        // An unpaid bill still takes a discount, as on the
+                        // desk: discount:apply resyncs the bill there.
+                        if (flags.discounts || flags.offers) ...[
                           const SizedBox(height: 8),
                           Row(
                             children: [
                               if (flags.discounts) ...[
                                 Expanded(
                                   child: LiquidSecondaryButton(
-                                    label: _discountAmount != null
+                                    label: _hasDiscount
                                         ? 'Discount Applied'
                                         : 'Discount',
                                     leadingIcon: Icons.discount_outlined,
-                                    onPressed: _discountAmount != null
+                                    onPressed: _hasDiscount
                                         ? null
                                         : () => _openDiscount(order),
                                   ),
@@ -925,7 +1065,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                     label: 'Coupon',
                                     leadingIcon:
                                         Icons.confirmation_number_outlined,
-                                    onPressed: _discountAmount != null
+                                    onPressed: _hasDiscount
                                         ? null
                                         : () => _openCoupon(order),
                                   ),
@@ -1000,7 +1140,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                         ],
                       ],
                       if (_billGenerated &&
-                          flags.billPrinting &&
+                          flags.canPrintBill &&
                           (_bills.isNotEmpty || _billId != null)) ...[
                         const SizedBox(height: 8),
                         LiquidSecondaryButton(

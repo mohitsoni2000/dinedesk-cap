@@ -151,13 +151,14 @@ void main() {
   });
 
   group('refused outright', () {
-    test('nothing went through: keep what was entered; as before', () {
+    test('nothing went through: keep what was entered, say why', () {
       final run = _run({
         'food': [_cash]
       });
       final v = decidePay(
           run: run,
-          failure: _failure(run, 'food'),
+          failure: _failure(run, 'food',
+              refusal: 'This action is disabled for your account'),
           settled: 0,
           total: 1,
           due: const Money.rupees(100),
@@ -165,6 +166,22 @@ void main() {
       expect(v.keepRun, isFalse);
       expect(v.clearInputs, isFalse);
       expect(v.stillDue, isNull);
+      expect(v.toast,
+          'This action is disabled for your account. Nothing was charged.',
+          reason: 'a retry can never fix a permission refusal');
+    });
+
+    test('a refusal with no words falls back to the plain retry text', () {
+      final run = _run({
+        'food': [_cash]
+      });
+      final v = decidePay(
+          run: run,
+          failure: _failure(run, 'food', refusal: ''),
+          settled: 0,
+          total: 1,
+          due: const Money.rupees(100),
+          short: const <ShortBill>[]);
       expect(v.toast, 'Payment failed — nothing was charged. Retry.');
     });
 
@@ -221,7 +238,8 @@ void main() {
       expect(v.stillDue!.reason, StillDueReason.partly);
       expect(v.stillDue!.message(const Money.rupees(400)),
           '₹400 still due — part of the payment went through. Take another payment for the rest.');
-      expect(v.toast, 'Settled 1 of 2. Take payment for the remaining ₹400.');
+      expect(v.toast,
+          'Bill not found. Settled 1 of 2. Take payment for the remaining ₹400.');
     });
 
     test('a cover refused after a bill went through: its reason', () {

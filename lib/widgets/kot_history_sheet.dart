@@ -122,6 +122,17 @@ class KotHistorySheet extends ConsumerWidget {
   }
 }
 
+/// Whether a KOT round can be shifted from the phone. The desk shifts rounds
+/// between tables only, and never a billed item.
+bool kotShiftOffered({
+  required bool permitted,
+  required bool editable,
+  required bool hasRounds,
+  required bool onRoom,
+  required bool billed,
+}) =>
+    permitted && editable && hasRounds && !onRoom && !billed;
+
 class _KotCard extends ConsumerWidget {
   final HistoryOrder order;
   final int index;
@@ -154,9 +165,22 @@ class _KotCard extends ConsumerWidget {
     final flags = ref.watch(flagsProvider);
     final canEdit = flags.kotEdit && _isEditable;
 
-    final canShift = flags.kotShift &&
-        _isEditable &&
-        KotShiftSheet.hasShiftableRounds(order);
+    final table = ref.watch(tablesProvider
+        .select((ts) => ts.where((t) => t.serverId == tableServerId).firstOrNull));
+    final room = ref.watch(roomsProvider
+        .select((rs) => rs.where((r) => r.serverId == tableServerId).firstOrNull));
+    final billCount = table?.activeOrderId == order.orderId
+        ? table!.activeBillCount
+        : room?.activeOrderId == order.orderId
+            ? room!.activeBillCount
+            : 0;
+    final canShift = kotShiftOffered(
+      permitted: flags.kotShift,
+      editable: _isEditable,
+      hasRounds: KotShiftSheet.hasShiftableRounds(order),
+      onRoom: table == null && room != null,
+      billed: billCount > 0,
+    );
     final myId = ref.watch(operatorProvider)?.id;
     final isMine = order.createdBy != null && order.createdBy == myId;
     return Container(

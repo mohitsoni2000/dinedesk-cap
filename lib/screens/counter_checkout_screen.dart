@@ -22,6 +22,7 @@ import '../services/pending_money_store.dart';
 import '../services/pin_guard.dart';
 import '../services/qsr_checkout_service.dart';
 import '../theme/tokens.dart';
+import '../utils/print_bill_result.dart';
 import '../utils/request_id.dart';
 import '../utils/tender_allocation.dart';
 import '../widgets/app_card.dart';
@@ -57,10 +58,14 @@ void applyPayAndFire(
   container.read(lastTokenProvider.notifier).state = ack.token;
   if (container.read(flagsProvider).billPrinting) {
     // The guest's receipt: it carries the token and the pickup line.
-    final socket = container.read(socketServiceProvider);
-    for (final bill in ack.bills) {
-      socket.emit('print:bill', <String, dynamic>{'bill_id': bill.id});
-    }
+    // This screen is gone by the time the desk answers, so a refused or
+    // unconfirmed receipt is said on the counter screen (CounterNotices),
+    // as a refused KOT print already is.
+    requestBillPrints(
+        container.read(socketServiceProvider),
+        [for (final bill in ack.bills) bill.id],
+        (message) => container.read(counterNoticeProvider.notifier).state =
+            CounterNotice(message));
   }
   if (identical(container.read(cartProvider), sentCart)) {
     container.read(cartProvider.notifier).clear();
@@ -924,7 +929,7 @@ class _CounterCheckoutScreenState extends ConsumerState<CounterCheckoutScreen> {
                         ]),
                       )
                     else ...[
-                      if (flags.customers) ...[
+                      if (flags.customers && flags.customerLink) ...[
                         AppCard(
                           onTap: _customer == null ? _linkCustomer : null,
                           child: Row(children: [

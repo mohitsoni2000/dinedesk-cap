@@ -18,6 +18,9 @@ import '../services/pin_guard.dart';
 import '../services/socket_service.dart';
 import '../services/platform_surfaces.dart';
 import '../theme/tokens.dart';
+import '../services/app_messenger.dart';
+import '../utils/print_bill_result.dart';
+import '../utils/ack_message.dart';
 import '../utils/request_id.dart';
 import '../widgets/app_card.dart';
 import '../widgets/cart_row.dart';
@@ -140,7 +143,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
   /// replay, knows not to print it again.
   BeforeQueueHook _directPrintHook(List<CartLine> cart) {
     final coordinator = ref.read(offlineKotCoordinatorProvider);
-    final notes = _notes.text;
+    final notes = _notesToSend;
     final slotId = widget.tableId;
     final isRoom = widget.isRoom;
     final isTakeaway = !widget.isRoom && _orderType == _OrderType.takeaway;
@@ -295,7 +298,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final existingOrderId = _activeOrderIdForTable();
     final requestId = _pendingOrderRequestId ??= newRequestId();
     if (existingOrderId != null && items.isNotEmpty) {
-      return socketService.emitAckWhenConnected('order:update', <String, dynamic>{
+      return socketService
+          .emitAckWhenConnected('order:update', <String, dynamic>{
         'order_id': existingOrderId,
         'items_add': items,
         'notes': notes,
@@ -332,22 +336,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           tableName: liveName,
           subtitle: '${ref.read(cartProvider).length} items · sent to kitchen',
         );
-
-    // A KOT already printed on the kitchen printer from this phone must not be
-    // printed again by the desk.
-    if (!printKot || (_offlinePrint?.printedAnything ?? false)) return;
-    socketService.emit(
-      'print:kot',
-      <String, dynamic>{'order_id': orderId},
-      onAck: (response) {
-        if (!mounted || response['kind'] != 'error') return;
-        DynamicToast.show(context,
-            message: response['message']?.toString() ??
-                'KOT print failed — check the kitchen printer',
-            kind: ToastKind.error);
-      },
-    );
   }
+
+  /// The order note, or '' when Order notes is off for this user: the field
+  /// is hidden then, so nothing typed earlier may still be sent.
+  String get _notesToSend =>
+      ref.read(flagsProvider).orderNotes ? _notes.text : '';
 
   Future<_OrderFlowStepResult> _runOrderFlow({
     required bool generateBill,
@@ -376,12 +370,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
       final orderResponse = await _createOrUpdateOrder(
         items: items,
-        notes: _notes.text,
+        notes: _notesToSend,
       );
       if (orderResponse['kind'] == 'error') {
-        return const _OrderFlowStepResult(
+        return _OrderFlowStepResult(
           failedStep: _OrderFlowStep.orderCreate,
-          errorMessage: 'Could not save order — please retry',
+          errorMessage: ackFailureText(orderResponse,
+              fallback: 'Could not save order — please retry'),
         );
       }
       ref
@@ -402,9 +397,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       try {
         kotResponse = await ref.read(kotQueueProvider).sendKot(
               socketService,
-              <String, dynamic>{'order_id': orderId},
+              <String, dynamic>{
+                'order_id': orderId,
+                if (!printKot) 'print': false,
+              },
               clientRequestId: kotRequestId,
-              beforeQueue: _directPrintHook(cart),
+              beforeQueue: printKot ? _directPrintHook(cart) : null,
             );
       } catch (_) {
         ref.read(cartProvider.notifier).setSyncStatusFailed();
@@ -458,7 +456,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
           ? <String, dynamic>{
               'order_id': existingOrderId,
               'items_add': items,
-              'notes': _notes.text,
+              'notes': _notesToSend,
             }
           : <String, dynamic>{
               if (widget.isRoom)
@@ -466,7 +464,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               else if (_orderType == _OrderType.dineIn)
                 'table_id': widget.tableId,
               'items': items,
-              'notes': _notes.text,
+              'notes': _notesToSend,
               'order_type': widget.isRoom
                   ? 'room'
                   : (_orderType == _OrderType.dineIn ? 'dine_in' : 'takeaway'),
@@ -484,7 +482,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               orderRequestId: orderRequestId,
               kotRequestId: kotRequestId,
               tableId: widget.tableId,
-              beforeQueue: _directPrintHook(cart),
+              beforeQueue: printKot ? _directPrintHook(cart) : null,
+              printKot: printKot,
             );
       } catch (_) {
         ref.read(cartProvider.notifier).setSyncStatusFailed();
@@ -509,19 +508,19 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         ref.read(cartProvider.notifier).setSyncStatusFailed();
         final orderFailed = submitResult.orderAck['kind'] == 'error';
         return _OrderFlowStepResult(
-          failedStep: orderFailed
-              ? _OrderFlowStep.orderCreate
-              : _OrderFlowStep.kotSend,
+          failedStep:
+              orderFailed ? _OrderFlowStep.orderCreate : _OrderFlowStep.kotSend,
           errorMessage: orderFailed
-              ? 'Could not save order — please retry'
+              ? ackFailureText(submitResult.orderAck,
+                  fallback: 'Could not save order — please retry')
               : (submitResult.kotAck['message']?.toString().isNotEmpty == true
                   ? 'Kitchen refused this KOT: ${submitResult.kotAck['message']}'
                   : 'Failed to send KOT to kitchen — please retry'),
         );
       }
 
-      orderId =
-          _orderIdFromResponse(submitResult.orderAck, fallback: existingOrderId);
+      orderId = _orderIdFromResponse(submitResult.orderAck,
+          fallback: existingOrderId);
       if (orderId == null || orderId.isEmpty) {
         return const _OrderFlowStepResult(
           failedStep: _OrderFlowStep.orderCreate,
@@ -562,9 +561,12 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       timeout: const Duration(seconds: 15),
     );
     if (billResponse['kind'] == 'error') {
-      return const _OrderFlowStepResult(
+      return _OrderFlowStepResult(
         failedStep: _OrderFlowStep.billGenerate,
-        errorMessage: 'Failed to generate bill — please retry',
+        errorMessage: ackFailureText(billResponse,
+            fallback: 'Failed to generate bill — please retry',
+            noAnswer: 'No answer from the desk — open the bill to check '
+                'before retrying'),
       );
     }
     ref.read(syncServiceProvider).applyOrderAck(billResponse,
@@ -584,6 +586,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       );
     }
 
+    var paidBills = 0;
     for (final bill in bills) {
       final billId = bill['id']?.toString();
       if (billId == null || billId.isEmpty) {
@@ -614,20 +617,30 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         timeout: const Duration(seconds: 15),
       );
       if (paymentResponse['kind'] == 'error') {
-        return const _OrderFlowStepResult(
+        final paid =
+            paidBills > 0 ? '$paidBills of ${bills.length} bills paid. ' : '';
+        return _OrderFlowStepResult(
           failedStep: _OrderFlowStep.payment,
-          errorMessage: 'Payment failed — please retry from the bill screen',
+          errorMessage: paid +
+              ackFailureText(paymentResponse,
+                  fallback:
+                      'Payment failed — please retry from the bill screen',
+                  noAnswer: 'No answer from the desk — check the bill before '
+                      'taking payment again'),
         );
       }
+      paidBills++;
       ref
           .read(syncServiceProvider)
           .applyOrderAck(paymentResponse, includeHistory: true);
     }
 
-    for (final bill in bills) {
-      socketService
-          .emit('print:bill', <String, dynamic>{'bill_id': bill['id']});
-    }
+    // The screen moves on before the desk answers; a refused or unconfirmed
+    // print still has to reach the waiter.
+    requestBillPrints(
+        socketService,
+        [for (final bill in bills) bill['id'].toString()],
+        showAppToast);
     return const _OrderFlowStepResult();
   }
 
@@ -673,12 +686,23 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
         if (!completer.isCompleted) completer.complete(result.isSuccess);
       }));
 
-      final ok =
-          await OrderSubmittingOverlay.show(context, completer: completer);
+      // A bill or a payment runs past the KOT's 15s; the overlay must not
+      // give up before those acks do.
+      await OrderSubmittingOverlay.show(context,
+          completer: completer,
+          timeout: generateBill || collectPayment
+              ? OrderSubmittingOverlay.moneyTimeout
+              : OrderSubmittingOverlay.defaultTimeout);
       if (!mounted) return;
-      if (ok) {
-        final result = await runningFlow;
-        if (!mounted) return;
+      // The flow decides the outcome, not the overlay's timer: a slow desk
+      // that still billed and took the money is a success, and showing
+      // "could not be confirmed" would invite a second, duplicate send.
+      _OrderFlowStepResult? result;
+      try {
+        result = await runningFlow;
+      } catch (_) {}
+      if (!mounted) return;
+      if (result != null && result.isSuccess) {
         _submitted = true;
         _kotSentOrderId = null;
         _pendingOrderRequestId = null;
@@ -690,7 +714,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
               message: result.errorMessage ??
                   'Desk unreachable — queued on this phone and will send '
                       '$kAutoWhenDeskBack',
-              kind: result.printedDirect ? ToastKind.success : ToastKind.warning,
+              kind:
+                  result.printedDirect ? ToastKind.success : ToastKind.warning,
               duration: const Duration(seconds: 4));
           context.go(returnToBuilder ? _builderRoute : _successRoute);
           return;
@@ -708,21 +733,18 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       }
 
       String msg = 'Order could not be confirmed — please retry';
-      try {
-        final result = await runningFlow;
-        if (result.errorMessage != null) {
-          final stepLabel = switch (result.failedStep) {
-            _OrderFlowStep.orderCreate => 'Order creation',
-            _OrderFlowStep.kotSend => 'KOT to kitchen',
-            _OrderFlowStep.billGenerate => 'Bill generation',
-            _OrderFlowStep.payment => 'Payment',
-            null => null,
-          };
-          msg = stepLabel != null
-              ? '$stepLabel failed: ${result.errorMessage}'
-              : result.errorMessage!;
-        }
-      } catch (_) {}
+      if (result != null && result.errorMessage != null) {
+        final stepLabel = switch (result.failedStep) {
+          _OrderFlowStep.orderCreate => 'Order creation',
+          _OrderFlowStep.kotSend => 'KOT to kitchen',
+          _OrderFlowStep.billGenerate => 'Bill generation',
+          _OrderFlowStep.payment => 'Payment',
+          null => null,
+        };
+        msg = stepLabel != null
+            ? '$stepLabel failed: ${result.errorMessage}'
+            : result.errorMessage!;
+      }
 
       if (mounted) {
         DynamicToast.show(context, message: msg, kind: ToastKind.error);
@@ -761,12 +783,13 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
       final cart = ref.read(cartProvider);
       final orderResponse = await _createOrUpdateOrder(
         items: _itemsPayload(cart),
-        notes: _notes.text,
+        notes: _notesToSend,
       );
       if (orderResponse['kind'] == 'error') {
         if (mounted) {
           DynamicToast.show(context,
-              message: 'Could not save order — please retry',
+              message: ackFailureText(orderResponse,
+                  fallback: 'Could not save order — please retry'),
               kind: ToastKind.error);
         }
         return;
@@ -790,7 +813,8 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
 
       final holdResponse = await ref
           .read(socketServiceProvider)
-          .emitAckIdempotent('order:hold', <String, dynamic>{'order_id': orderId});
+          .emitAckIdempotent(
+              'order:hold', <String, dynamic>{'order_id': orderId});
       if (holdResponse['kind'] == 'error') {
         if (mounted) {
           DynamicToast.show(context,
@@ -823,6 +847,17 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
     final pinOk = await requirePinIfNeeded(context, ref, 'kot_and_bill');
     if (!pinOk || !mounted) return;
     await _submitWithFlow(generateBill: true, collectPayment: false);
+  }
+
+  Future<void> _submitDirectBill() async {
+    if (!requireDesk(context, ref)) return;
+    final pinOk = await requirePinIfNeeded(context, ref, 'generate_bill');
+    if (!pinOk || !mounted) return;
+    await _submitWithFlow(
+      generateBill: true,
+      collectPayment: false,
+      printKot: false,
+    );
   }
 
   Future<void> _quickSettle() async {
@@ -1173,41 +1208,63 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
             leadingIcon: Icons.restaurant_menu,
             onPressed: _submit,
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: LiquidSecondaryButton(
-                  label: 'Hold',
-                  leadingIcon: Icons.pause_circle_outline,
-                  onPressed: _holdOrder,
-                ),
-              ),
-              if (flags.directKot) ...[
-                const SizedBox(width: 8),
-                Expanded(
-                  child: LiquidSecondaryButton(
-                    label: 'Only KOT',
-                    leadingIcon: Icons.print_disabled_outlined,
-                    onPressed: _submitOnlyKot,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          if (flags.generateBill) ...[
+          if (flags.canHold(billed: billAlreadyGenerated) || flags.directKot) ...[
             const SizedBox(height: 8),
             Row(
               children: [
-                Expanded(
-                  child: LiquidSecondaryButton(
-                    label: 'KOT + Bill',
-                    leadingIcon: Icons.receipt_long,
-                    onPressed: billAlreadyGenerated ? null : _submitKotAndBill,
+                if (flags.canHold(billed: billAlreadyGenerated))
+                  Expanded(
+                    child: LiquidSecondaryButton(
+                      label: 'Hold',
+                      leadingIcon: Icons.pause_circle_outline,
+                      onPressed: _holdOrder,
+                    ),
                   ),
-                ),
-                if (flags.collectPayment) ...[
-                  const SizedBox(width: 8),
+                if (flags.directKot) ...[
+                  if (flags.canHold(billed: billAlreadyGenerated))
+                    const SizedBox(width: 8),
+                  Expanded(
+                    child: LiquidSecondaryButton(
+                      label: 'Only KOT',
+                      leadingIcon: Icons.print_disabled_outlined,
+                      onPressed: _submitOnlyKot,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+          if ((flags.kotAndBill && flags.generateBill) ||
+              flags.directBill ||
+              flags.canQuickSettle) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (flags.kotAndBill && flags.generateBill)
+                  Expanded(
+                    child: LiquidSecondaryButton(
+                      label: 'KOT + Bill',
+                      leadingIcon: Icons.receipt_long,
+                      onPressed:
+                          billAlreadyGenerated ? null : _submitKotAndBill,
+                    ),
+                  ),
+                if (flags.directBill) ...[
+                  if (flags.kotAndBill && flags.generateBill)
+                    const SizedBox(width: 8),
+                  Expanded(
+                    child: LiquidSecondaryButton(
+                      label: 'Direct Bill',
+                      leadingIcon: Icons.bolt,
+                      onPressed:
+                          billAlreadyGenerated ? null : _submitDirectBill,
+                    ),
+                  ),
+                ],
+                if (flags.canQuickSettle) ...[
+                  if ((flags.kotAndBill && flags.generateBill) ||
+                      flags.directBill)
+                    const SizedBox(width: 8),
                   Expanded(
                     child: LiquidSecondaryButton(
                       label: 'Quick Settle',
@@ -1342,7 +1399,7 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                             AppSpacing.lg + context.sheetBottomInset,
                           ),
                           children: [
-                            if (flags.customers) ...[
+                            if (flags.customers && flags.customerLink) ...[
                               const SizedBox(height: 12),
                               AppCard(
                                 onTap: () async {
@@ -1529,25 +1586,27 @@ class _OrderReviewScreenState extends ConsumerState<OrderReviewScreen> {
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'ORDER NOTES',
-                              style: AppTypography.micro.copyWith(
-                                letterSpacing: 1.4,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            AppCard(
-                              child: TextField(
-                                controller: _notes,
-                                maxLines: 2,
-                                decoration: const InputDecoration(
-                                  border: InputBorder.none,
-                                  hintText: 'Allergies, urgency, etc.',
-                                  isDense: true,
+                            if (flags.orderNotes) ...[
+                              const SizedBox(height: 12),
+                              Text(
+                                'ORDER NOTES',
+                                style: AppTypography.micro.copyWith(
+                                  letterSpacing: 1.4,
                                 ),
                               ),
-                            ),
+                              const SizedBox(height: 8),
+                              AppCard(
+                                child: TextField(
+                                  controller: _notes,
+                                  maxLines: 2,
+                                  decoration: const InputDecoration(
+                                    border: InputBorder.none,
+                                    hintText: 'Allergies, urgency, etc.',
+                                    isDense: true,
+                                  ),
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 12),
                             Builder(
                               builder: (_) {

@@ -12,6 +12,15 @@ class FeatureFlags {
   final bool inventory;
   final bool kotPrinting;
   final bool directKot;
+  final bool directBill;
+  final bool holdOrder;
+  final bool cancelOrder;
+  final bool orderNotes;
+  final bool kotHistory;
+  final bool kotAndBill;
+  final bool quickSettle;
+  final bool customerLink;
+  final bool roomHousekeeping;
   final bool packages;
   final bool multiFloor;
   final bool operatorPinAuth;
@@ -105,6 +114,15 @@ class FeatureFlags {
     this.inventory = false,
     this.kotPrinting = true,
     this.directKot = false,
+    this.directBill = false,
+    this.holdOrder = true,
+    this.cancelOrder = true,
+    this.orderNotes = true,
+    this.kotHistory = true,
+    this.kotAndBill = true,
+    this.quickSettle = true,
+    this.customerLink = true,
+    this.roomHousekeeping = true,
     this.packages = false,
     this.multiFloor = false,
     this.operatorPinAuth = true,
@@ -188,6 +206,19 @@ class FeatureFlags {
   /// not enough.
   bool get canCopyTickets => entryTickets && ticketIssue;
 
+  /// Print Bill is offered by bill printing. The reprint permission is for a
+  /// second copy, so someone without it still gets the first one.
+  bool get canPrintBill => billPrinting;
+
+  /// Quick Settle makes the bill and takes the money, so besides its own
+  /// switch it needs both rights; without Generate Bill it would fail after
+  /// the order and KOT have already gone.
+  bool get canQuickSettle => quickSettle && generateBill && collectPayment;
+
+  /// Hold parks an order for later; a billed order can only be paid or voided,
+  /// so the desk refuses to hold it.
+  bool canHold({required bool billed}) => holdOrder && !billed;
+
   factory FeatureFlags.fromMap(Map<String, dynamic> map) {
     bool flag(String key, [bool fallback = false]) {
       final v = map[key];
@@ -212,6 +243,18 @@ class FeatureFlags {
       inventory: flag('flag_inventory'),
       kotPrinting: flag('flag_kot_printing', true),
       directKot: flag('flag_direct_kot'),
+      directBill: flag('flag_direct_bill'),
+      holdOrder: flag('flag_hold_order', true),
+      // A desk that predates the permission decided Cancel by Void bills.
+      cancelOrder: map.containsKey('flag_cancel_order')
+          ? flag('flag_cancel_order')
+          : flag('flag_void_bills', true),
+      orderNotes: flag('flag_order_notes', true),
+      kotHistory: flag('flag_kot_history', true),
+      kotAndBill: flag('flag_kot_and_bill', true),
+      quickSettle: flag('flag_quick_settle', true),
+      customerLink: flag('flag_customer_link', true),
+      roomHousekeeping: flag('flag_room_housekeeping', true),
       packages: flag('flag_packages'),
       multiFloor: flag('flag_multi_floor'),
       operatorPinAuth: flag('flag_operator_pin_auth', true),

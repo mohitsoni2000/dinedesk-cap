@@ -446,8 +446,8 @@ void main() {
       await h.pay(tester);
 
       expect(h.sent, hasLength(1), reason: 'it stops at the first failure');
-      expect(find.text('Payment failed — nothing was charged. Retry.'),
-          findsOneWidget);
+      expect(find.text('Bill not found. Nothing was charged.'), findsOneWidget,
+          reason: 'the desk\'s reason, not a retry that cannot help');
       expect(h.result, isNull, reason: 'the sheet stays open');
       await h.drainToasts(tester);
     });

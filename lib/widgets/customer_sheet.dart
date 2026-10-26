@@ -5,9 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
+import '../utils/ack_message.dart';
 import '../theme/tokens.dart';
 import 'app_card.dart';
 import 'app_surface.dart';
+import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
@@ -121,6 +123,17 @@ class _CustomerSheetState extends ConsumerState<_CustomerSheet> {
     final socket = ref.read(socketServiceProvider);
     socket.emit('customer:search', {'query': query}, onAck: (response) {
       if (!mounted) return;
+      // A failed search is not "no results": that would invite creating a
+      // customer who already exists.
+      if (response['kind'] == 'error') {
+        setState(() => _searching = false);
+        DynamicToast.show(context,
+            message: ackFailureText(response,
+                fallback: 'Customer search failed',
+                noAnswer: 'No answer from the desk — search again'),
+            kind: ToastKind.error);
+        return;
+      }
       final list = response['customers'];
       setState(() {
         _searching = false;

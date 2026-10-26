@@ -164,6 +164,7 @@ class SyncService {
     'table:presence:updated',
     'operator:online',
     'operator:offline',
+    'operator:profile:updated',
     'force:disconnect',
     'kot:print:failed',
     'error:validation',
@@ -196,9 +197,9 @@ class SyncService {
       } else if (state == SocketState.disconnected) {
         // Only a refusal that has repeated is a dead pairing; a single one is
         // treated as a blip (see ConnectionBootstrap._onConnectFailure).
-        final rejected = _socket.lastConnectFailure ==
-                ConnectFailure.authRejected &&
-            _socket.authRejectionStreak >= 2;
+        final rejected =
+            _socket.lastConnectFailure == ConnectFailure.authRejected &&
+                _socket.authRejectionStreak >= 2;
         _ref.read(connectionProvider.notifier).state = ConnectionStatus(
           online: false,
           label: rejected
@@ -452,8 +453,9 @@ class SyncService {
         // version differs from ours and it sends the menu anyway.
         final broadcastVersion = map['menu_version'];
         _applyParsedMenu(parsed, map,
-            version:
-                broadcastVersion is String ? broadcastVersion : _lastMenuVersion);
+            version: broadcastVersion is String
+                ? broadcastVersion
+                : _lastMenuVersion);
         unawaited(saveSnapshot());
       } catch (e, st) {
         logD(_tag, 'menu:updated parse error: $e $st');
@@ -573,6 +575,35 @@ class SyncService {
           .read(activeOperatorsProvider)
           .where((o) => o.name != op.operatorName)
           .toList();
+    });
+
+    _socket.on('operator:profile:updated', (data) {
+      final map = asMap(data);
+      final id = map['id']?.toString() ?? '';
+      final name = map['name']?.toString() ?? '';
+      final role = map['role']?.toString() ?? 'Waiter';
+      final employeeId = map['employeeId']?.toString();
+      final current = _ref.read(operatorProvider);
+      if (current != null && current.id == id && name.isNotEmpty) {
+        _ref.read(operatorProvider.notifier).state = Operator(
+          id: id,
+          name: name,
+          role: role,
+          shift: current.shift,
+          employeeId: employeeId ?? current.employeeId,
+        );
+        unawaited(persistOfflineSession(force: true));
+      }
+      final currentOps = _ref.read(activeOperatorsProvider);
+      if (current != null && current.id == id && name.isNotEmpty) {
+        _ref.read(activeOperatorsProvider.notifier).state = [
+          for (final op in currentOps)
+            if (op.name == current.name)
+              ActiveOperator(name: name, role: role)
+            else
+              op,
+        ];
+      }
     });
 
     _socket.on('force:disconnect', (data) {
@@ -994,7 +1025,8 @@ class SyncService {
   /// for a desk it can later be matched to.
   String? get _deskInstanceId {
     if (deskInstanceIdOverride != null) return deskInstanceIdOverride;
-    final pairing = _ref.read(connectionBootstrapProvider.notifier).currentPairing;
+    final pairing =
+        _ref.read(connectionBootstrapProvider.notifier).currentPairing;
     if (pairing == null || pairing.token == 'demo-token') return null;
     return pairing.deskInstanceId;
   }
@@ -1270,8 +1302,8 @@ class SyncService {
   /// pause (keeping every item) and call this; true means the PIN was entered
   /// and they may resume. Single-flight, so a burst of refused sends raises one
   /// prompt, not one per item.
-  Future<bool> handleReauthRequired() => _reauthInFlight ??=
-      promptPinReverify().then((entered) {
+  Future<bool> handleReauthRequired() =>
+      _reauthInFlight ??= promptPinReverify().then((entered) {
         // The desk wants the PIN and the operator declined. Two cases, one
         // answer — back to the PIN screen (queued orders stay queued):
         //  - a cold-start offline session was only ever a loan against the

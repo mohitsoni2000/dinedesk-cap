@@ -157,6 +157,21 @@ void main() {
   });
 
   group('routeGuard', () {
+    test('KOT history off hides the History list but never an order\'s bill',
+        () {
+      final f = FeatureFlags.fromMap(const <String, dynamic>{
+        'flag_kot_history': 0,
+        'flag_generate_bill': 1,
+        'flag_collect_payment': 1,
+      });
+      expect(routeGuard(location: '/history', flags: f, qsr: restaurant),
+          '/tables');
+      expect(routeGuard(location: '/history/ord_9', flags: f, qsr: restaurant),
+          isNull,
+          reason: 'the bill and payment screen lives at /history/:orderId; '
+              'the desk switches KOT history off with KOT printing');
+    });
+
     test('restaurant mode: Counter is closed, Tables open', () {
       final f = flags();
       expect(routeGuard(location: '/counter', flags: f, qsr: restaurant),

@@ -64,7 +64,7 @@ class BiometricService {
         ),
       );
       if (!ok) return null;
-      return _store.read(key: _kPin);
+      return await _store.read(key: _kPin);
     } catch (e) {
       logD(_tag, 'unlock error: $e');
       return null;

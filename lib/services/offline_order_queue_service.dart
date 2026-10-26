@@ -295,6 +295,7 @@ class OfflineOrderQueueService {
     BeforeQueueHook? beforeQueue,
     String? localRef,
     Map<String, dynamic>? meta,
+    bool printKot = true,
   }) async {
     final stampedOrder = <String, dynamic>{
       ...orderPayload,
@@ -305,7 +306,7 @@ class OfflineOrderQueueService {
 
     if (socket.state != SocketState.verified) {
       final ref = await _enqueue(orderEvent, stampedOrder, kotRequestId, slot,
-          beforeQueue: beforeQueue, localRef: localRef, meta: meta);
+          beforeQueue: beforeQueue, localRef: localRef, meta: meta, printKot: printKot);
       return OrderSubmitResult(OrderSubmitOutcome.queued, const {}, const {},
           localRef: ref);
     }
@@ -313,7 +314,7 @@ class OfflineOrderQueueService {
     final drained = await flush(socket);
     if (!drained) {
       final ref = await _enqueue(orderEvent, stampedOrder, kotRequestId, slot,
-          beforeQueue: beforeQueue, localRef: localRef, meta: meta);
+          beforeQueue: beforeQueue, localRef: localRef, meta: meta, printKot: printKot);
       return OrderSubmitResult(OrderSubmitOutcome.queued, const {}, const {},
           localRef: ref);
     }
@@ -328,6 +329,7 @@ class OfflineOrderQueueService {
       beforeQueue: beforeQueue,
       localRef: localRef,
       meta: meta,
+      printKot: printKot,
     );
   }
 
@@ -349,6 +351,7 @@ class OfflineOrderQueueService {
     BeforeQueueHook? beforeQueue,
     String? localRef,
     Map<String, dynamic>? meta,
+    bool printKot = true,
   }) async {
     final orderAck =
         await socket.emitAck(orderEvent, stampedOrder, timeout: _sendTimeout);
@@ -360,7 +363,7 @@ class OfflineOrderQueueService {
         String? ref = localRef;
         if (enqueueOnTransportFailure) {
           ref = await _enqueue(orderEvent, stampedOrder, kotRequestId, slot,
-              beforeQueue: beforeQueue, localRef: localRef, meta: meta);
+              beforeQueue: beforeQueue, localRef: localRef, meta: meta, printKot: printKot);
         }
         return OrderSubmitResult(OrderSubmitOutcome.queued, const {}, const {},
             localRef: ref);
@@ -378,7 +381,11 @@ class OfflineOrderQueueService {
     // the KOT is only built here, once the order has an id.
     final kotResult = await _kotQueue.sendKot(
       socket,
-      <String, dynamic>{...kotExtra, 'order_id': orderId},
+      <String, dynamic>{
+        ...kotExtra,
+        'order_id': orderId,
+        if (!printKot) 'print': false,
+      },
       clientRequestId: kotRequestId,
       beforeQueue: beforeQueue,
     );
@@ -415,6 +422,7 @@ class OfflineOrderQueueService {
     BeforeQueueHook? beforeQueue,
     String? localRef,
     Map<String, dynamic>? meta,
+    bool printKot = true,
   }) async {
     // Outside the lock: printing to a LAN printer can take seconds and every
     // other queue operation (the UI's pending count) waits on the lock.
@@ -447,6 +455,7 @@ class OfflineOrderQueueService {
         if (kotExtra.isNotEmpty) 'kot_extra': kotExtra,
         if (ref != null) 'local_ref': ref,
         if (meta != null) 'meta': meta,
+        if (!printKot) 'print_kot': false,
       });
       await _writeRaw(items);
       logD(_tag, 'queued order submission (${items.length} pending)');
@@ -533,6 +542,7 @@ class OfflineOrderQueueService {
 
       if (socket.state != SocketState.verified) return false;
 
+      final printKot = next['print_kot'] != false;
       final result = await _attempt(
         socket,
         orderEvent,
@@ -541,6 +551,7 @@ class OfflineOrderQueueService {
         slot,
         enqueueOnTransportFailure: false,
         kotExtra: kotExtra,
+        printKot: printKot,
       );
       // Desk unreachable, or PIN needed (queue is now paused): the entry is
       // still the head, untouched. Stop here and let the drain worker retry.

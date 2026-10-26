@@ -8,6 +8,7 @@ import '../data/providers.dart';
 import '../services/offline_guard.dart';
 import '../data/currency.dart';
 import '../theme/tokens.dart';
+import '../utils/ack_message.dart';
 import '../utils/socket_helpers.dart';
 import 'app_surface.dart';
 import 'dynamic_toast.dart';
@@ -111,7 +112,10 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
           _pendingOfferId = null;
         });
         DynamicToast.show(context,
-            message: response['message']?.toString() ?? 'Offer action failed',
+            message: ackFailureText(response,
+                fallback: 'Offer action failed',
+                noAnswer: 'No answer from the desk — check the order before '
+                    'trying again'),
             kind: ToastKind.error);
         return;
       }
@@ -134,7 +138,10 @@ class _OffersSheetState extends ConsumerState<_OffersSheet> {
     }));
 
     scheduleSocketTimeout(
-      duration: const Duration(seconds: 10),
+      // Longer than the ack itself (the adaptive timeout reaches 24s):
+      // emitAck always answers, so this is only a backstop, never a
+      // second, earlier verdict.
+      duration: const Duration(seconds: 30),
       isMounted: () => mounted,
       isStillWaiting: () => _submitting,
       onTimeout: () {

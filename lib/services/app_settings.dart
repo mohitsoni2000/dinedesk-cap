@@ -17,7 +17,7 @@ class AppSettingsLauncher {
         return ok ?? false;
       }
       if (Platform.isIOS) {
-        return launchUrl(Uri.parse('app-settings:'));
+        return await launchUrl(Uri.parse('app-settings:'));
       }
       return false;
     } catch (e) {

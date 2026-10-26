@@ -12,6 +12,17 @@ import 'dynamic_toast.dart';
 import 'liquid_chrome.dart';
 import 'sheet_handle.dart';
 
+/// Why a table cannot be shifted right now, or null when it can. Unsent cart
+/// items are not on the desk's order: after a shift they would stay on the
+/// vacated table and start a new order there, so the desk asks to send or
+/// clear them first.
+String? tableShiftRefusal({required int unsentItems}) {
+  if (unsentItems <= 0) return null;
+  return unsentItems == 1
+      ? 'Send or remove the new item before shifting the table'
+      : 'Send or remove the $unsentItems new items before shifting the table';
+}
+
 class TableShiftSheet extends ConsumerStatefulWidget {
   final RestaurantTable origin;
   const TableShiftSheet({super.key, required this.origin});

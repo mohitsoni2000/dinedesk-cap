@@ -89,10 +89,13 @@ void main() {
   group('resolveRoomOpenIntent', () {
     final noonIst = DateTime.utc(2026, 10, 1, 6, 30);
 
-    test('a free room starts an order; one with an order or a guest opens it',
-        () {
-      expect(resolveRoomOpenIntent(room(RoomState.free), now: noonIst).action,
-          TableOpenAction.createDraft);
+    test(
+        'a free room is checked in at the desk; one with an order or a guest '
+        'opens it', () {
+      final free = resolveRoomOpenIntent(room(RoomState.free), now: noonIst);
+      expect(free.action, TableOpenAction.blocked,
+          reason: 'a room order is a check-in, which only the desk does');
+      expect(free.message, 'Check the guest in at the Desk first');
       expect(
           resolveRoomOpenIntent(room(RoomState.free, orderId: 'o1'),
                   now: noonIst)
@@ -136,8 +139,9 @@ void main() {
           TableOpenAction.blocked);
       expect(
           resolveRoomOpenIntent(r, now: DateTime.utc(2026, 10, 2, 18, 30))
-              .action,
-          TableOpenAction.createDraft);
+              .message,
+          'Check the guest in at the Desk first',
+          reason: 'the hold is gone; the room is simply free');
     });
   });
 }

@@ -208,7 +208,8 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
       ref.read(syncServiceProvider).applyOrderAck(response);
     }
 
-    if (intent.action == TableOpenAction.openOrder) {
+    if (intent.action == TableOpenAction.openOrder ||
+        intent.action == TableOpenAction.openBill) {
       final activeOrders = ref.read(activeOrdersProvider);
       final tableData = ref
           .read(tablesProvider)
@@ -222,6 +223,21 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     }
 
     if (!mounted || intent.route == null) return;
+    if (intent.action == TableOpenAction.openBill) {
+      // The bill screen loads the desk's bill with bill:generate, so it needs
+      // a right to make bills, and it reads the phone's own copy of the
+      // order; without either it would be a dead end, so open the order.
+      final flags = ref.read(flagsProvider);
+      final held = ref
+          .read(historyProvider)
+          .any((o) => o.id == intent.orderId || o.orderId == intent.orderId);
+      if (held && (flags.generateBill || flags.directBill)) {
+        unawaited(context.push(intent.route!));
+      } else {
+        context.go('/order/${t.serverId}');
+      }
+      return;
+    }
     context.go(intent.route!);
   }
 

@@ -195,8 +195,8 @@ PayVerdict decidePay({
           : unanswered
               ? 'Settled $settled of $total. $kEarlierTryUnanswered before '
                   'taking the remaining ${formatRupeesCompact(due)}.'
-              : 'Settled $settled of $total. Take payment for the remaining '
-                  '${formatRupeesCompact(due)}.',
+              : '${_why(failure)}Settled $settled of $total. Take payment '
+                  'for the remaining ${formatRupeesCompact(due)}.',
     );
   }
   if (unanswered) {
@@ -205,8 +205,21 @@ PayVerdict decidePay({
         toast: '${failure.refusal}. $kEarlierTryUnanswered.');
   }
   return PayVerdict(
-    toast: failure.carriesCover ? failure.refusal : _retryText(0, total),
+    toast: failure.carriesCover
+        ? failure.refusal
+        : failure.refusal.trim().isEmpty
+            ? _retryText(0, total)
+            : '${_why(failure)}Nothing was charged.',
   );
+}
+
+/// The desk's reason as the opening sentence, or nothing when it gave none.
+/// A refusal (no permission, wrong bill) is not fixed by retrying, so the
+/// waiter has to see why.
+String _why(CallFailure failure) {
+  final reason = failure.refusal.trim();
+  if (reason.isEmpty) return '';
+  return reason.endsWith('.') ? '$reason ' : '$reason. ';
 }
 
 String _retryText(int settled, int total) => settled == 0

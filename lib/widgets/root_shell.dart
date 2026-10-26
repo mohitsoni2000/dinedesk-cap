@@ -48,13 +48,14 @@ List<int> shellTabsFor({
   required bool isQsr,
   required bool rooms,
   required bool gate,
+  bool history = true,
 }) {
   final tabs = <int>[
     if (isQsr) ShellBranch.counter,
     ShellBranch.tables,
     if (rooms) ShellBranch.rooms,
     if (gate) ShellBranch.gate,
-    ShellBranch.history,
+    if (history) ShellBranch.history,
     ShellBranch.profile,
     ShellBranch.settings,
   ];
@@ -102,6 +103,7 @@ class RootShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final roomsEnabled = ref.watch(flagsProvider.select((f) => f.rooms));
     final gateEnabled = ref.watch(flagsProvider.select((f) => f.hasGate));
+    final historyEnabled = ref.watch(flagsProvider.select((f) => f.kotHistory));
     final isQsr = ref.watch(qsrConfigProvider.select((q) => q.isQsr));
     final home = ref.watch(homeRouteProvider);
     final counterParked =
@@ -114,6 +116,7 @@ class RootShell extends ConsumerWidget {
         isQsr: isQsr,
         rooms: roomsEnabled,
         gate: gateEnabled,
+        history: historyEnabled,
       ))
         if (navItemForBranch(branch,
                 counterParked: counterParked, gateParked: gateParked)

@@ -127,7 +127,11 @@ String? routeGuard({
 
   final closed = StartScreen.values.any(shut) ||
       (!flags.rooms &&
-          (location == '/rooms' || location.startsWith('/order/room')));
+          (location == '/rooms' || location.startsWith('/order/room'))) ||
+      // KOT history hides the History list only: /history/:orderId is also
+      // the bill and payment screen, and the desk turns KOT history off
+      // whenever KOT printing is off.
+      (!flags.kotHistory && location == '/history');
   return closed ? homeRouteFor(flags: flags, qsr: qsr, pref: pref) : null;
 }
 

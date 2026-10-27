@@ -1,0 +1,11 @@
+What's new in 1.3.4
+
+- Tapping a billed table opens its bill, already loaded, the way the desk does: Collect Payment and Print Bill are there without a Generate Bill tap.
+- A discount with no presets on the desk can be applied: type a percentage or an amount and Apply lights up. An unpaid bill still takes a discount.
+- Print Bill is offered whenever bill printing is on; a print the desk refuses, or never confirms, says so instead of "queued".
+- The item sheet adds from the menu: a second size, weighed portion or add-on choice sits next to the first. A cart line opens for editing with everything it had.
+- Adding from a package, Undo or Repeat Last Order never takes units away from the cart.
+- Opening a free table and going back leaves it free; the order starts with the first KOT.
+- KOT + Bill and Quick Settle wait for a slow desk instead of saying the order could not be confirmed.
+- Refused payments, bills, discounts and reprints show the desk's own reason.
+- Hold, Shift KOT and Cancel appear only where the desk allows them; a free room asks for check-in at the desk.

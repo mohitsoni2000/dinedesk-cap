@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/providers.dart';
-import '../services/offline_guard.dart';
 import '../data/currency.dart';
 import '../data/table_selectors.dart';
 import '../data/recent_tables.dart';
@@ -34,8 +33,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   String _query = '';
   bool _searchOpen = false;
   bool _mineOnly = false;
-  bool _openingTable = false;
-  String? _openingTableId;
   _StatusTag? _spotlight;
   bool _refreshing = false;
   late final AnimationController _refreshController;
@@ -131,7 +128,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
             final t = list[i];
             final card = _TableCard(
               table: t,
-              isLoading: _openingTable && _openingTableId == t.serverId,
+              isLoading: false,
               onTap: () => _onTableTap(t),
               spotlight: _spotlight,
               showFloorTag: showFloorTags,
@@ -161,7 +158,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   }
 
   void _onTableTap(RestaurantTable t) async {
-    if (_openingTable) return;
     final intent = resolveTableOpenIntent(t);
     if (intent.action == TableOpenAction.blocked) {
       ref.read(feedbackServiceProvider).fire(const FeedbackLight());
@@ -178,35 +174,11 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     }
     ref.read(selectedTableIdProvider.notifier).state = t.serverId;
 
-    // Offline there is no desk to create the draft order on; the table opens
-    // empty and the order is created when its KOT is sent (it queues, and the
-    // outbox replays create + KOT together).
-    if (intent.action == TableOpenAction.createDraft && !isDeskOffline(ref)) {
-      setState(() {
-        _openingTable = true;
-        _openingTableId = t.serverId;
-      });
-      final response =
-          await ref.read(socketServiceProvider).emitAckWhenConnected(
-        'order:create',
-        {
-          'table_id': t.serverId,
-          'items': const <Map<String, dynamic>>[],
-          'order_type': 'dine_in',
-        },
-      );
-      if (!mounted) return;
-      setState(() {
-        _openingTable = false;
-        _openingTableId = null;
-      });
-      if (response['kind'] == 'error') {
-        _showTableError(
-            response['message']?.toString() ?? 'Could not open table');
-        return;
-      }
-      ref.read(syncServiceProvider).applyOrderAck(response);
-    }
+    // A free table opens empty and its order is created with the first KOT
+    // or Save, online or offline alike. Creating it on tap left an empty
+    // order (and an "Order open" table) behind whenever the waiter backed
+    // out: the desk deletes its own empty draft on Back, but the phone has no
+    // way to, so it never makes one.
 
     if (intent.action == TableOpenAction.openOrder ||
         intent.action == TableOpenAction.openBill) {

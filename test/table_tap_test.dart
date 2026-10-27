@@ -7,6 +7,7 @@ import 'package:restro/data/money.dart';
 import 'package:restro/data/providers.dart';
 import 'package:restro/models/feature_flags.dart';
 import 'package:restro/screens/tables_screen.dart';
+import 'package:restro/services/socket_service.dart';
 import 'package:restro/theme/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -56,6 +57,7 @@ void main() {
     required List<RestaurantTable> tables,
     List<HistoryOrder> inHistory = const <HistoryOrder>[],
     Map<String, int> flags = const <String, int>{'flag_generate_bill': 1},
+    SocketService? socket,
   }) async {
     tester.view.physicalSize = const Size(1024, 1366);
     tester.view.devicePixelRatio = 1.0;
@@ -63,7 +65,9 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
-    final container = ProviderContainer();
+    final container = ProviderContainer(overrides: [
+      if (socket != null) socketServiceProvider.overrideWithValue(socket),
+    ]);
     addTearDown(container.dispose);
     container.read(tablesProvider.notifier).state = tables;
     container.read(historyProvider.notifier).state = inHistory;
@@ -191,5 +195,31 @@ void main() {
 
     expect(path(router), '/tables');
     await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets(
+      'a free table opens without creating an order: leaving it empty must '
+      'not leave "Order open" behind (the desk deletes an empty draft on Back; '
+      'the phone has no way to, so it never makes one)', (tester) async {
+    final sent = <String>[];
+    final socket = SocketService()..debugSetState(SocketState.verified);
+    socket.rawEmitOverride = (event, data, timeout) async {
+      sent.add(event);
+      return <String, dynamic>{'kind': 'success'};
+    };
+    addTearDown(socket.dispose);
+
+    final router = await pumpTables(
+      tester,
+      tables: [table('T1', TableState.free, serverId: 'srv-1')],
+      socket: socket,
+    );
+
+    await tester.tap(find.text('T1'));
+    await settle(tester);
+
+    expect(path(router), '/order/srv-1');
+    expect(sent, isNot(contains('order:create')),
+        reason: 'the order is created with its first KOT or Save');
   });
 }

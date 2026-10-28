@@ -1,0 +1,6 @@
+What's new in 1.3.5
+
+- A discount already on a bill can be changed: Discount and Coupon replace it.
+- Remove a discount with the ✕ on the bill's discount line; the bill is made again at the full total.
+- Each staff member's discount limit still applies, and the desk's reason is shown when a discount is refused.
+- Removing a discount needs the latest COMMAND.Desk; older desks still let you change one.

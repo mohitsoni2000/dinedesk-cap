@@ -1,0 +1,6 @@
+What's new in 1.3.5
+
+- Discount and Coupon stay available on a bill that already has a discount. What you apply replaces the discount there, as on the desk.
+- The bill's discount line has a ✕. After a confirmation the discount comes off the order and the bill is made again at the full total, with the desk's own checks: the Discounts permission, and no change to a bill that is already paid.
+- Discount limits set per staff member at the desk still apply when changing a discount; a refused one says why and leaves the old discount on.
+- Removing a discount needs the latest COMMAND.Desk. With an older desk the app says to remove it at the desk; changing a discount works with any desk.

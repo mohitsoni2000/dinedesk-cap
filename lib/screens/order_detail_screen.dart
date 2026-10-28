@@ -110,9 +110,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       ref
           .read(roomsProvider)
           .any((r) => r.activeOrderId == orderId && r.activeBillCount > 0) ||
-      ref
-          .read(activeOrdersProvider)
-          .any((o) => o.id == orderId && o.hasBills);
+      ref.read(activeOrdersProvider).any((o) => o.id == orderId && o.hasBills);
 
   /// A bill always reports its discount, ₹0 included; only a real amount
   /// means a discount is on the order.
@@ -349,12 +347,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     unawaited(HapticFeedback.heavyImpact());
 
     final socketService = ref.read(socketServiceProvider);
-    unawaited(socketService.emitAckIdempotent(
-        'bill:generate',
-        {
-          'order_id': order.orderId,
-        },
-        timeout: const Duration(seconds: 15)).then((response) {
+    unawaited(socketService
+        .emitAckIdempotent(
+            'bill:generate',
+            {
+              'order_id': order.orderId,
+            },
+            timeout: const Duration(seconds: 15))
+        .then((response) {
       if (!mounted) return;
       if (response['kind'] == 'error') {
         setState(() => _generatingBill = false);
@@ -521,17 +521,75 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         });
       }
 
-      if (_billGenerated) {
-        _billGenerated = false;
-        _bills = [];
-        _billId = null;
-        unawaited(_generateBill(order));
-      }
+      _remakeBill(order);
       DynamicToast.show(context,
           message:
               'Discount applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
           kind: ToastKind.success);
     }
+  }
+
+  /// The desk resyncs an order's bill whenever its discount changes; the bill
+  /// is made again here so this screen shows the new total.
+  void _remakeBill(HistoryOrder order) {
+    if (!_billGenerated) return;
+    _billGenerated = false;
+    _bills = [];
+    _billId = null;
+    unawaited(_generateBill(order));
+  }
+
+  /// The desk's "Remove Discount": discount:remove takes it off the order
+  /// (same Discounts permission as applying one) and the bill is made again.
+  Future<void> _removeDiscount(HistoryOrder order) async {
+    if (!requireDesk(context, ref)) return;
+    final amount = _discountAmount;
+    final label = _discountLabel;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.palette.surface,
+        title: const Text('Remove the discount?', style: AppTypography.title),
+        content: Text(
+            '${amount != null ? '${formatRupeesCompact(amount)} off' : 'The discount'}'
+            '${label != null ? ' ($label)' : ''} comes off this order and the '
+            'bill is made again at the full total.',
+            style: AppTypography.bodyMd),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Remove discount',
+                style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final response = await ref.read(socketServiceProvider).emitAckIdempotent(
+        'discount:remove', <String, dynamic>{'order_id': order.orderId},
+        timeout: const Duration(seconds: 15));
+    if (!mounted) return;
+    if (response['kind'] == 'error') {
+      DynamicToast.show(context,
+          message: ackFailureText(response,
+              fallback: 'Could not remove the discount',
+              noAnswer: 'No answer from the desk — an older desk cannot '
+                  'remove a discount from Crew; remove it at the desk'),
+          kind: ToastKind.error);
+      return;
+    }
+    setState(() {
+      _discountAmount = null;
+      _discountLabel = null;
+    });
+    _remakeBill(order);
+    DynamicToast.show(context,
+        message: 'Discount removed', kind: ToastKind.success);
   }
 
   Future<void> _openCoupon(HistoryOrder order) async {
@@ -544,12 +602,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           _discountLabel = orderMap['discount_label']?.toString() ?? 'Coupon';
         });
       }
-      if (_billGenerated) {
-        _billGenerated = false;
-        _bills = [];
-        _billId = null;
-        unawaited(_generateBill(order));
-      }
+      _remakeBill(order);
       DynamicToast.show(context,
           message:
               'Coupon applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
@@ -564,12 +617,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         _discountAmount = Money.fromWire(result['discount_amount']);
         _discountLabel = result['discount_label']?.toString() ?? 'Offer';
       });
-      if (_billGenerated) {
-        _billGenerated = false;
-        _bills = [];
-        _billId = null;
-        unawaited(_generateBill(order));
-      }
+      _remakeBill(order);
       DynamicToast.show(context,
           message:
               'Offer applied${_discountLabel != null ? ' · $_discountLabel' : ''}',
@@ -595,10 +643,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     // A room order is a guest's stay: the desk never offers Cancel on it,
     // because cancelling releases the room and voids its bills.
     final isRoomOrder = order != null &&
-        (ref.watch(roomsProvider
-                .select((rs) => rs.any((r) => r.activeOrderId == order.orderId))) ||
-            ref.watch(activeOrdersProvider.select((os) =>
-                os.any((o) => o.id == order.orderId && o.isRoom))));
+        (ref.watch(roomsProvider.select(
+                (rs) => rs.any((r) => r.activeOrderId == order.orderId))) ||
+            ref.watch(activeOrdersProvider.select(
+                (os) => os.any((o) => o.id == order.orderId && o.isRoom))));
 
     ref.listen<List<ServerOrder>>(activeOrdersProvider, (_, activeOrders) {
       if (_billGenerated || order == null) return;
@@ -800,8 +848,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                       style: AppTypography.bodyMd),
                                 ],
                               ),
-                              if (_discountAmount != null &&
-                                  _discountAmount!.isPositive) ...[
+                              if (_hasDiscount) ...[
                                 const SizedBox(height: 4),
                                 Row(
                                   children: [
@@ -809,6 +856,18 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                         'Discount${_discountLabel != null ? ' ($_discountLabel)' : ''}',
                                         style: AppTypography.bodyMd.copyWith(
                                             color: AppColors.success)),
+                                    // The ✕ the desk shows on its discount line.
+                                    if (flags.discounts && !_paymentCollected)
+                                      IconButton(
+                                        tooltip: 'Remove discount',
+                                        onPressed: () => _removeDiscount(order),
+                                        icon: const Icon(Icons.cancel_outlined,
+                                            size: 18, color: AppColors.success),
+                                        visualDensity: VisualDensity.compact,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(
+                                            minWidth: 36, minHeight: 36),
+                                      ),
                                     const Spacer(),
                                     Text(
                                         '-${formatRupeesCompact(_discountAmount!)}',
@@ -1050,13 +1109,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                               if (flags.discounts) ...[
                                 Expanded(
                                   child: LiquidSecondaryButton(
-                                    label: _hasDiscount
-                                        ? 'Discount Applied'
-                                        : 'Discount',
+                                    // A discount already on the order is
+                                    // replaced, as on the desk: discount:apply
+                                    // overwrites it. The bill line's ✕ removes it.
+                                    label: 'Discount',
                                     leadingIcon: Icons.discount_outlined,
-                                    onPressed: _hasDiscount
-                                        ? null
-                                        : () => _openDiscount(order),
+                                    onPressed: () => _openDiscount(order),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -1065,9 +1123,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                     label: 'Coupon',
                                     leadingIcon:
                                         Icons.confirmation_number_outlined,
-                                    onPressed: _hasDiscount
-                                        ? null
-                                        : () => _openCoupon(order),
+                                    onPressed: () => _openCoupon(order),
                                   ),
                                 ),
                               ],
